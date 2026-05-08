@@ -85,7 +85,7 @@ def edit_member(request: HttpRequest, pk: int) -> HttpResponse:
 
     if email and Player.objects.filter(email=email).exclude(pk=pk).exists():
         return HttpResponse(
-            f'<p class="font-mono text-sm text-crimson">Email already in use.</p>',
+            '<p class="font-mono text-sm text-crimson">Email already in use.</p>',
             status=422,
         )
 

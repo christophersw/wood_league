@@ -12,7 +12,6 @@ import chess
 import chess.engine
 import chess.pgn
 
-from app.config import get_settings
 
 # Classification thresholds (centipawn loss from mover's perspective)
 # Matches Lichess: https://lichess.org/page/accuracy

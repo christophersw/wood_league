@@ -10,10 +10,9 @@ from datetime import datetime, timedelta, timezone
 import chess
 import chess.pgn
 import pandas as pd
-from django.db.models import Avg, Count, F, Q, Subquery, OuterRef
-from django.db.models.functions import TruncDate
+from django.db.models import Count, F, Subquery
 
-from analysis.models import GameAnalysis, MoveAnalysis, Lc0GameAnalysis
+from analysis.models import MoveAnalysis
 from games.models import Game, GameParticipant
 from ingest.models import SystemEvent
 from openings.models import OpeningBook

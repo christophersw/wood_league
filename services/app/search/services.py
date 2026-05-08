@@ -12,7 +12,7 @@ import requests
 from django.conf import settings
 from django.db import connection
 
-from games.models import Game, GameParticipant
+from games.models import Game
 from players.models import Player
 
 ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"

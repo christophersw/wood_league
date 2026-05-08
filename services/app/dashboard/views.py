@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import timezone
 
 from django.contrib.auth.decorators import login_required
 from django.http import HttpRequest, HttpResponse

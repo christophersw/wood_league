@@ -6,7 +6,7 @@ import json
 import chess.pgn
 import chess.svg
 from django.http import HttpResponse
-from django.shortcuts import render, get_object_or_404
+from django.shortcuts import render
 from django.views.decorators.http import require_POST
 
 from games.models import Game

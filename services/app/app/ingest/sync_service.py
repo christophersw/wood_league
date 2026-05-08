@@ -12,7 +12,7 @@ import hashlib
 import io
 
 import chess.pgn
-from sqlalchemy import func, select
+from sqlalchemy import select
 
 from app.config import get_settings
 from app.ingest.chesscom_client import ChessComClient

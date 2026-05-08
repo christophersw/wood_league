@@ -14,10 +14,8 @@ import chess.svg
 import pandas as pd
 from django.db.models import Q
 
-from analysis.models import GameAnalysis
-from games.models import Game, GameParticipant
+from games.models import GameParticipant
 from openings.models import OpeningBook
-from players.models import Player
 
 
 # ── Opening book lookup cache ─────────────────────────────────────────────────

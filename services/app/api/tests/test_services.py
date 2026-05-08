@@ -12,12 +12,10 @@ from django.test import TestCase, override_settings
 from django.utils import timezone
 from django.conf import settings
 from games.models import Game
-from analysis.models import AnalysisJob, GameAnalysis, MoveAnalysis
+from analysis.models import AnalysisJob, GameAnalysis
 from analysis.services.jobs import (
     recover_stale_jobs,
     claim_jobs,
-    complete_stockfish_job,
-    complete_lc0_job,
     fail_job,
     JobCheckoutDenied,
 )

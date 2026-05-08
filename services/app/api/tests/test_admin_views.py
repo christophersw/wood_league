@@ -7,7 +7,6 @@ Changelog:
     2026-05-06 (#15): Created admin UI tests
 """
 from django.test import TestCase, Client
-from django.urls import reverse
 from accounts.models import User
 from api.models import WorkerAPIKey
 

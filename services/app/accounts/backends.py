@@ -2,7 +2,6 @@
 
 import base64
 import hashlib
-import hmac
 
 from django.contrib.auth.backends import ModelBackend
 from django.contrib.auth.hashers import BasePasswordHasher, mask_hash

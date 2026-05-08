@@ -14,7 +14,6 @@ Changelog:
 from __future__ import annotations
 
 from html import escape
-from typing import Optional
 
 from games.services import GameAnalysisData
 
@@ -253,11 +252,11 @@ def _wdl_bar(win: float, draw: float, loss: float) -> str:
         txt = lbl if pct >= 9 else ""
         tooltip = ""
         if "W" in lbl:
-            tooltip = f"Probability of winning from this position"
+            tooltip = "Probability of winning from this position"
         elif "D" in lbl:
-            tooltip = f"Probability of drawing from this position"
+            tooltip = "Probability of drawing from this position"
         elif "L" in lbl:
-            tooltip = f"Probability of losing from this position"
+            tooltip = "Probability of losing from this position"
         return f'<div class="dub-seg {cls}" style="flex:{pct:.1f}" title="{tooltip}">{escape(txt)}</div>'
 
     segs = (
@@ -409,7 +408,7 @@ def build_sf_card(data: GameAnalysisData, queued: bool = False) -> str:
             
             # Accuracy bar with label
             if has_acc:
-                content += f'<div class="dub-metric-label" title="Percentage of moves that match the engine\'s top choice or were within 50 centipawns of the best move">Accuracy</div>'
+                content += '<div class="dub-metric-label" title="Percentage of moves that match the engine\'s top choice or were within 50 centipawns of the best move">Accuracy</div>'
                 content += _metric_bar(acc_val, f"{acc_val:.1f}%")
             
             # Move quality bar with label
@@ -425,7 +424,7 @@ def build_sf_card(data: GameAnalysisData, queued: bool = False) -> str:
                 blunder = blun if blun is not None else _cnt(side_moves, "blunder")
                 total = len(side_moves)
                 if total:
-                    content += f'<div class="dub-metric-label" title="Classification of each move: !! (brilliant), ! (best), !? (great), ?! (inaccuracy), ? (mistake), ?? (blunder)">Move Quality</div>'
+                    content += '<div class="dub-metric-label" title="Classification of each move: !! (brilliant), ! (best), !? (great), ?! (inaccuracy), ? (mistake), ?? (blunder)">Move Quality</div>'
                     content += _quality_metric_bar(bril, best, great, inaccuracy, mistake, blunder, total)
             
             # ACPL chip if available (at bottom)
@@ -438,9 +437,9 @@ def build_sf_card(data: GameAnalysisData, queued: bool = False) -> str:
 
     # Add rerun button row below players
     button_row = (
-        f'<div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;">'
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;">'
         + _rerun_button("stockfish", queued, in_header=False)
-        + f'</div>'
+        + '</div>'
     )
 
     return (
@@ -497,7 +496,7 @@ def build_lc0_card(data: GameAnalysisData, queued: bool = False) -> str:
             content += f'<div class="dub-player-name">{escape(name)}{" 🏆" if is_winner else ""}</div>'
             
             # Win/Draw/Loss bar with label and tooltip
-            content += f'<div class="dub-metric-label" title="Probability of winning, drawing, or losing from the average position during the game">Win / Draw / Loss</div>'
+            content += '<div class="dub-metric-label" title="Probability of winning, drawing, or losing from the average position during the game">Win / Draw / Loss</div>'
             content += _wdl_bar(win_prob, draw_prob, loss_prob)
             
             # Move quality bar if we have LC0 moves with classifications
@@ -515,7 +514,7 @@ def build_lc0_card(data: GameAnalysisData, queued: bool = False) -> str:
                     blunder_lc0 = _cnt(side_moves, "blunder")
                     total = len(side_moves)
                     if total:
-                        content += f'<div class="dub-metric-label" title="Classification of each move: !! (brilliant), ! (best), !? (great), ?! (inaccuracy), ? (mistake), ?? (blunder)">Move Quality</div>'
+                        content += '<div class="dub-metric-label" title="Classification of each move: !! (brilliant), ! (best), !? (great), ?! (inaccuracy), ? (mistake), ?? (blunder)">Move Quality</div>'
                         content += _quality_metric_bar(bril, best, great, inaccuracy_lc0, mistake_lc0, blunder_lc0, total)
                     
                     # Average Move Win Delta chip
@@ -530,9 +529,9 @@ def build_lc0_card(data: GameAnalysisData, queued: bool = False) -> str:
 
     # Add rerun button row below players
     button_row = (
-        f'<div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;">'
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;">'
         + _rerun_button("lc0", queued, in_header=False)
-        + f'</div>'
+        + '</div>'
     )
 
     return (

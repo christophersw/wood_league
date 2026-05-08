@@ -23,13 +23,11 @@ import re
 import chess
 import chess.pgn as _pgn
 from django.conf import settings
-from django.contrib.auth.decorators import login_required
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, render
-from django.views.decorators.http import require_POST
 
 from analysis.models import AnalysisJob
-from games.board_builder import _BOARD_COLORS, board_colors_for_move_classification, build_board_frames
+from games.board_builder import board_colors_for_move_classification, build_board_frames
 from games.models import Game
 from games.services import MoveRow, get_game_analysis
 from games.stat_cards import _DUB_CSS, build_lc0_card, build_sf_card

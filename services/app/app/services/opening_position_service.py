@@ -26,7 +26,6 @@ from app.storage.models import (
     Game,
     GameAnalysis,
     GameParticipant,
-    Lc0GameAnalysis,
     OpeningBook,
     Player,
 )
