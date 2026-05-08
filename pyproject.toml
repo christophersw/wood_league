@@ -1,0 +1,25 @@
+[project]
+name = "wood-league-dispatchers"
+version = "0.1.0"
+description = "Unified Railway dispatchers for Stockfish and Lc0 RunPod endpoints"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "runpod>=1.7.0",
+  "sqlalchemy>=2.0.29",
+  "psycopg[binary]>=3.2.0",
+  "python-chess>=1.999",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.2.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["dispatchers*"]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
