@@ -113,6 +113,17 @@ def opening_display_label(
     opening_name: str | None,
     pgn_text: str | None = None,
 ) -> str:
+    """Return display-friendly opening label from catalogued or fallback sources.
+
+    Args:
+        eco_code: ECO classification code (e.g., 'C50').
+        lichess_opening: Lichess-specific opening name (preferred if available).
+        opening_name: Chess.com or standard opening name.
+        pgn_text: Optional PGN for fallback extraction when catalogues unavailable.
+
+    Returns:
+        Display label, with ECO prefix if needed.
+    """
     eco = (eco_code or "").strip()
     lichess = (lichess_opening or "").strip()
     opening = (opening_name or "").strip()

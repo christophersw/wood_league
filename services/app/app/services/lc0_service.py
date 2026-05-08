@@ -369,6 +369,7 @@ def analyze_pgn(
         loss_probs: list[float],
         deltas: list[float],
     ) -> Lc0PlayerStats:
+        """Compute aggregate player statistics from per-move WDL and quality metrics."""
         if not deltas:
             return Lc0PlayerStats(
                 avg_win_prob=50.0,

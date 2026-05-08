@@ -48,7 +48,6 @@ class _ClaimedJob:
 
 def _claim_job(nodes: int) -> _ClaimedJob | None:
     """Atomically claim one pending lc0 job via SELECT FOR UPDATE SKIP LOCKED (PostgreSQL) or plain SELECT (SQLite)."""
-    """Claim a pending lc0 job and mark it as running."""
     is_pg = ENGINE.dialect.name == "postgresql"
     stmt = (
         select(AnalysisJob)
@@ -266,6 +265,7 @@ def run_worker(
                     raise ValueError("No PGN for game")
 
                 def on_move(ply: int, total_m: int, san: str) -> None:
+                    """Log Lc0 analysis progress every 10 plies."""
                     if ply % 10 == 0:
                         log.debug("  Lc0 ply %d/%d %s", ply, total_m, san)
 

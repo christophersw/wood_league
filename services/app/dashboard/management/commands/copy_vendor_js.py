@@ -54,6 +54,7 @@ class Command(BaseCommand):
     help = "Copy htmx.min.js and plotly.min.js from installed packages into static/js/."
 
     def handle(self, *args, **options):
+        """Execute the command to copy vendor JavaScript files to static directory."""
         static_dir = Path(settings.STATICFILES_DIRS[0])
         static_dir.mkdir(parents=True, exist_ok=True)
 

@@ -50,6 +50,7 @@ def main() -> None:
         previous = {"current": -1}
 
         def progress_callback(cb_username: str, current: int, total: int, stats):
+            """Display archive sync progress bar and statistics."""
             if current == previous["current"] and total > 0:
                 return
             previous["current"] = current

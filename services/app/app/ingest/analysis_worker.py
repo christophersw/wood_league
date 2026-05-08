@@ -370,6 +370,7 @@ def run_worker(
                     raise ValueError("No PGN for game")
 
                 def on_move(ply: int, total: int, san: str) -> None:
+                    """Update move progress bar during analysis."""
                     if move_bar is None:
                         return
                     if move_bar.total != total:

@@ -121,7 +121,6 @@ def _move_accuracy(wp_before: float, wp_after: float) -> float:
 
 def _harmonic_mean(values: list[float]) -> float:
     """Harmonic mean with near-zero epsilon dampening."""
-    """Harmonic mean, safe for near-zero values."""
     if not values:
         return 0.0
     eps = 0.001
@@ -130,7 +129,6 @@ def _harmonic_mean(values: list[float]) -> float:
 
 def _weighted_mean(values: list[float], weights: list[float]) -> float:
     """Weighted arithmetic mean of values."""
-    """Weighted arithmetic mean."""
     if not values:
         return 0.0
     total_weight = sum(weights)
@@ -401,6 +399,7 @@ def analyze_pgn(
     def _stats(
         cpls: list[float], move_accs: list[float], wps: list[float]
     ) -> PlayerStats:
+        """Compute aggregate player statistics from move CPLs, accuracies, and win percentages."""
         if not cpls:
             return PlayerStats(
                 accuracy=100.0, acpl=0.0, blunders=0, mistakes=0, inaccuracies=0

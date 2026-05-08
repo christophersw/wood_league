@@ -8,6 +8,8 @@ Description:
 
 Changelog:
     2026-05-08: Added file header to meet documentation standards
+    2026-05-08: Refactored continuation_flow (E→B): extracted _advance_board_to_opening,
+        _collect_continuation_names, _accumulate_node_stats, _build_node_stats_df helpers
 """
 
 from __future__ import annotations
@@ -211,6 +213,7 @@ def get_games(
 # ── Per-player stats ──────────────────────────────────────────────────────────
 
 def player_stats(games_df: pd.DataFrame) -> pd.DataFrame:
+    """Aggregate opening statistics: wins, losses, draws, averages by player."""
     if games_df.empty:
         return pd.DataFrame()
 
@@ -323,121 +326,141 @@ def frequency_over_time(games_df: pd.DataFrame) -> pd.DataFrame:
 
 # ── Continuation Sankey ───────────────────────────────────────────────────────
 
-def continuation_flow(
-    games_df: pd.DataFrame,
-    opening: dict,
-    min_games: int = 2,
-) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Compute Sankey flow edges and node statistics from opening continuations."""
-    if games_df.empty:
-        return pd.DataFrame(), pd.DataFrame()
+def _advance_board_to_opening(
+    game: chess.pgn.Game,
+    ply_depth: int,
+    target_epd: str,
+) -> tuple[chess.pgn.GameNode, chess.Board] | None:
+    """Replay a parsed PGN game to the target opening position.
 
-    target_epd = opening["epd"]
-    ply_depth = opening["ply_depth"]
-    opening_name = opening["name"]
-    root_label = f"Start: {opening_name}"
+    Parameters:
+        game (chess.pgn.Game): Root game node from python-chess PGN parser.
+        ply_depth (int): Number of half-moves to advance to reach the opening.
+        target_epd (str): Expected EPD string at the opening position.
 
-    edge_counts: dict[tuple[str, str], int] = defaultdict(int)
-    node_data: dict[str, dict] = {}
-    seen_gids: set[str] = set()
+    Returns:
+        (node, board) tuple at the opening position, or None if the game
+        did not pass through the target EPD.
+    """
+    board = game.board()
+    node = game
+    for _ in range(ply_depth):
+        if not node.variations:
+            return None
+        node = node.variations[0]
+        board.push(node.move)
+    if board.epd() != target_epd:
+        return None
+    return node, board
 
-    for _, row in games_df.iterrows():
-        gid = row["game_id"]
-        if gid in seen_gids:
-            continue
-        seen_gids.add(gid)
 
-        try:
-            game = chess.pgn.read_game(io.StringIO(row["pgn"]))
-            if game is None:
-                continue
-            board = game.board()
-            node = game
+def _collect_continuation_names(
+    node: chess.pgn.GameNode,
+    board: chess.Board,
+    opening_name: str,
+) -> list[str]:
+    """Walk up to 3 full moves beyond the opening and collect variation names.
 
-            for _ in range(ply_depth):
-                if not node.variations:
-                    break
-                node = node.variations[0]
-                board.push(node.move)
+    Samples the opening book at even half-move offsets (+2, +4, +6 plies),
+    meaning one, two, and three full moves beyond the opening position.
+    Strips the family prefix from deeper continuation names to keep labels concise.
 
-            if board.epd() != target_epd:
-                continue
+    Parameters:
+        node (chess.pgn.GameNode): PGN node at the opening position.
+        board (chess.Board): Board state at the opening position (mutated in place).
+        opening_name (str): Fallback name when no book entry is found.
 
-            continuation_names: list[str] = []
-            for i in range(6):
-                if not node.variations:
-                    break
-                node = node.variations[0]
-                board.push(node.move)
-                if (i + 1) % 2 == 0:
-                    result = lookup_opening(board)
-                    if result:
-                        _, name = result
-                        if continuation_names and ":" in name:
-                            name = name.split(":", 1)[1].strip()
-                        if len(name) > 36:
-                            name = name[:35] + "…"
-                        continuation_names.append(name)
-                    else:
-                        continuation_names.append(
-                            continuation_names[-1] if continuation_names else opening_name
-                        )
-
-            if not continuation_names:
-                continue
-
-            path = [root_label]
-            for depth, name in enumerate(continuation_names, start=1):
-                suffix = "move" if depth == 1 else "moves"
-                path.append(f"After +{depth} {suffix}: {name}")
-
-        except Exception:
-            continue
-
-        result_val = row["result"]
-        w_acc = row.get("white_accuracy")
-        b_acc = row.get("black_accuracy")
-        player = row["club_player"]
-
-        for i in range(len(path) - 1):
-            edge_counts[(path[i], path[i + 1])] += 1
-
-        for label in path:
-            if label not in node_data:
-                node_data[label] = {
-                    "games": 0, "wins": 0, "draws": 0, "losses": 0,
-                    "white_acc_sum": 0.0, "white_acc_n": 0,
-                    "black_acc_sum": 0.0, "black_acc_n": 0,
-                    "players": defaultdict(int),
-                }
-            nd = node_data[label]
-            nd["games"] += 1
-            if result_val == "Win":
-                nd["wins"] += 1
-            elif result_val == "Draw":
-                nd["draws"] += 1
+    Returns:
+        List of 1–3 variation name strings, one per sampled full move depth.
+        Empty list if the game ends before the first sample point.
+    """
+    continuation_names: list[str] = []
+    for i in range(6):
+        if not node.variations:
+            break
+        node = node.variations[0]
+        board.push(node.move)
+        if (i + 1) % 2 == 0:
+            result = lookup_opening(board)
+            if result:
+                _, name = result
+                if continuation_names and ":" in name:
+                    name = name.split(":", 1)[1].strip()
+                if len(name) > 36:
+                    name = name[:35] + "…"
+                continuation_names.append(name)
             else:
-                nd["losses"] += 1
-            if pd.notna(w_acc):
-                nd["white_acc_sum"] += float(w_acc)
-                nd["white_acc_n"] += 1
-            if pd.notna(b_acc):
-                nd["black_acc_sum"] += float(b_acc)
-                nd["black_acc_n"] += 1
-            nd["players"][player] += 1
+                continuation_names.append(
+                    continuation_names[-1] if continuation_names else opening_name
+                )
+    return continuation_names
 
-    if not edge_counts:
-        return pd.DataFrame(), pd.DataFrame()
 
-    edges_df = pd.DataFrame(
-        [{"source": s, "target": t, "games": c} for (s, t), c in edge_counts.items()]
-    )
-    edges_df = edges_df[edges_df["games"] >= min_games].reset_index(drop=True)
-    if edges_df.empty:
-        return pd.DataFrame(), pd.DataFrame()
+def _accumulate_node_stats(
+    node_data: dict[str, dict],
+    path: list[str],
+    result_val: str,
+    w_acc: float | None,
+    b_acc: float | None,
+    player: str,
+) -> None:
+    """Add one game's result and accuracy into the per-node statistics accumulators.
 
-    visible_nodes = set(edges_df["source"].tolist() + edges_df["target"].tolist())
+    Parameters:
+        node_data (dict): Mutable mapping of node label → stat accumulator dict.
+            Missing keys are initialised automatically.
+        path (list[str]): Ordered list of node labels visited by this game.
+        result_val (str): Game result from the club player's perspective
+            ("Win", "Draw", or anything else treated as a loss).
+        w_acc (float | None): White accuracy score, or None if unavailable.
+        b_acc (float | None): Black accuracy score, or None if unavailable.
+        player (str): Club player identifier for per-player game counts.
 
+    Returns:
+        None. Mutates node_data in place.
+    """
+    for label in path:
+        if label not in node_data:
+            node_data[label] = {
+                "games": 0, "wins": 0, "draws": 0, "losses": 0,
+                "white_acc_sum": 0.0, "white_acc_n": 0,
+                "black_acc_sum": 0.0, "black_acc_n": 0,
+                "players": defaultdict(int),
+            }
+        nd = node_data[label]
+        nd["games"] += 1
+        if result_val == "Win":
+            nd["wins"] += 1
+        elif result_val == "Draw":
+            nd["draws"] += 1
+        else:
+            nd["losses"] += 1
+        if w_acc is not None and pd.notna(w_acc):
+            nd["white_acc_sum"] += w_acc
+            nd["white_acc_n"] += 1
+        if b_acc is not None and pd.notna(b_acc):
+            nd["black_acc_sum"] += b_acc
+            nd["black_acc_n"] += 1
+        nd["players"][player] += 1
+
+
+def _build_node_stats_df(
+    node_data: dict[str, dict],
+    visible_nodes: set[str],
+) -> pd.DataFrame:
+    """Convert accumulated per-node stat dicts into a summary DataFrame.
+
+    Parameters:
+        node_data (dict): Mapping of node label → stat accumulator dict as
+            populated by _accumulate_node_stats.
+        visible_nodes (set[str]): Labels of nodes that appear in the filtered
+            edges DataFrame; unlabelled nodes are excluded.
+
+    Returns:
+        pd.DataFrame with columns: node, games, wins, draws, losses,
+        win_pct, draw_pct, loss_pct, avg_white_accuracy,
+        avg_black_accuracy, players.
+    """
     node_rows = []
     for label, nd in node_data.items():
         if label not in visible_nodes:
@@ -462,8 +485,98 @@ def continuation_flow(
             ),
             "players": dict(nd["players"]),
         })
+    return pd.DataFrame(node_rows)
 
-    return edges_df, pd.DataFrame(node_rows)
+
+def continuation_flow(
+    games_df: pd.DataFrame,
+    opening: dict,
+    min_games: int = 2,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Compute Sankey flow edges and node statistics from opening continuations.
+
+    Iterates over games that passed through the opening position, replays each
+    PGN to verify EPD match, samples continuation names at +1, +2, and +3 full
+    moves beyond the opening, then builds edge counts and per-node win/draw/loss
+    and accuracy statistics.
+
+    Parameters:
+        games_df (pd.DataFrame): Rows of games passing through the opening,
+            as returned by get_games(). Expected columns: game_id, pgn, result,
+            white_accuracy, black_accuracy, club_player.
+        opening (dict): Opening metadata with keys: epd, ply_depth, name.
+        min_games (int): Minimum game count for an edge to be included in output.
+
+    Returns:
+        (edges_df, nodes_df) tuple.
+        edges_df columns: source, target, games.
+        nodes_df columns: node, games, wins, draws, losses, win_pct, draw_pct,
+            loss_pct, avg_white_accuracy, avg_black_accuracy, players.
+        Both DataFrames are empty if there is no data meeting min_games threshold.
+    """
+    if games_df.empty:
+        return pd.DataFrame(), pd.DataFrame()
+
+    target_epd = opening["epd"]
+    ply_depth = opening["ply_depth"]
+    opening_name = opening["name"]
+    root_label = f"Start: {opening_name}"
+
+    edge_counts: dict[tuple[str, str], int] = defaultdict(int)
+    node_data: dict[str, dict] = {}
+    seen_gids: set[str] = set()
+
+    for _, row in games_df.iterrows():
+        gid = row["game_id"]
+        if gid in seen_gids:
+            continue
+        seen_gids.add(gid)
+
+        try:
+            game = chess.pgn.read_game(io.StringIO(row["pgn"]))
+            if game is None:
+                continue
+
+            position = _advance_board_to_opening(game, ply_depth, target_epd)
+            if position is None:
+                continue
+            node, board = position
+
+            continuation_names = _collect_continuation_names(node, board, opening_name)
+            if not continuation_names:
+                continue
+
+            path = [root_label]
+            for depth, name in enumerate(continuation_names, start=1):
+                suffix = "move" if depth == 1 else "moves"
+                path.append(f"After +{depth} {suffix}: {name}")
+
+        except Exception:
+            continue
+
+        for i in range(len(path) - 1):
+            edge_counts[(path[i], path[i + 1])] += 1
+
+        _accumulate_node_stats(
+            node_data, path,
+            row["result"],
+            row.get("white_accuracy"),
+            row.get("black_accuracy"),
+            row["club_player"],
+        )
+
+    if not edge_counts:
+        return pd.DataFrame(), pd.DataFrame()
+
+    edges_df = pd.DataFrame(
+        [{"source": s, "target": t, "games": c} for (s, t), c in edge_counts.items()]
+    )
+    edges_df = edges_df[edges_df["games"] >= min_games].reset_index(drop=True)
+    if edges_df.empty:
+        return pd.DataFrame(), pd.DataFrame()
+
+    visible_nodes = set(edges_df["source"].tolist() + edges_df["target"].tolist())
+    return edges_df, _build_node_stats_df(node_data, visible_nodes)
 
 
 # ── Opening tree context (lineage + continuations) ────────────────────────────

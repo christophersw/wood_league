@@ -42,7 +42,6 @@ _MIN_PLIES = 20  # 10 full moves (white + black)
 
 def _sufficient_moves_subquery():
     """Return subquery of game IDs with analyzed move count >= MIN_PLIES."""
-    """Return a subquery of game_ids with at least _MIN_PLIES analysed plies."""
     return (
         select(GameAnalysis.game_id)
         .join(MoveAnalysis, MoveAnalysis.analysis_id == GameAnalysis.id)
