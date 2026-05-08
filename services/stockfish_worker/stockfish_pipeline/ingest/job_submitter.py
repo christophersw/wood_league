@@ -24,8 +24,8 @@ from datetime import datetime, timezone
 import runpod
 from sqlalchemy import and_, select
 
-from stockfish_pipeline.storage.database import get_session, init_db
-from stockfish_pipeline.storage.models import AnalysisJob, Game
+from wood_league_shared.storage.database import get_session, init_db
+from wood_league_shared.storage.models import AnalysisJob, Game
 
 log = logging.getLogger(__name__)
 

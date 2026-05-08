@@ -81,7 +81,7 @@ def main() -> None:
     Exit code 0 on success, 1 on failure.
     """
     import sys
-    from stockfish_pipeline.storage.database import ENGINE
+    from wood_league_shared.storage.database import ENGINE
 
     try:
         migrate_add_pv_continuations(ENGINE)

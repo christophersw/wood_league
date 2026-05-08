@@ -26,7 +26,7 @@ from sqlalchemy.orm import sessionmaker
 
 # Analysis logic from the copied / pip-installed pipeline package
 from stockfish_pipeline.services.stockfish_service import analyze_pgn
-from stockfish_pipeline.storage.models import (
+from wood_league_shared.storage.models import (
     AnalysisJob,
     Game,
     GameAnalysis,

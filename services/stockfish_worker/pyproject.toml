@@ -1,18 +1,17 @@
 [project]
 name = "wood-league-stockfish-worker"
 version = "0.1.0"
-description = "Stockfish analysis worker for Wood League RunPod"
+description = "RunPod Serverless worker for Stockfish analysis"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-  "runpod>=1.6.0",
-  "chess>=1.10.0",
-  "sqlalchemy>=2.0.0",
-  "psycopg2-binary>=2.9.0",
-  "pydantic-settings>=2.0.0",
-  "zipp>=3.19.1",
-  "python-dotenv>=1.2.2",
+    "wood-league-shared",
+    "runpod>=1.7.0",
+    "pydantic-settings>=2.8.0",
 ]
+
+[tool.uv.sources]
+wood-league-shared = { workspace = true }
 
 [tool.setuptools.packages.find]
 where = ["."]

@@ -4,7 +4,7 @@ import argparse
 import sys
 
 from stockfish_pipeline.config import get_settings
-from stockfish_pipeline.ingest.sync_service import ChessComSyncService
+from wood_league_shared.ingest.sync_service import ChessComSyncService
 
 
 def _render_bar(current: int, total: int, width: int = 28) -> str:
@@ -31,7 +31,10 @@ def main() -> None:
     if not usernames:
         raise SystemExit("No usernames provided. Use --usernames or set CHESS_COM_USERNAMES.")
 
-    service = ChessComSyncService()
+    service = ChessComSyncService(
+        ingest_month_limit=settings.ingest_month_limit,
+        user_agent=settings.chess_com_user_agent,
+    )
     results = []
 
     for username in usernames:

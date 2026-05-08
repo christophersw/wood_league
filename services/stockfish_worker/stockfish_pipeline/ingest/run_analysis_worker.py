@@ -89,7 +89,7 @@ def main() -> None:
     args = parser.parse_args()
 
     from stockfish_pipeline.ingest.enqueue_analysis import enqueue_unanalyzed, queue_status
-    from stockfish_pipeline.storage.database import init_db
+    from wood_league_shared.storage.database import init_db
 
     init_db()
 

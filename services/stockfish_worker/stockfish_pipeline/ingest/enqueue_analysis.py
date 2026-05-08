@@ -3,8 +3,8 @@ from __future__ import annotations
 
 from sqlalchemy import select, func, and_
 
-from stockfish_pipeline.storage.database import get_session, init_db
-from stockfish_pipeline.storage.models import AnalysisJob, Game, GameAnalysis
+from wood_league_shared.storage.database import get_session, init_db
+from wood_league_shared.storage.models import AnalysisJob, Game, GameAnalysis
 
 
 def enqueue_unanalyzed(depth: int = 20, priority: int = 0, limit: int | None = None) -> int:
