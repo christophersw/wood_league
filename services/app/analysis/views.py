@@ -46,7 +46,7 @@ def _queue_context() -> dict:
     engine_rows = []
     for eng in engines:
         health, error = services.runpod_health(eng)
-        row = {"name": eng, "runpod": health, "runpod_error": error}
+        row: dict = {"name": eng, "runpod": health, "runpod_error": error}
         for s in statuses:
             row[s] = _engine_metric(by_engine, eng, s)
         engine_rows.append(row)
