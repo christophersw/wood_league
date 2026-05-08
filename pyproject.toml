@@ -6,3 +6,10 @@ members = [
     "services/stockfish_worker",
     "services/lc0_worker",
 ]
+
+[dependency-groups]
+dev = [
+    "mypy>=2.0.0",
+    "pytest>=9.0.3",
+    "pytest-cov>=7.1.0",
+]

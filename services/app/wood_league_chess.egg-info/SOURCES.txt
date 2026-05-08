@@ -23,7 +23,11 @@ analysis/tests.py
 analysis/urls.py
 analysis/views.py
 analysis/migrations/0001_initial.py
+analysis/migrations/0002_add_pv_san_columns.py
+analysis/migrations/0003_analysisjob_claimed_at_and_more.py
 analysis/migrations/__init__.py
+analysis/services/__init__.py
+analysis/services/jobs.py
 app/__init__.py
 app/config.py
 app/ingest/__init__.py
@@ -42,7 +46,6 @@ app/services/game_search_service.py
 app/services/history_service.py
 app/services/lc0_service.py
 app/services/opening_analysis_service.py
-app/services/opening_book.py
 app/services/opening_labels.py
 app/services/opening_position_service.py
 app/services/stockfish_service.py

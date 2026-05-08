@@ -1,3 +1,4 @@
+wood-league-shared @ git+https://github.com/christophersw/wood_league.git#subdirectory=packages/shared
 django>=5.0
 psycopg2-binary
 gunicorn

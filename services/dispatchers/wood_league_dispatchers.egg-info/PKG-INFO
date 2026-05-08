@@ -4,10 +4,8 @@ Version: 0.1.0
 Summary: Unified Railway dispatchers for Stockfish and Lc0 RunPod endpoints
 Requires-Python: >=3.11
 Description-Content-Type: text/markdown
+Requires-Dist: wood-league-shared @ git+https://github.com/christophersw/wood_league.git#subdirectory=packages/shared
 Requires-Dist: runpod>=1.7.0
-Requires-Dist: sqlalchemy>=2.0.29
-Requires-Dist: psycopg[binary]>=3.2.0
-Requires-Dist: python-chess>=1.999
 Provides-Extra: dev
 Requires-Dist: pytest>=8.2.0; extra == "dev"
 

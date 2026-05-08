@@ -1,7 +1,5 @@
+wood-league-shared @ git+https://github.com/christophersw/wood_league.git#subdirectory=packages/shared
 runpod>=1.7.0
-sqlalchemy>=2.0.29
-psycopg[binary]>=3.2.0
-python-chess>=1.999
 
 [dev]
 pytest>=8.2.0

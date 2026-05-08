@@ -4,7 +4,7 @@ lc0_worker/__init__.py
 lc0_worker/services/__init__.py
 lc0_worker/services/lc0_service.py
 lc0_worker/storage/__init__.py
-lc0_worker/storage/models.py
+lc0_worker/storage/migrate_add_pv_continuations.py
 wood_league_lc0_runpod.egg-info/PKG-INFO
 wood_league_lc0_runpod.egg-info/SOURCES.txt
 wood_league_lc0_runpod.egg-info/dependency_links.txt

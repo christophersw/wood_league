@@ -6,6 +6,11 @@
       "Bash(bandit *)",
       "Bash(/opt/homebrew/bin/ruff *)",
       "Bash(/opt/homebrew/bin/snyk code test *)",
+      "Bash(/opt/homebrew/bin/semgrep *)",
+      "Bash(/opt/homebrew/Cellar/python@3.9/3.9.25/Frameworks/Python.framework/Versions/3.9/bin/radon *)",
+      "Bash(/opt/homebrew/Cellar/python@3.9/3.9.25/Frameworks/Python.framework/Versions/3.9/bin/xenon *)",
+      "Bash(.venv/bin/mypy *)",
+      "Bash(.venv/bin/pytest *)",
       "mcp__vexp__run_pipeline",
       "mcp__vexp__get_skeleton",
       "Bash(git-issues list *)",
@@ -42,10 +47,10 @@
         "hooks": [
           {
             "type": "command",
-            "command": "f=$(jq -r '.tool_input.file_path // empty'); [[ \"$f\" == *.py ]] || exit 0; errors=\"\"; /opt/homebrew/bin/ruff check \"$f\" || errors=\"ruff:FAIL $errors\"; /Users/christopherwebster/.local/bin/bandit -ll -q \"$f\" 2>/dev/null || errors=\"bandit:FAIL $errors\"; /opt/homebrew/bin/snyk code test \"$f\" 2>/dev/null || errors=\"snyk:FAIL $errors\"; [[ -z \"$errors\" ]] && exit 0 || { echo \"Security/lint issues found: $errors\"; exit 2; }",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/quality-gate.sh",
             "asyncRewake": true,
-            "timeout": 60,
-            "statusMessage": "Running ruff, bandit, Snyk..."
+            "timeout": 120,
+            "statusMessage": "Running quality gate: ruff → bandit+semgrep → radon/xenon → mypy → pytest..."
           }
         ]
       }
