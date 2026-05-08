@@ -5,7 +5,7 @@ description = "Unified Railway dispatchers for Stockfish and Lc0 RunPod endpoint
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "wood-league-shared",
+    "wood-league-shared @ git+https://github.com/christophersw/wood_league.git#subdirectory=packages/shared",
     "runpod>=1.7.0",
 ]
 
