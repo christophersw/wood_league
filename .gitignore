@@ -1,0 +1,32 @@
+# Old sub-repo directories (will be removed after git subtree adds)
+/wood_league_app/
+/wood_league_dispatchers/
+/wood_league_stockfish_runpod/
+/wood_league_lc0_runpod/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+.snyk-venv/
+*.egg-info/
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+
+# Environment
+.env
+
+# vexp runtime (index files tracked separately)
+.vexp/daemon.log
+.vexp/daemon.pid
+.vexp/daemon.sock
+.vexp/healthy
+.vexp/index.db-shm
+.vexp/index.db-wal
+
+# OS
+.DS_Store
