@@ -1,4 +1,12 @@
-"""Analysis status data queries."""
+"""
+Title: services_queries.py — Analysis Status Data Queries
+Description: Provides query functions for analysis job queue status, worker heartbeats,
+    and RunPod health. Previously lived in services.py; renamed to avoid shadowing the
+    analysis/services/ package directory.
+Changelog:
+    2026-05-08 C. Webster — Renamed from services.py to resolve Python package/module
+        name collision with the analysis/services/ directory.
+"""
 
 from __future__ import annotations
 
