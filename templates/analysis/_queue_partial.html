@@ -1,0 +1,93 @@
+{# Auto-polled HTMX partial — queue metrics + RunPod health #}
+
+{# ── Overall metrics ──────────────────────────────────────────────────── #}
+<div class="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-6">
+  <div class="border border-peat/20 bg-cream p-3 text-center">
+    <p class="font-mono text-xs text-slate uppercase tracking-wide">Total</p>
+    <p class="font-display text-2xl text-ebony">{{ total|default:0 }}</p>
+  </div>
+  <div class="border border-peat/20 bg-cream p-3 text-center">
+    <p class="font-mono text-xs text-slate uppercase tracking-wide">Pending</p>
+    <p class="font-display text-2xl text-ebony">{{ totals.pending|default:0 }}</p>
+  </div>
+  <div class="border border-peat/20 bg-cream p-3 text-center">
+    <p class="font-mono text-xs text-slate uppercase tracking-wide">Submitted</p>
+    <p class="font-display text-2xl text-ebony">{{ totals.submitted|default:0 }}</p>
+  </div>
+  <div class="border border-peat/20 bg-cream p-3 text-center">
+    <p class="font-mono text-xs text-slate uppercase tracking-wide">Running</p>
+    <p class="font-display text-2xl text-ebony">{{ totals.running|default:0 }}</p>
+  </div>
+  <div class="border border-peat/20 bg-cream p-3 text-center">
+    <p class="font-mono text-xs text-slate uppercase tracking-wide">Failed</p>
+    <p class="font-display text-2xl {% if totals.failed %}text-crimson{% else %}text-ebony{% endif %}">
+      {{ totals.failed|default:0 }}
+    </p>
+  </div>
+</div>
+
+{% if total %}
+<div class="mb-6">
+  <div class="h-2 bg-linen border border-peat/20 rounded overflow-hidden">
+    <div class="h-full bg-forest" style="width: {{ progress_pct }}%"></div>
+  </div>
+  <p class="font-mono text-xs text-slate mt-1">{{ progress_pct }}% complete ({{ completed }}/{{ total }})</p>
+</div>
+{% endif %}
+
+{# ── Per-engine breakdown ─────────────────────────────────────────────── #}
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+  {% for eng in engine_rows %}
+  <div class="border border-peat/20 rounded p-4">
+    <h3 class="font-mono text-xs uppercase tracking-widest text-peat mb-3">{{ eng.name }}</h3>
+    <div class="grid grid-cols-5 gap-1 text-center mb-4">
+      <div><p class="font-mono text-xs text-slate">Pending</p><p class="font-mono text-lg text-ebony">{{ eng.pending }}</p></div>
+      <div><p class="font-mono text-xs text-slate">Submitted</p><p class="font-mono text-lg text-ebony">{{ eng.submitted }}</p></div>
+      <div><p class="font-mono text-xs text-slate">Running</p><p class="font-mono text-lg text-ebony">{{ eng.running }}</p></div>
+      <div><p class="font-mono text-xs text-slate">Done</p><p class="font-mono text-lg text-moss">{{ eng.completed }}</p></div>
+      <div><p class="font-mono text-xs text-slate">Failed</p><p class="font-mono text-lg {% if eng.failed %}text-crimson{% else %}text-ebony{% endif %}">{{ eng.failed }}</p></div>
+    </div>
+
+    {# RunPod health #}
+    <div class="pt-3 border-t border-peat/10">
+      <p class="font-mono text-xs text-peat uppercase tracking-wide mb-2">RunPod</p>
+      {% if eng.runpod_error %}
+      <p class="font-mono text-xs text-slate">{{ eng.runpod_error }}</p>
+      {% else %}
+      <div class="grid grid-cols-3 gap-1 text-center">
+        <div><p class="font-mono text-xs text-slate">Workers</p><p class="font-mono text-sm font-bold text-forest">{{ eng.runpod.workers_running }}r / {{ eng.runpod.workers_idle }}i</p></div>
+        <div><p class="font-mono text-xs text-slate">Queued</p><p class="font-mono text-sm font-bold text-ebony">{{ eng.runpod.jobs_in_queue }}</p></div>
+        <div><p class="font-mono text-xs text-slate">Failed</p><p class="font-mono text-sm font-bold {% if eng.runpod.jobs_failed %}text-crimson{% else %}text-ebony{% endif %}">{{ eng.runpod.jobs_failed }}</p></div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+{# ── Worker heartbeats ─────────────────────────────────────────────────── #}
+{% if workers %}
+<div>
+  <h3 class="font-mono text-xs uppercase tracking-widest text-peat mb-2">Local Workers</h3>
+  <div class="overflow-x-auto">
+    <table class="wc-table">
+      <thead>
+        <tr><th>Worker</th><th>Status</th><th>Last Seen</th><th>Current Game</th><th>Done</th><th>Failed</th><th>CPU</th></tr>
+      </thead>
+      <tbody>
+        {% for w in workers %}
+        <tr>
+          <td class="font-mono text-xs">{{ w.worker_id|truncatechars:20 }}</td>
+          <td><span class="font-mono text-xs {% if w.status == 'running' %}text-forest{% else %}text-slate{% endif %}">{{ w.status }}</span></td>
+          <td class="font-mono text-xs text-peat">{{ w.last_seen|date:"d M H:i" }}</td>
+          <td class="font-mono text-xs">{{ w.current_game_id|default:"—"|truncatechars:16 }}</td>
+          <td class="font-mono text-xs text-moss">{{ w.jobs_completed }}</td>
+          <td class="font-mono text-xs {% if w.jobs_failed %}text-crimson{% else %}text-slate{% endif %}">{{ w.jobs_failed }}</td>
+          <td class="font-mono text-xs text-slate">{{ w.cpu_model|default:"—"|truncatechars:24 }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}

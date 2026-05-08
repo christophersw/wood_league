@@ -1,0 +1,158 @@
+erDiagram
+    players {
+        int id PK
+        string username UK "Chess.com username (lowercase)"
+        string display_name "Display label"
+    }
+
+    users {
+        int id PK
+        string email UK "Application login"
+        string password_hash
+        string role "member/admin"
+        boolean is_active
+        datetime created_at
+    }
+
+    games {
+        string id PK "Game UUID from Chess.com"
+        datetime played_at
+        string time_control "e.g. 600, 180+2"
+        string white_username
+        string black_username
+        int white_rating
+        int black_rating
+        string result_pgn "1-0 / 0-1 / 1/2-1/2"
+        string winner_username "NULL for draws"
+        string eco_code "e.g. B90"
+        string opening_name "Chess.com opening name"
+        string lichess_opening "Lichess opening (more specific)"
+        text pgn
+    }
+
+    game_participants {
+        int id PK
+        string game_id FK
+        int player_id FK
+        string color "White or Black"
+        string opponent_username
+        int player_rating
+        int opponent_rating
+        string result "Win / Loss / Draw"
+        float quality_score "Stockfish accuracy 0-100"
+        int blunder_count
+        int mistake_count
+        int inaccuracy_count
+        float acpl "Average centipawn loss"
+    }
+
+    game_analysis {
+        int id PK
+        string game_id FK UK
+        datetime analyzed_at
+        int engine_depth
+        float summary_cp "Final position eval (white-relative)"
+        float white_accuracy
+        float black_accuracy
+        float white_acpl
+        float black_acpl
+        int white_blunders
+        int white_mistakes
+        int white_inaccuracies
+        int black_blunders
+        int black_mistakes
+        int black_inaccuracies
+    }
+
+    move_analysis {
+        int id PK
+        int analysis_id FK
+        int ply
+        string san
+        text fen
+        float cp_eval "White-relative centipawn eval"
+        float cpl "Centipawn loss for the mover"
+        string best_move
+        string arrow_uci
+        string classification "Brilliant/Great/Best/Inaccuracy/Mistake/Blunder"
+    }
+
+    lc0_game_analysis {
+        int id PK
+        string game_id FK UK
+        datetime analyzed_at
+        int engine_nodes "MCTS node budget"
+        string network_name "Lc0 weights file"
+        float white_win_prob
+        float white_draw_prob
+        float white_loss_prob
+        float black_win_prob
+        float black_draw_prob
+        float black_loss_prob
+        int white_blunders
+        int white_mistakes
+        int white_inaccuracies
+        int black_blunders
+        int black_mistakes
+        int black_inaccuracies
+    }
+
+    lc0_move_analysis {
+        int id PK
+        int analysis_id FK
+        int ply
+        string san
+        text fen
+        int wdl_win "White win permille (sums to 1000)"
+        int wdl_draw
+        int wdl_loss
+        float cp_equiv "Q-derived centipawn equivalent"
+        string best_move
+        string arrow_uci
+        float move_win_delta "Win% drop for the mover"
+        string classification
+    }
+
+    analysis_jobs {
+        int id PK
+        string game_id FK
+        string status "pending/running/completed/failed"
+        int priority
+        string engine "stockfish/lc0"
+        int depth "Stockfish depth or Lc0 node budget"
+        datetime created_at
+        datetime started_at
+        datetime completed_at
+        string worker_id "Logical link to worker_heartbeats"
+        text error_message
+        int retry_count
+    }
+
+    worker_heartbeats {
+        string worker_id PK
+        datetime last_seen
+        string status "starting/analyzing/idle/error/stopped"
+        string current_game_id "Informational only"
+        int jobs_completed
+        int jobs_failed
+        datetime started_at
+    }
+
+    opening_book {
+        int id PK
+        string eco "e.g. B90"
+        string name "Opening name"
+        text pgn "Moves reaching this position"
+        string epd UK "EPD string - lookup key"
+    }
+
+    players ||--o{ game_participants : "tracked player"
+    games ||--o{ game_participants : "player/game slice"
+
+    games ||--o| game_analysis : "Stockfish summary"
+    game_analysis ||--o{ move_analysis : "per-ply Stockfish evals"
+
+    games ||--o| lc0_game_analysis : "Lc0 summary"
+    lc0_game_analysis ||--o{ lc0_move_analysis : "per-ply WDL evals"
+
+    games ||--o{ analysis_jobs : "analysis queue / run history"

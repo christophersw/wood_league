@@ -1,0 +1,34 @@
+{# Engine Lines board partial — shows continuation after a clicked arrow #}
+<div id="engine-line-board-inner" style="display:flex;flex-direction:column;gap:0;" data-engine-line="true">
+
+  {# JSON data containers — read by JS below #}
+  <script type="application/json" id="engine-line-frames-json">{{ frames_json|safe }}</script>
+  <script type="application/json" id="engine-line-arrows-json">{{ arrow_labels_json|safe }}</script>
+  <script type="application/json" id="engine-line-san-json">{{ san_list_json|safe }}</script>
+
+  {# Board SVG container #}
+  <div class="board-wrap" id="engine-line-board-svg-wrap"></div>
+  <div class="engine-line-player-spacer" id="engine-line-player-spacer" aria-hidden="true"></div>
+
+</div>
+
+<script>
+(function () {
+  if (window.WoodLeagueEngineLines && typeof window.WoodLeagueEngineLines.clearRequestState === 'function') {
+    window.WoodLeagueEngineLines.clearRequestState();
+  }
+
+  var engineLinesHeader = document.getElementById('engine-lines-header');
+  if (engineLinesHeader) {
+    engineLinesHeader.textContent = '{{ context_label|escapejs }}';
+  }
+
+  // Call setupEngineLineBoard to initialize controls
+  if (window.setupEngineLineBoard) {
+    var framesJson = document.getElementById('engine-line-frames-json').textContent;
+    var arrowLabelsJson = document.getElementById('engine-line-arrows-json').textContent;
+    var sanListJson = document.getElementById('engine-line-san-json').textContent;
+    window.setupEngineLineBoard(framesJson, arrowLabelsJson, sanListJson);
+  }
+})();
+</script>

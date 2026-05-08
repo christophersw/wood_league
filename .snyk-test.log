@@ -1,0 +1,16 @@
+
+ ERROR   Unspecified Error (SNYK-CLI-0000)
+                                                                                        
+           Failed to get dependencies for all 2 potential projects.                     
+                                                                                        
+           /Users/christopherwebster/Projects/woodland_app/requirements.txt:            
+           Something went wrong getting dependencies                                    
+                                                                                        
+           /Users/christopherwebster/Projects/woodland_app/.venv/share/jupyter/labexten 
+           sions/jupyterlab-plotly/package.json:                                        
+           Missing node_modules folder: we can't test without dependencies.             
+           Please run 'npm install' first.                                              
+
+Docs:    https://docs.snyk.io/scan-with-snyk/error-catalog#snyk-cli-0000 
+                                                                         
+ID:      urn:snyk:interaction:106567e2-a438-429d-8784-aa490ba0f7ec 

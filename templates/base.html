@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="csrf-token" content="{{ csrf_token }}">
+  <title>{% block title %}Wood League Chess{% endblock %}</title>
+  {% load static %}
+  <link rel="stylesheet" href="{% static 'css/tailwind.css' %}">
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+
+  {% include "partials/_messages.html" %}
+
+  {# ── Masthead ──────────────────────────────────────────────────────────── #}
+  <div class="site-accent"></div>
+  <header class="site-header">
+    <nav class="site-nav" id="site-nav">
+
+      {# Brand #}
+      <a href="{% url 'dashboard:index' %}" class="site-brand">
+        <span class="site-brand-title">Wood League</span>
+        <span class="site-brand-sub">Chess · Analytics</span>
+      </a>
+
+      {# Desktop links #}
+      <div class="site-nav-links" id="nav-links">
+        <a href="{% url 'dashboard:index' %}"
+           class="nav-link {% if request.resolver_match.namespace == 'dashboard' %}nav-link--active{% endif %}">
+          Dashboard
+        </a>
+        <a href="{% url 'search:index' %}"
+           class="nav-link {% if request.resolver_match.namespace == 'search' %}nav-link--active{% endif %}">
+          Game Search
+        </a>
+        {% if user.is_authenticated and user.role == 'admin' %}
+        <span class="nav-divider"></span>
+        <a href="{% url 'players:members' %}"
+           class="nav-link {% if request.resolver_match.namespace == 'players' %}nav-link--active{% endif %}">
+          Members
+        </a>
+        <a href="{% url 'analysis:status' %}"
+           class="nav-link {% if request.resolver_match.namespace == 'analysis' %}nav-link--active{% endif %}">
+          Analysis
+        </a>
+        {% endif %}
+        {% if user.is_authenticated %}
+        <span class="nav-divider"></span>
+        <span class="nav-user">{{ user.email }}</span>
+        <form method="post" action="{% url 'accounts:logout' %}" style="margin:0">
+          {% csrf_token %}
+          <button type="submit" class="nav-link" style="background:none;cursor:pointer;">Sign out</button>
+        </form>
+        {% endif %}
+      </div>
+
+      {# Mobile hamburger #}
+      <button class="nav-burger" id="nav-burger"
+              onclick="document.getElementById('nav-drawer').classList.toggle('is-open')"
+              aria-label="Toggle navigation">
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
+
+    </nav>
+
+    {# Mobile drawer #}
+    <div class="site-nav-drawer" id="nav-drawer">
+      <a href="{% url 'dashboard:index' %}"
+         class="nav-link {% if request.resolver_match.namespace == 'dashboard' %}nav-link--active{% endif %}">
+        Dashboard
+      </a>
+      <a href="{% url 'search:index' %}"
+         class="nav-link {% if request.resolver_match.namespace == 'search' %}nav-link--active{% endif %}">
+        Game Search
+      </a>
+      {% if user.is_authenticated and user.role == 'admin' %}
+      <a href="{% url 'players:members' %}"
+         class="nav-link {% if request.resolver_match.namespace == 'players' %}nav-link--active{% endif %}">
+        Members
+      </a>
+      <a href="{% url 'analysis:status' %}"
+         class="nav-link {% if request.resolver_match.namespace == 'analysis' %}nav-link--active{% endif %}">
+        Analysis
+      </a>
+      {% endif %}
+      {% if user.is_authenticated %}
+      <form method="post" action="{% url 'accounts:logout' %}" style="margin:0">
+        {% csrf_token %}
+        <button type="submit" class="nav-link" style="background:none;cursor:pointer;width:100%;text-align:left;">
+          Sign out
+        </button>
+      </form>
+      {% endif %}
+    </div>
+  </header>
+
+  {# ── HTMX loading indicator ────────────────────────────────────────────── #}
+  <div id="htmx-indicator" class="htmx-indicator"
+       style="position:fixed;top:1rem;right:1.5rem;z-index:200;">
+    {% include "partials/_spinner.html" %}
+  </div>
+
+  {# ── Page content ──────────────────────────────────────────────────────── #}
+  <main class="site-main" id="main-content">
+    <div class="page-container">
+      {% block content %}{% endblock %}
+    </div>
+  </main>
+
+  <script src="{% static 'js/htmx.min.js' %}"></script>
+  <script src="{% static 'js/plotly.min.js' %}"></script>
+
+  {# Configure HTMX to use CSRF token from meta tag #}
+  <script>
+    document.body.addEventListener('htmx:configRequest', function(e) {
+      const token = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+      e.detail.headers['X-CSRFToken'] = token;
+    });
+  </script>
+
+  {# Close mobile drawer on outside click #}
+  <script>
+  document.addEventListener('click', function(e) {
+    var nav = document.getElementById('site-nav');
+    var drawer = document.getElementById('nav-drawer');
+    if (drawer && nav && !nav.contains(e.target)) {
+      drawer.classList.remove('is-open');
+    }
+  });
+  </script>
+
+  {% block extra_js %}{% endblock %}
+</body>
+</html>

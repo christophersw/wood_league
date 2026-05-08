@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+
+{% block title %}Opening Not Found — Wood League Chess{% endblock %}
+
+{% block content %}
+<div class="max-w-lg mx-auto mt-16 text-center">
+  <h1 class="font-display text-2xl text-forest mb-4">Opening Not Found</h1>
+  <p class="font-mono text-sm text-slate mb-6">Opening #{{ opening_id }} does not exist.</p>
+  <a href="{% url 'dashboard:index' %}"
+     class="inline-block border border-ebony text-forest font-mono text-xs uppercase tracking-wide px-4 py-2 hover:bg-ebony hover:text-parchment transition-colors">
+    ← Back to Dashboard
+  </a>
+</div>
+{% endblock %}

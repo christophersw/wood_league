@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Dashboard — Wood League Chess{% endblock %}
+
+{% block content %}
+
+{# ── Page hero ─────────────────────────────────────────────────────────── #}
+<div class="page-hero">
+  <div>
+    <h1>Wood League Chess Club</h1>
+    <p class="page-hero-sub">Club overview — accuracy trends, best played games, and all-time records.</p>
+  </div>
+</div>
+
+{# ── Filters ───────────────────────────────────────────────────────────── #}
+<div class="filter-panel" id="dashboard-filters">
+  <div class="flex flex-wrap items-end gap-6">
+    <div>
+      <label class="wc-label">Timeframe</label>
+      <select id="filter-days" name="days"
+              class="wc-select" style="width:auto;min-width:10rem;"
+              hx-get="/_partials/dashboard/accuracy/"
+              hx-trigger="change"
+              hx-target="#accuracy-chart-container"
+              hx-include="#dashboard-filters">
+        {% for value, label in timeframe_options %}
+        <option value="{{ value }}" {% if value == "90" %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div>
+      <label class="wc-label">Players</label>
+      <div class="flex flex-wrap gap-3 mt-1" id="player-checkboxes">
+        {% for member in all_members %}
+        <label class="flex items-center gap-1.5 cursor-pointer"
+               style="font-family:var(--font-mono);font-size:.68rem;letter-spacing:.04em;color:var(--color-ebony);">
+          <input type="checkbox" name="players" value="{{ member }}" checked
+                 style="accent-color:var(--color-forest);"
+                 hx-trigger="change"
+                 hx-get="/_partials/dashboard/accuracy/"
+                 hx-target="#accuracy-chart-container"
+                 hx-include="#dashboard-filters">
+          {{ member }}
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Most Recent Games ─────────────────────────────────────────────────── #}
+<div class="pg-section">
+  <div class="pg-head">
+    <span class="pg-title">Most Recent Games</span>
+    <span class="pg-caption">Last checked: {{ last_check_time }}</span>
+  </div>
+  {% if recent_games %}
+  <div class="overflow-x-auto">
+    <table class="wc-table">
+      <thead>
+        <tr>
+          <th>#</th><th>White</th><th>Black</th>
+          <th>Opening</th><th>Accuracy</th><th>Date</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for g in recent_games %}
+        <tr>
+          <td class="font-mono text-xs text-peat">#{{ forloop.counter }}</td>
+          <td class="font-serif">♙ {{ g.white }}</td>
+          <td class="font-serif">♟ {{ g.black }}</td>
+          <td class="font-mono text-xs text-slate">{{ g.opening_name|truncatechars:40 }}</td>
+          <td class="font-mono text-xs font-bold text-forest">
+            {% if g.avg_accuracy %}{{ g.avg_accuracy|floatformat:1 }}%{% else %}—{% endif %}
+          </td>
+          <td class="font-mono text-xs text-peat">{{ g.played_at|date:"d M Y" }}</td>
+          <td>
+            {% if g.slug %}
+            <a href="{% url 'games:analysis' g.slug %}" class="wc-btn">Open</a>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="font-mono text-sm text-slate">No analysed games found.</p>
+  {% endif %}
+</div>
+
+{# ── Accuracy Chart ────────────────────────────────────────────────────── #}
+<div class="pg-section">
+  <div class="pg-head">
+    <span class="pg-title">Member Accuracy Trends</span>
+  </div>
+  <div id="accuracy-chart-container"
+       hx-get="/_partials/dashboard/accuracy/?days=90"
+       hx-trigger="load"
+       hx-indicator="#htmx-indicator">
+    {% include "partials/_spinner.html" %}
+  </div>
+</div>
+
+{# ── ELO Chart ─────────────────────────────────────────────────────────── #}
+<div class="pg-section">
+  <div class="pg-head">
+    <span class="pg-title">Member ELO Trends</span>
+  </div>
+  <div id="elo-chart-container"
+       hx-get="/_partials/dashboard/elo/?days=90"
+       hx-trigger="load"
+       hx-indicator="#htmx-indicator">
+    {% include "partials/_spinner.html" %}
+  </div>
+</div>
+
+{# ── Opening Continuations ─────────────────────────────────────────────── #}
+<div class="pg-section">
+  <div class="pg-head">
+    <span class="pg-title">Opening Continuations</span>
+    <span class="pg-caption">Click a node to see stats for that path</span>
+  </div>
+  <div id="sankey-chart-container"
+       hx-get="/_partials/dashboard/sankey/?days=90"
+       hx-trigger="load"
+       hx-indicator="#htmx-indicator">
+    {% include "partials/_spinner.html" %}
+  </div>
+  <div id="opening-node-stats" class="mt-4"></div>
+</div>
+
+{# ── Best Recent Games ─────────────────────────────────────────────────── #}
+<div class="pg-section">
+  <div class="pg-head">
+    <span class="pg-title">Best Played Games — Recent</span>
+    <span class="pg-caption">Top 10 · last 30 days · combined accuracy</span>
+  </div>
+  <div id="best-recent-container"
+       hx-get="/_partials/dashboard/best-recent/?days=30"
+       hx-trigger="load"
+       hx-indicator="#htmx-indicator">
+    {% include "partials/_spinner.html" %}
+  </div>
+</div>
+
+{# ── Best All-Time Games ───────────────────────────────────────────────── #}
+<div class="pg-section">
+  <div class="pg-head">
+    <span class="pg-title">Best Club Games — All Time</span>
+    <span class="pg-caption">10 best games ever · lowest combined ACPL</span>
+  </div>
+  <div id="best-alltime-container"
+       hx-get="/_partials/dashboard/best-alltime/"
+       hx-trigger="load"
+       hx-indicator="#htmx-indicator">
+    {% include "partials/_spinner.html" %}
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener("plotly_click", function(e) {
+  var detail = e.detail;
+  if (!detail || !detail.points || !detail.points.length) return;
+  var pt = detail.points[0];
+  var label = pt.label || (pt.customdata && pt.customdata[0]) || null;
+  if (!label) {
+    var labels = JSON.parse(document.getElementById("sankey-labels-data").textContent || "[]");
+    if (pt.pointNumber != null && labels[pt.pointNumber]) label = labels[pt.pointNumber];
+  }
+  if (!label) return;
+  htmx.ajax("POST", "/_partials/dashboard/opening-stats/", {
+    target: "#opening-node-stats",
+    swap: "innerHTML",
+    values: { node: label, days: document.getElementById("filter-days").value }
+  });
+});
+</script>
+{% endblock %}

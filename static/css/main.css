@@ -1,0 +1,653 @@
+@import "tailwindcss";
+
+/* ── Self-hosted fonts ───────────────────────────────────────────────────── */
+
+@font-face {
+  font-family: 'EB Garamond';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('../fonts/ebgaramond-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'EB Garamond';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url('../fonts/ebgaramond-400i.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'EB Garamond';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('../fonts/ebgaramond-500.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'EB Garamond';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('../fonts/ebgaramond-600.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Playfair Display SC';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('../fonts/playfairdisplaysc-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Playfair Display SC';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('../fonts/playfairdisplaysc-700.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'DM Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('../fonts/dmmono-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'DM Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('../fonts/dmmono-500.woff2') format('woff2');
+}
+
+/* ── Design tokens ───────────────────────────────────────────────────────── */
+
+@theme {
+  --color-parchment:  #F5F0E8;
+  --color-cream:      #FAF7F0;
+  --color-ebony:      #1A1410;
+  --color-forest:     #1A3A2A;
+  --color-moss:       #4A7A6A;
+  --color-peat:       #5C4A2A;
+  --color-whisky:     #8B6914;
+  --color-slate:      #8A8070;
+  --color-crimson:    #8B1A1A;
+  --color-vermilion:  #C0392B;
+  --color-gold:       #D4A843;
+  --color-sky:        #4A6E8A;
+
+  --font-serif:   "EB Garamond",         "Cormorant Garamond", Georgia,  serif;
+  --font-display: "Playfair Display SC", "Playfair Display",   Georgia,  serif;
+  --font-mono:    "DM Mono",             "Courier New",        monospace;
+}
+
+/* ── Base ────────────────────────────────────────────────────────────────── */
+
+@layer base {
+  html { scroll-behavior: smooth; }
+
+  body {
+    background-color: var(--color-parchment);
+    color: var(--color-ebony);
+    font-family: var(--font-serif);
+    font-size: 1.0625rem;
+    line-height: 1.6;
+    min-height: 100dvh;
+  }
+
+  h1, h2, h3, h4 {
+    font-family: var(--font-display);
+    font-weight: 700;
+    line-height: 1.15;
+    letter-spacing: 0.02em;
+  }
+
+  a { color: inherit; }
+
+  ::selection {
+    background: var(--color-gold);
+    color: var(--color-ebony);
+  }
+}
+
+/* ── Components ──────────────────────────────────────────────────────────── */
+
+@layer components {
+
+  /* ── Site header / masthead ──────────────────────────────────────────── */
+
+  .site-accent {
+    height: 4px;
+    background: var(--color-crimson);
+  }
+
+  .site-header {
+    background: var(--color-ebony);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    box-shadow: 0 1px 0 color-mix(in srgb, var(--color-gold) 25%, transparent);
+  }
+
+  .site-nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 2.5rem;
+    max-width: 90rem;
+    margin-inline: auto;
+    gap: 1rem;
+  }
+
+  .site-brand {
+    display: flex;
+    flex-direction: column;
+    text-decoration: none;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+
+  .site-brand-title {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 1.05rem;
+    letter-spacing: 0.1em;
+    color: var(--color-parchment);
+    text-transform: uppercase;
+  }
+
+  .site-brand-sub {
+    font-family: var(--font-mono);
+    font-size: 0.52rem;
+    font-weight: 500;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--color-gold);
+    margin-top: 2px;
+  }
+
+  .site-nav-links {
+    display: flex;
+    align-items: center;
+    gap: 0;
+  }
+
+  .nav-link {
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: color-mix(in srgb, var(--color-parchment) 65%, transparent);
+    text-decoration: none;
+    padding: 0.4rem 0.8rem;
+    border: 1px solid transparent;
+    transition: color 0.15s, border-color 0.15s;
+    white-space: nowrap;
+  }
+
+  .nav-link:hover {
+    color: var(--color-parchment);
+    border-color: color-mix(in srgb, var(--color-parchment) 22%, transparent);
+  }
+
+  .nav-link--active {
+    color: var(--color-gold);
+    border-color: color-mix(in srgb, var(--color-gold) 40%, transparent);
+  }
+
+  .nav-divider {
+    width: 1px;
+    height: 1rem;
+    background: color-mix(in srgb, var(--color-parchment) 18%, transparent);
+    margin: 0 0.5rem;
+    flex-shrink: 0;
+  }
+
+  .nav-user {
+    font-family: var(--font-mono);
+    font-size: 0.58rem;
+    letter-spacing: 0.06em;
+    color: color-mix(in srgb, var(--color-parchment) 40%, transparent);
+    padding: 0 0.5rem;
+    max-width: 13rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Mobile burger button */
+  .nav-burger {
+    display: none;
+    flex-direction: column;
+    justify-content: center;
+    gap: 5px;
+    padding: 0.5rem;
+    background: none;
+    border: 1px solid color-mix(in srgb, var(--color-parchment) 22%, transparent);
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .nav-burger span {
+    display: block;
+    width: 20px;
+    height: 1.5px;
+    background: var(--color-parchment);
+    transition: transform 0.2s, opacity 0.2s;
+  }
+
+  /* Mobile drawer */
+  .site-nav-drawer {
+    display: none;
+    flex-direction: column;
+    padding: 0.5rem 2.5rem 1rem;
+    border-top: 1px solid color-mix(in srgb, var(--color-parchment) 12%, transparent);
+    gap: 0;
+    background: color-mix(in srgb, var(--color-ebony) 97%, var(--color-forest));
+  }
+  .site-nav-drawer.is-open { display: flex; }
+  .site-nav-drawer .nav-link {
+    padding: 0.55rem 0;
+    border: none;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-parchment) 8%, transparent);
+  }
+  .site-nav-drawer .nav-link:last-child { border-bottom: none; }
+
+  @media (max-width: 768px) {
+    .site-nav-links { display: none; }
+    .nav-burger     { display: flex; }
+    .site-nav       { padding: 0.65rem 1.25rem; }
+  }
+
+  /* ── Page shell ──────────────────────────────────────────────────────── */
+
+  .site-main {
+    min-height: calc(100dvh - 4rem);
+  }
+
+  .page-container {
+    max-width: 84rem;
+    margin-inline: auto;
+    padding: 2.5rem 3.5rem;
+  }
+
+  @media (max-width: 1024px) {
+    .page-container { padding: 2rem 2rem; }
+  }
+  @media (max-width: 640px) {
+    .page-container { padding: 1.5rem 1.1rem; }
+  }
+
+  /* ── Page hero (top of each page) ───────────────────────────────────── */
+
+  .page-hero {
+    border-bottom: 2px solid var(--color-ebony);
+    padding-bottom: 1rem;
+    margin-bottom: 2.25rem;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+
+  .page-hero h1 {
+    font-size: clamp(1.35rem, 2.5vw, 1.85rem);
+    color: var(--color-forest);
+    letter-spacing: 0.04em;
+  }
+
+  .page-hero-sub {
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    font-weight: 400;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--color-peat);
+    margin-top: 0.35rem;
+  }
+
+  .page-hero-meta {
+    font-family: var(--font-mono);
+    font-size: 0.6rem;
+    letter-spacing: 0.08em;
+    color: var(--color-slate);
+    white-space: nowrap;
+    align-self: flex-end;
+  }
+
+  /* ── Section headers (Du Bois plate style) ───────────────────────────── */
+
+  .pg-section {
+    margin-bottom: 3rem;
+  }
+
+  .pg-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    border-top: 2.5px solid var(--color-ebony);
+    border-bottom: 1px solid color-mix(in srgb, var(--color-ebony) 18%, transparent);
+    padding: 0.55rem 0;
+    margin-bottom: 1.4rem;
+  }
+
+  .pg-title {
+    font-family: var(--font-display);
+    font-size: 1.05rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    color: var(--color-forest);
+    text-transform: uppercase;
+  }
+
+  .pg-caption {
+    font-family: var(--font-mono);
+    font-size: 0.6rem;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--color-peat);
+  }
+
+  /* ── Tables ──────────────────────────────────────────────────────────── */
+
+  .wc-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+  }
+
+  .wc-table th {
+    font-family: var(--font-mono);
+    font-size: 0.6rem;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--color-peat);
+    text-align: left;
+    padding: 0.5rem 0.75rem;
+    border-top: 2px solid var(--color-ebony);
+    border-bottom: 1.5px solid var(--color-ebony);
+    background: color-mix(in srgb, var(--color-parchment) 70%, var(--color-cream));
+    white-space: nowrap;
+  }
+
+  .wc-table td {
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-ebony) 10%, transparent);
+    vertical-align: middle;
+    line-height: 1.4;
+  }
+
+  .wc-table tbody tr:hover td {
+    background: color-mix(in srgb, var(--color-gold) 7%, var(--color-cream));
+  }
+
+  /* ── Buttons ─────────────────────────────────────────────────────────── */
+
+  .wc-btn {
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    text-decoration: none;
+    padding: 0.45rem 0.9rem;
+    border: 1.5px solid var(--color-ebony);
+    background: transparent;
+    color: var(--color-forest);
+    cursor: pointer;
+    transition: background 0.14s, color 0.14s, border-color 0.14s;
+    white-space: nowrap;
+    line-height: 1;
+    border-radius: 0;
+  }
+
+  .wc-btn:hover {
+    background: var(--color-ebony);
+    color: var(--color-parchment);
+  }
+
+  .wc-btn-solid {
+    background: var(--color-ebony);
+    color: var(--color-parchment);
+  }
+
+  .wc-btn-solid:hover {
+    background: var(--color-forest);
+    border-color: var(--color-forest);
+  }
+
+  .wc-btn-ghost {
+    border-color: color-mix(in srgb, var(--color-ebony) 35%, transparent);
+    color: var(--color-slate);
+  }
+
+  .wc-btn-ghost:hover {
+    border-color: var(--color-ebony);
+    color: var(--color-ebony);
+    background: transparent;
+  }
+
+  /* ── Form controls ───────────────────────────────────────────────────── */
+
+  .wc-label {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 0.6rem;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--color-peat);
+    margin-bottom: 0.3rem;
+  }
+
+  .wc-input,
+  .wc-select {
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    color: var(--color-ebony);
+    background: var(--color-cream);
+    border: 1.5px solid color-mix(in srgb, var(--color-peat) 40%, transparent);
+    border-radius: 0;
+    padding: 0.45rem 0.75rem;
+    width: 100%;
+    outline: none;
+    transition: border-color 0.14s, box-shadow 0.14s;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
+  .wc-input:focus,
+  .wc-select:focus {
+    border-color: var(--color-forest);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-forest) 14%, transparent);
+  }
+
+  .wc-select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%235C4A2A'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.75rem center;
+    padding-right: 2rem;
+    cursor: pointer;
+  }
+
+  /* Filter panel */
+  .filter-panel {
+    border: 1.5px solid color-mix(in srgb, var(--color-peat) 22%, transparent);
+    border-top: 3px solid var(--color-ebony);
+    background: var(--color-cream);
+    padding: 1rem 1.25rem;
+    margin-bottom: 2rem;
+  }
+
+  /* ── Status badges ────────────────────────────────────────────────────── */
+
+  .wc-badge {
+    font-family: var(--font-mono);
+    font-size: 0.58rem;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 0.18rem 0.45rem;
+    border: 1px solid currentColor;
+    display: inline-block;
+    line-height: 1.4;
+  }
+
+  /* ── Flash messages ──────────────────────────────────────────────────── */
+
+  .flash-msg {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.04em;
+    padding: 0.6rem 1rem;
+    border-left: 3px solid currentColor;
+    background: var(--color-cream);
+    box-shadow: 2px 2px 8px color-mix(in srgb, var(--color-ebony) 12%, transparent);
+  }
+  .flash-msg--error   { color: var(--color-crimson); }
+  .flash-msg--success { color: var(--color-forest);  }
+  .flash-msg--warning { color: var(--color-whisky);  }
+  .flash-msg--info    { color: var(--color-sky);     }
+
+  /* ── Loading indicator ───────────────────────────────────────────────── */
+
+  .htmx-indicator              { display: none; }
+  .htmx-request .htmx-indicator,
+  .htmx-request.htmx-indicator { display: flex; }
+
+  .loading-pip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--color-peat);
+  }
+  .loading-pip::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    background: var(--color-gold);
+    display: inline-block;
+    animation: pip-pulse 0.9s ease-in-out infinite;
+  }
+  @keyframes pip-pulse {
+    0%, 100% { opacity: 1;   }
+    50%       { opacity: 0.2; }
+  }
+
+  /* ── Search tabs ─────────────────────────────────────────────────────── */
+
+  .tab-bar {
+    display: flex;
+    border-bottom: 2px solid var(--color-ebony);
+    margin-bottom: 1.5rem;
+  }
+
+  .tab-btn {
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    padding: 0.55rem 1.25rem;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    cursor: pointer;
+    color: var(--color-slate);
+    transition: color 0.14s;
+  }
+  .tab-btn--active {
+    color: var(--color-parchment);
+    background: var(--color-ebony);
+    border-bottom-color: var(--color-ebony);
+  }
+  .tab-btn:not(.tab-btn--active):hover { color: var(--color-forest); }
+
+  /* ── Login page ──────────────────────────────────────────────────────── */
+
+  .login-shell {
+    min-height: 100dvh;
+    background: var(--color-parchment);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem 1rem;
+  }
+
+  .login-card {
+    width: 100%;
+    max-width: 27rem;
+  }
+
+  .login-masthead {
+    text-align: center;
+    margin-bottom: 2.5rem;
+  }
+
+  .login-masthead-rule {
+    display: block;
+    height: 4px;
+    background: var(--color-crimson);
+    width: 2.5rem;
+    margin: 0 auto 1.75rem;
+  }
+
+  .login-masthead-title {
+    font-family: var(--font-display);
+    font-size: 1.85rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: var(--color-forest);
+  }
+
+  .login-masthead-sub {
+    font-family: var(--font-mono);
+    font-size: 0.58rem;
+    font-weight: 500;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: var(--color-peat);
+    margin-top: 0.4rem;
+  }
+
+  .login-form-area {
+    border: 1.5px solid color-mix(in srgb, var(--color-ebony) 18%, transparent);
+    border-top: 3px solid var(--color-ebony);
+    padding: 2rem 2rem 1.75rem;
+    background: var(--color-cream);
+  }
+
+  .login-form-title {
+    font-family: var(--font-display);
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: var(--color-ebony);
+    text-transform: uppercase;
+    margin-bottom: 1.5rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-ebony) 15%, transparent);
+  }
+
+  /* ── Legacy compat ───────────────────────────────────────────────────── */
+
+  .analysis-stat-card {
+    background: var(--color-cream);
+    border: 1.5px solid color-mix(in srgb, var(--color-peat) 20%, transparent);
+    padding: 1rem;
+    text-align: center;
+  }
+
+  .dub-bar      { align-items: center; gap: 0.75rem; padding-block: 0.25rem; display: flex; }
+  .dub-bar-fill { height: 1rem; background: var(--color-forest); }
+}

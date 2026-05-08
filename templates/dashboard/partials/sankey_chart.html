@@ -1,0 +1,16 @@
+{% if empty %}
+<p class="font-mono text-sm text-slate py-4">No opening data available for this period.</p>
+{% else %}
+<div id="sankey-chart" style="height:560px;"></div>
+<script id="sankey-labels-data" type="application/json">{{ sankey_labels_json|safe }}</script>
+<script>
+(function() {
+  var data = {{ chart_json|safe }};
+  var div = document.getElementById("sankey-chart");
+  Plotly.react(div, data.data, data.layout, {responsive: true, displaylogo: false});
+  div.on("plotly_click", function(e) {
+    document.dispatchEvent(new CustomEvent("plotly_click", {detail: e}));
+  });
+})();
+</script>
+{% endif %}

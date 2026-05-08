@@ -1,0 +1,218 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}API Keys — Wood League Chess{% endblock %}
+
+{% block content %}
+
+<div class="page-hero">
+  <div>
+    <h1>API Keys</h1>
+    <p class="page-hero-sub">Manage remote worker authentication.</p>
+  </div>
+</div>
+
+{# ── Key management section ─────────────────────────────────────────────── #}
+<div class="pg-section">
+  <div class="pg-head">
+    <span class="pg-title">Worker Keys</span>
+    <button class="btn btn-primary"
+            hx-get="{% url 'api-keys-list-partial' %}"
+            hx-target="#modal"
+            hx-swap="innerHTML"
+            onclick="showIssueForm(event)"
+            style="display: none;" id="issue-btn">
+      Issue New Key
+    </button>
+  </div>
+
+  <div class="card">
+    <table class="api-keys-table">
+      <thead>
+        <tr>
+          <th>Worker Name</th>
+          <th>Key Prefix</th>
+          <th>Created By</th>
+          <th>Created</th>
+          <th>Last Used</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="keys-body">
+        {% include "_partials/admin/api_keys/list.html" %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card-footer">
+    <button class="btn btn-primary" onclick="openIssueModal()">Issue New Key</button>
+  </div>
+</div>
+
+{# ── Modal for forms ───────────────────────────────────────────────────── #}
+<div id="modal" class="modal" onclick="closeModal(event)" style="display:none;">
+  <div class="modal-content" onclick="event.stopPropagation()">
+    <button class="modal-close" onclick="closeModal()">&times;</button>
+    <div id="modal-body"></div>
+  </div>
+</div>
+
+<style>
+  .api-keys-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.95rem;
+  }
+  
+  .api-keys-table thead {
+    border-bottom: 2px solid var(--color-peat);
+  }
+  
+  .api-keys-table th {
+    text-align: left;
+    padding: 0.75rem;
+    font-weight: 600;
+    color: var(--color-ebony);
+  }
+  
+  .api-keys-table td {
+    padding: 0.75rem;
+    border-bottom: 1px solid var(--color-parchment);
+  }
+  
+  .api-keys-table tbody tr:hover {
+    background-color: var(--color-cream);
+  }
+  
+  .key-prefix {
+    font-family: var(--font-mono);
+    font-weight: 500;
+    color: var(--color-whisky);
+  }
+  
+  .key-status {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    border-radius: 3px;
+    font-size: 0.85rem;
+    font-weight: 500;
+  }
+  
+  .key-status.active {
+    background-color: var(--color-moss);
+    color: var(--color-cream);
+  }
+  
+  .key-status.revoked {
+    background-color: var(--color-slate);
+    color: var(--color-cream);
+  }
+  
+  .modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(26, 20, 16, 0.5);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  
+  .modal-content {
+    background: var(--color-cream);
+    border: 1px solid var(--color-peat);
+    border-radius: 4px;
+    padding: 2rem;
+    max-width: 500px;
+    width: 90%;
+    position: relative;
+    box-shadow: 0 2px 8px rgba(26, 20, 16, 0.15);
+  }
+  
+  .modal-close {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    background: none;
+    border: none;
+    font-size: 2rem;
+    color: var(--color-slate);
+    cursor: pointer;
+  }
+  
+  .btn {
+    padding: 0.5rem 1rem;
+    border: 1px solid var(--color-peat);
+    background: transparent;
+    color: var(--color-ebony);
+    cursor: pointer;
+    font-family: inherit;
+    border-radius: 3px;
+    transition: all 0.2s;
+  }
+  
+  .btn:hover {
+    background: var(--color-peat);
+    color: var(--color-cream);
+  }
+  
+  .btn-primary {
+    background: var(--color-forest);
+    color: var(--color-cream);
+    border-color: var(--color-forest);
+  }
+  
+  .btn-primary:hover {
+    background: var(--color-moss);
+    border-color: var(--color-moss);
+  }
+  
+  .btn-danger {
+    border-color: var(--color-crimson);
+    color: var(--color-crimson);
+  }
+  
+  .btn-danger:hover {
+    background: var(--color-crimson);
+    color: var(--color-cream);
+  }
+</style>
+
+<script>
+  function openIssueModal() {
+    fetch('{% url "api-keys-issue" %}')
+      .then(r => r.text())
+      .then(html => {
+        document.getElementById('modal-body').innerHTML = html;
+        document.getElementById('modal').style.display = 'flex';
+        // Initialize HTMX on newly injected form
+        htmx.process(document.getElementById('modal-body'));
+      });
+  }
+  
+  function closeModal(e) {
+    if (!e || e.target.id === 'modal') {
+      document.getElementById('modal').style.display = 'none';
+    }
+  }
+  
+  // HTMX event: update table after successful issue/revoke
+  document.body.addEventListener('htmx:afterSwap', function(e) {
+    if (e.detail.target.id === 'modal-body' && e.detail.xhr.status === 200) {
+      // Check if response contains a table (successful issue)
+      if (e.detail.xhr.responseText.includes('copy-btn')) {
+        // Key created modal, refresh on confirm
+        return;
+      }
+      // Otherwise close modal and refresh table
+      closeModal();
+      htmx.ajax('GET', '{% url "api-keys-list-partial" %}', '#keys-body');
+    }
+  });
+</script>
+
+{% endblock %}

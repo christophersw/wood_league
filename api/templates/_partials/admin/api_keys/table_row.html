@@ -1,0 +1,23 @@
+<tr class="api-key-row" data-key-id="{{ key.id }}">
+  <td>{{ key.worker_name }}</td>
+  <td><span class="key-prefix">{{ key.prefix }}</span></td>
+  <td>{{ key.created_by.email|default:"—" }}</td>
+  <td>{{ key.created|date:"Y-m-d H:i" }}</td>
+  <td>{{ key.last_used_at|date:"Y-m-d H:i"|default:"Never" }}</td>
+  <td>
+    <span class="key-status {% if key.revoked %}revoked{% else %}active{% endif %}">
+      {% if key.revoked %}Revoked{% else %}Active{% endif %}
+    </span>
+  </td>
+  <td>
+    {% if not key.revoked %}
+      <button class="btn btn-danger" 
+              hx-post="{% url 'api-keys-revoke' key.id %}"
+              hx-target="[data-key-id='{{ key.id }}']"
+              hx-swap="outerHTML"
+              hx-confirm="Revoke this key? Workers will no longer be able to use it.">
+        Revoke
+      </button>
+    {% endif %}
+  </td>
+</tr>

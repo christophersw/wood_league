@@ -1,0 +1,596 @@
+{# Board HTMX partial — rendered server-side per orientation, loaded via hx-trigger="load" or htmx.ajax() on flip #}
+<div id="board-inner" style="display:flex;flex-direction:column;gap:0;">
+
+  {# JSON data containers — read by JS below, not executed #}
+  <script type="application/json" id="board-frames-json">{{ frames_json|safe }}</script>
+  <script type="application/json" id="board-arrows-json">{{ arrow_data_json|safe }}</script>
+  <script type="application/json" id="board-san-json">{{ san_list_json|safe }}</script>
+  <script type="application/json" id="board-isbest-json">{{ is_best_json|safe }}</script>
+
+  {# Top player label #}
+  <div class="player-label{% if top_side == 'White' %} player-label-no-top{% endif %}{% if top_side == 'Black' %} player-label-no-bottom{% endif %}">
+    <span class="player-side">{{ top_sym }} {{ top_side }}</span>
+    <span class="player-name">{{ top_player }}</span>
+  </div>
+
+  {# Board SVG container #}
+  <div class="board-wrap">
+    <div class="board-stage">
+      <div class="board-svg-layer" id="board-svg-wrap"></div>
+      <svg
+        id="board-arrow-overlay"
+        class="board-arrow-overlay"
+        viewBox="0 0 {{ overlay_viewbox_size }} {{ overlay_viewbox_size }}"
+        aria-label="Engine analysis arrows"
+      ></svg>
+    </div>
+  </div>
+
+  {# Bottom player label #}
+  <div class="player-label player-label-bottom{% if bottom_side == 'White' %} player-label-no-top{% endif %}{% if bottom_side == 'Black' %} player-label-no-bottom{% endif %}">
+    <span class="player-side">{{ bottom_sym }} {{ bottom_side }}</span>
+    <span class="player-name">{{ bottom_player }}</span>
+  </div>
+
+  {# Controls #}
+  <div class="board-controls">
+    <button class="board-btn" id="board-btn-start" title="Start">&#x23EE;</button>
+    <button class="board-btn" id="board-btn-prev" title="Previous">&#x25C0;</button>
+    <button class="board-btn" id="board-btn-play" title="Play/Pause">&#x25B6;</button>
+    <button class="board-btn" id="board-btn-next" title="Next">&#x25B6;&#xFE0E;</button>
+    <button class="board-btn" id="board-btn-end" title="End">&#x23ED;</button>
+    <input type="range" id="board-slider" min="0" max="{{ total_frames|add:'-1' }}" value="0" style="flex:1;max-width:220px;accent-color:#D4A843;">
+    <span id="board-ply-label" style="font-family:'DM Mono',monospace;font-size:.68rem;color:#8B3A2A;min-width:72px;text-align:center;letter-spacing:.04em;">Start</span>
+  </div>
+
+</div>
+
+<style>
+.player-label{display:flex;align-items:center;justify-content:space-between;border-top:2.5px solid #1A1A1A;border-bottom:1px solid #1A1A1A;padding:5px 4px;min-height:31px;box-sizing:border-box;}
+.player-label-bottom{border-top:1px solid #1A1A1A;border-bottom:2.5px solid #1A1A1A;}
+.player-label-no-top{border-top:0;}
+.player-label-no-bottom{border-bottom:0;}
+.player-side{font-family:'DM Mono',monospace;font-size:.65rem;letter-spacing:.12em;text-transform:uppercase;color:#8B3A2A;}
+.player-name{font-family:Georgia,serif;font-size:.95rem;font-weight:600;color:#1A1A1A;letter-spacing:.02em;}
+.board-wrap{display:flex;justify-content:center;margin:0 4px;padding:0 4px;box-sizing:border-box;}
+.board-stage{position:relative;width:480px;max-width:100%;}
+.board-svg-layer svg{display:block;width:100%;height:auto;}
+.board-arrow-overlay{position:absolute;inset:0;width:100%;height:100%;display:block;}
+.board-arrow-group{cursor:pointer;outline:none;}
+.board-arrow-visible{transition:filter .12s ease, opacity .12s ease;}
+.board-arrow-group:hover .board-arrow-visible,
+.board-arrow-group:focus .board-arrow-visible{filter:brightness(1.12);}
+.board-arrow-label-box,
+.board-arrow-label-text{pointer-events:none;}
+.board-controls{display:flex;align-items:center;gap:5px;padding:8px 0 6px;justify-content:center;border-top:1px solid #D4C4A0;flex-wrap:wrap;}
+.board-btn{background:transparent;color:#1A1A1A;border:1.5px solid #1A1A1A;border-radius:0;padding:4px 10px;cursor:pointer;font-family:'DM Mono',monospace;font-size:.85rem;min-width:32px;transition:background .15s,color .15s;}
+.board-btn:hover{background:#1A1A1A;color:#F2E6D0;}
+.engine-line-player-spacer{border-top:1px solid #1A1A1A;border-bottom:2.5px solid #1A1A1A;padding:5px 4px;min-height:36px;box-sizing:border-box;}
+</style>
+
+<script>
+(function () {
+  var ENGINE_LINE_REQUEST_EVENT = 'woodleague:engine-line-requested';
+  var SVG_NS = 'http://www.w3.org/2000/svg';
+  var SAME_ORIGIN_ARROW_SPACING = 9;
+  var frames = JSON.parse(document.getElementById('board-frames-json').textContent);
+  var arrowsByPly = JSON.parse(document.getElementById('board-arrows-json').textContent);
+  var boardOrientation = '{{ orientation }}';
+  var overlayViewboxSize = parseFloat('{{ overlay_viewbox_size }}');
+  var overlayBoardMargin = parseFloat('{{ overlay_board_margin }}');
+  var overlaySquareSize = parseFloat('{{ overlay_square_size }}');
+  var totalFrames = frames.length;
+
+  var svgWrap = document.getElementById('board-svg-wrap');
+  var arrowOverlay = document.getElementById('board-arrow-overlay');
+  var slider = document.getElementById('board-slider');
+  var plyLabel = document.getElementById('board-ply-label');
+  var btnStart = document.getElementById('board-btn-start');
+  var btnPrev = document.getElementById('board-btn-prev');
+  var btnPlay = document.getElementById('board-btn-play');
+  var btnNext = document.getElementById('board-btn-next');
+  var btnEnd = document.getElementById('board-btn-end');
+
+  var playing = false;
+  var playTimer = null;
+
+  // Inform plySync of total ply count
+  if (window.WoodLeagueAnalysis) {
+    window.WoodLeagueAnalysis.setTotalPlies(totalFrames - 1);
+  }
+
+  /**
+   * Return the current engine-visibility settings from the board toggle UI.
+   *
+   * @returns Object with showSF and showLc0 booleans.
+   */
+  function getArrowVisibilityState() {
+    {% if not no_arrows %}
+    var sfToggle = document.getElementById('board-sf-toggle');
+    var lc0Toggle = document.getElementById('board-lc0-toggle');
+    var bestLineToggle = document.getElementById('board-best-line-toggle');
+    return {
+      showSF: sfToggle ? sfToggle.checked : true,
+      showLc0: lc0Toggle ? lc0Toggle.checked : true,
+      bestLineOnly: bestLineToggle ? bestLineToggle.checked : false,
+    };
+    {% else %}
+    return { showSF: true, showLc0: true, bestLineOnly: false };
+    {% endif %}
+  }
+
+  /**
+   * Hide or show rendered overlay arrows based on the current engine toggles.
+   */
+  function applyArrowVisibility() {
+    var visibility = getArrowVisibilityState();
+    arrowOverlay.querySelectorAll('[data-move-uci]').forEach(function (element) {
+      var engine = element.getAttribute('data-engine');
+      var tier = parseInt(element.getAttribute('data-tier'), 10) || 1;
+      var engineVisible = (engine === 'sf' && visibility.showSF) || (engine === 'lc0' && visibility.showLc0);
+      var tierVisible = !visibility.bestLineOnly || tier === 1;
+      element.style.display = engineVisible && tierVisible ? '' : 'none';
+    });
+
+    updateChartVisibility('sf-eval-chart', visibility.showSF);
+    updateChartVisibility('lc0-wdl-chart', visibility.showLc0);
+  }
+  window.boardApplyArrowVisibility = applyArrowVisibility;
+
+  /**
+   * Show or hide an engine chart to match its arrow-toggle state.
+   *
+   * @param {string} chartId - DOM id of the chart container.
+   * @param {boolean} shouldShow - Whether the chart should be visible.
+   */
+  function updateChartVisibility(chartId, shouldShow) {
+    var chartElement = document.getElementById(chartId);
+    if (!chartElement) {
+      return;
+    }
+
+    chartElement.style.display = shouldShow ? '' : 'none';
+    if (shouldShow && typeof Plotly !== 'undefined' && Plotly.Plots && typeof Plotly.Plots.resize === 'function') {
+      window.requestAnimationFrame(function () {
+        Plotly.Plots.resize(chartElement);
+      });
+    }
+  }
+
+  /**
+   * Convert an algebraic square into overlay coordinates for the active orientation.
+   *
+   * @param {string} square - Algebraic square such as "e4".
+   * @returns Overlay point object or null.
+   */
+  function squareToPoint(square) {
+    if (!square || square.length < 2) {
+      return null;
+    }
+
+    var fileIndex = square.charCodeAt(0) - 97;
+    var rankIndex = parseInt(square.charAt(1), 10) - 1;
+    if (isNaN(fileIndex) || isNaN(rankIndex) || fileIndex < 0 || fileIndex > 7 || rankIndex < 0 || rankIndex > 7) {
+      return null;
+    }
+
+    if (boardOrientation === 'black') {
+      fileIndex = 7 - fileIndex;
+      rankIndex = 7 - rankIndex;
+    }
+
+    return {
+      x: overlayBoardMargin + ((fileIndex + 0.5) * overlaySquareSize),
+      y: overlayBoardMargin + ((7.5 - rankIndex) * overlaySquareSize),
+    };
+  }
+
+  /**
+   * Offset an arrow into a parallel lane so same-origin suggestions remain distinct.
+   *
+   * @param {Object} fromPoint - Original start square center.
+   * @param {Object} toPoint - Original end square center.
+   * @param {number} laneOffset - Signed perpendicular offset distance.
+   * @returns {Object} Shifted start/end points for rendering.
+   */
+  function applyArrowLaneOffset(fromPoint, toPoint, laneOffset) {
+    if (!laneOffset) {
+      return {
+        fromPoint: { x: fromPoint.x, y: fromPoint.y },
+        toPoint: { x: toPoint.x, y: toPoint.y }
+      };
+    }
+
+    var deltaX = toPoint.x - fromPoint.x;
+    var deltaY = toPoint.y - fromPoint.y;
+    var distance = Math.sqrt((deltaX * deltaX) + (deltaY * deltaY));
+    if (!distance) {
+      return {
+        fromPoint: { x: fromPoint.x, y: fromPoint.y },
+        toPoint: { x: toPoint.x, y: toPoint.y }
+      };
+    }
+
+    var perpendicularX = -deltaY / distance;
+    var perpendicularY = deltaX / distance;
+
+    return {
+      fromPoint: {
+        x: fromPoint.x + (perpendicularX * laneOffset),
+        y: fromPoint.y + (perpendicularY * laneOffset)
+      },
+      toPoint: {
+        x: toPoint.x + (perpendicularX * laneOffset),
+        y: toPoint.y + (perpendicularY * laneOffset)
+      }
+    };
+  }
+
+  /**
+   * Build the shaft and arrowhead geometry for a rendered overlay arrow.
+   *
+   * @param {Object} fromPoint - Start square center.
+   * @param {Object} toPoint - End square center.
+   * @param {number} strokeWidth - Visible shaft width.
+   * @returns {object|null}
+   */
+  function buildArrowGeometry(fromPoint, toPoint, strokeWidth) {
+    var deltaX = toPoint.x - fromPoint.x;
+    var deltaY = toPoint.y - fromPoint.y;
+    var distance = Math.sqrt((deltaX * deltaX) + (deltaY * deltaY));
+    if (!distance) {
+      return null;
+    }
+
+    var unitX = deltaX / distance;
+    var unitY = deltaY / distance;
+    var headLength = Math.max(13, strokeWidth * 2.0);
+    var headWidth = Math.max(12, strokeWidth * 1.7);
+    var shaftEndX = toPoint.x - (unitX * headLength);
+    var shaftEndY = toPoint.y - (unitY * headLength);
+    var perpendicularX = -unitY;
+    var perpendicularY = unitX;
+    var leftPointX = shaftEndX + (perpendicularX * (headWidth / 2));
+    var leftPointY = shaftEndY + (perpendicularY * (headWidth / 2));
+    var rightPointX = shaftEndX - (perpendicularX * (headWidth / 2));
+    var rightPointY = shaftEndY - (perpendicularY * (headWidth / 2));
+
+    return {
+      shaftEndX: shaftEndX,
+      shaftEndY: shaftEndY,
+      headPoints: [
+        toPoint.x.toFixed(2) + ',' + toPoint.y.toFixed(2),
+        leftPointX.toFixed(2) + ',' + leftPointY.toFixed(2),
+        rightPointX.toFixed(2) + ',' + rightPointY.toFixed(2)
+      ].join(' '),
+    };
+  }
+
+  /**
+   * Create a single interactive SVG arrow group from server-provided metadata.
+   *
+   * @param {object} arrowData - Serialized metadata for one engine move.
+   * @param {number} ply - Current board ply for the rendered overlay.
+   * @param {Object} layoutOptions - Client-side layout adjustments for this arrow.
+   * @returns {SVGGElement|null}
+   */
+  function buildArrowElement(arrowData, ply, layoutOptions) {
+    var fromPoint = squareToPoint(arrowData.from_sq);
+    var toPoint = squareToPoint(arrowData.to_sq);
+    if (!fromPoint || !toPoint) {
+      return null;
+    }
+
+    layoutOptions = layoutOptions || {};
+    var offsetPoints = applyArrowLaneOffset(fromPoint, toPoint, Number(layoutOptions.laneOffset || 0));
+    fromPoint = offsetPoints.fromPoint;
+    toPoint = offsetPoints.toPoint;
+
+    var strokeWidth = Number(arrowData.stroke_width || 7);
+    var geometry = buildArrowGeometry(fromPoint, toPoint, strokeWidth);
+    if (!geometry) {
+      return null;
+    }
+
+    var group = document.createElementNS(SVG_NS, 'g');
+    group.setAttribute('class', 'board-arrow-group');
+    group.setAttribute('data-engine', arrowData.engine || '');
+    group.setAttribute('data-move-uci', arrowData.move_uci || '');
+    group.setAttribute('data-tier', String(arrowData.tier || 1));
+    group.setAttribute('data-ply', String(ply));
+    group.setAttribute('data-request-ply', String(
+      typeof arrowData.request_ply === 'number' ? arrowData.request_ply : Math.max(0, ply - 1)
+    ));
+    group.setAttribute('data-delta-text', arrowData.delta_text || '');
+    group.setAttribute('tabindex', '0');
+    group.setAttribute('focusable', 'true');
+    group.setAttribute('role', 'button');
+    group.setAttribute('aria-label', arrowData.title || 'Engine continuation');
+
+    var title = document.createElementNS(SVG_NS, 'title');
+    title.textContent = arrowData.title || 'Engine continuation';
+    group.appendChild(title);
+
+    var hitbox = document.createElementNS(SVG_NS, 'line');
+    hitbox.setAttribute('class', 'board-arrow-hitbox');
+    hitbox.setAttribute('x1', fromPoint.x);
+    hitbox.setAttribute('y1', fromPoint.y);
+    hitbox.setAttribute('x2', toPoint.x);
+    hitbox.setAttribute('y2', toPoint.y);
+    hitbox.setAttribute('stroke', 'transparent');
+    hitbox.setAttribute('stroke-width', Math.max(strokeWidth + 16, 22));
+    hitbox.setAttribute('stroke-linecap', 'round');
+    group.appendChild(hitbox);
+
+    var shaft = document.createElementNS(SVG_NS, 'line');
+    shaft.setAttribute('class', 'board-arrow-visible board-arrow-shaft');
+    shaft.setAttribute('x1', fromPoint.x);
+    shaft.setAttribute('y1', fromPoint.y);
+    shaft.setAttribute('x2', geometry.shaftEndX);
+    shaft.setAttribute('y2', geometry.shaftEndY);
+    shaft.setAttribute('stroke', arrowData.color || '#D4A843');
+    shaft.setAttribute('stroke-opacity', Number(arrowData.opacity || 0.7));
+    shaft.setAttribute('stroke-width', strokeWidth);
+    shaft.setAttribute('stroke-linecap', 'butt');
+    group.appendChild(shaft);
+
+    var head = document.createElementNS(SVG_NS, 'polygon');
+    head.setAttribute('class', 'board-arrow-visible board-arrow-head');
+    head.setAttribute('points', geometry.headPoints);
+    head.setAttribute('fill', arrowData.color || '#D4A843');
+    head.setAttribute('fill-opacity', Number(arrowData.opacity || 0.7));
+    group.appendChild(head);
+
+    if (arrowData.delta_text) {
+      var labelText = String(arrowData.delta_text);
+      var labelPositionRatio = 0.72;
+      var labelCenterX = fromPoint.x + ((geometry.shaftEndX - fromPoint.x) * labelPositionRatio);
+      var labelCenterY = fromPoint.y + ((geometry.shaftEndY - fromPoint.y) * labelPositionRatio);
+      var labelAngleDegrees = Math.atan2(geometry.shaftEndY - fromPoint.y, geometry.shaftEndX - fromPoint.x) * (180 / Math.PI);
+      if (labelAngleDegrees > 90 || labelAngleDegrees < -90) {
+        labelAngleDegrees += 180;
+      }
+
+      var labelGroup = document.createElementNS(SVG_NS, 'g');
+      labelGroup.setAttribute('transform', 'translate(' + labelCenterX + ' ' + labelCenterY + ') rotate(' + labelAngleDegrees + ')');
+
+      var label = document.createElementNS(SVG_NS, 'text');
+      label.setAttribute('class', 'board-arrow-label-text');
+      label.setAttribute('x', '0');
+      label.setAttribute('y', '0.5');
+      label.setAttribute('fill', '#F7F0E1');
+      label.setAttribute('text-anchor', 'middle');
+      label.setAttribute('dominant-baseline', 'middle');
+      label.setAttribute('font-family', 'DM Mono, monospace');
+      label.setAttribute('font-size', '8.2');
+      label.setAttribute('font-weight', '700');
+      label.textContent = labelText;
+      labelGroup.appendChild(label);
+      group.appendChild(labelGroup);
+    }
+
+    return group;
+  }
+
+  /**
+   * Walk up from the event target to find the containing arrow group.
+   *
+   * @param {EventTarget|null} target - Native event target.
+   * @returns {Element|null}
+   */
+  function findArrowGroup(target) {
+    var node = target;
+    while (node && node !== arrowOverlay) {
+      if (node.nodeType === 1 && node.hasAttribute('data-move-uci')) {
+        return node;
+      }
+      node = node.parentNode;
+    }
+    return null;
+  }
+
+  /**
+   * Dispatch the selected arrow as a continuation request for the Engine Lines board.
+   *
+   * @param {Element} arrowGroup - Rendered arrow group with data attributes.
+   */
+  function openArrowContinuation(arrowGroup) {
+    if (!arrowGroup) {
+      return;
+    }
+
+    document.dispatchEvent(new CustomEvent(ENGINE_LINE_REQUEST_EVENT, {
+      bubbles: true,
+      detail: {
+        ply: parseInt(arrowGroup.getAttribute('data-request-ply'), 10) || 0,
+        moveUci: arrowGroup.getAttribute('data-move-uci') || '',
+        engine: arrowGroup.getAttribute('data-engine') || 'sf',
+        tier: parseInt(arrowGroup.getAttribute('data-tier'), 10) || 1,
+        deltaText: arrowGroup.getAttribute('data-delta-text') || '',
+      }
+    }));
+  }
+
+  /**
+   * Build a lane layout for the current ply so same-origin arrows do not stack.
+   *
+   * @param {Array} arrowsForPly - Arrow metadata for the active ply.
+   * @returns {Object} Map of arrow index to layout options.
+   */
+  function buildArrowLayoutMap(arrowsForPly) {
+    var originGroups = {};
+    var layoutByIndex = {};
+
+    arrowsForPly.forEach(function (arrowData, index) {
+      var originKey = arrowData.from_sq || ('arrow-' + index);
+      if (!originGroups[originKey]) {
+        originGroups[originKey] = [];
+      }
+      originGroups[originKey].push({ index: index, arrowData: arrowData });
+    });
+
+    Object.keys(originGroups).forEach(function (originKey) {
+      var groupEntries = originGroups[originKey];
+      groupEntries.forEach(function (entry, positionIndex) {
+        var centeredIndex = positionIndex - ((groupEntries.length - 1) / 2);
+        layoutByIndex[entry.index] = {
+          laneOffset: centeredIndex * SAME_ORIGIN_ARROW_SPACING
+        };
+      });
+    });
+
+    return layoutByIndex;
+  }
+
+  /**
+   * Render the dedicated overlay SVG for the requested ply.
+   *
+   * @param {number} ply - Current board ply.
+   */
+  function renderArrowOverlay(ply) {
+    arrowOverlay.setAttribute('viewBox', '0 0 ' + overlayViewboxSize + ' ' + overlayViewboxSize);
+    arrowOverlay.innerHTML = '';
+
+    var arrowsForPly = arrowsByPly[String(ply)] || [];
+    var arrowLayoutMap = buildArrowLayoutMap(arrowsForPly);
+    arrowsForPly.forEach(function (arrowData, arrowIndex) {
+      var arrowElement = buildArrowElement(arrowData, ply, arrowLayoutMap[arrowIndex]);
+      if (arrowElement) {
+        arrowOverlay.appendChild(arrowElement);
+      }
+    });
+
+    applyArrowVisibility();
+  }
+
+  /**
+   * Render the board frame and its overlay arrows for the requested ply.
+   *
+   * @param {number} ply - Current board ply.
+   */
+  function renderPly(ply) {
+    ply = Math.max(0, Math.min(totalFrames - 1, ply));
+    svgWrap.innerHTML = frames[ply];
+    renderArrowOverlay(ply);
+    slider.value = ply;
+    if (ply === 0) {
+      plyLabel.textContent = 'Start';
+    } else {
+      var moveNum = Math.ceil(ply / 2);
+      var dots = ply % 2 === 0 ? '...' : '.';
+      plyLabel.textContent = moveNum + dots + ' (ply ' + ply + ')';
+    }
+  }
+
+  arrowOverlay.addEventListener('click', function (event) {
+    var arrowGroup = findArrowGroup(event.target);
+    if (!arrowGroup) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    openArrowContinuation(arrowGroup);
+  });
+
+  arrowOverlay.addEventListener('keydown', function (event) {
+    var arrowGroup = findArrowGroup(event.target);
+    if (!arrowGroup) {
+      return;
+    }
+
+    if (event.key !== 'Enter' && event.key !== ' ') {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    openArrowContinuation(arrowGroup);
+  });
+
+  // Subscribe to plySync state changes
+  var unsubscribe = null;
+  if (window.WoodLeagueAnalysis) {
+    unsubscribe = window.WoodLeagueAnalysis.subscribe(function (state) {
+      renderPly(state.ply);
+    });
+    // Render initial state
+    renderPly(window.WoodLeagueAnalysis.getState().ply);
+  } else {
+    renderPly(0);
+  }
+
+  // Control button handlers
+  btnStart.onclick = function () {
+    if (window.WoodLeagueAnalysis) window.WoodLeagueAnalysis.setPly(0);
+    else renderPly(0);
+  };
+  btnPrev.onclick = function () {
+    var cur = window.WoodLeagueAnalysis ? window.WoodLeagueAnalysis.getState().ply : parseInt(slider.value);
+    if (window.WoodLeagueAnalysis) window.WoodLeagueAnalysis.setPly(cur - 1);
+    else renderPly(cur - 1);
+  };
+  btnNext.onclick = function () {
+    var cur = window.WoodLeagueAnalysis ? window.WoodLeagueAnalysis.getState().ply : parseInt(slider.value);
+    if (window.WoodLeagueAnalysis) window.WoodLeagueAnalysis.setPly(cur + 1);
+    else renderPly(cur + 1);
+  };
+  btnEnd.onclick = function () {
+    if (window.WoodLeagueAnalysis) window.WoodLeagueAnalysis.setPly(totalFrames - 1);
+    else renderPly(totalFrames - 1);
+  };
+
+  btnPlay.onclick = function () {
+    if (playing) {
+      clearInterval(playTimer);
+      playing = false;
+      btnPlay.innerHTML = '&#x25B6;';
+    } else {
+      var cur = window.WoodLeagueAnalysis ? window.WoodLeagueAnalysis.getState().ply : 0;
+      if (cur >= totalFrames - 1) cur = 0;
+      playing = true;
+      btnPlay.innerHTML = '&#x23F8;';
+      playTimer = setInterval(function () {
+        var state = window.WoodLeagueAnalysis ? window.WoodLeagueAnalysis.getState() : { ply: parseInt(slider.value) };
+        if (state.ply >= totalFrames - 1) {
+          clearInterval(playTimer);
+          playing = false;
+          btnPlay.innerHTML = '&#x25B6;';
+          return;
+        }
+        if (window.WoodLeagueAnalysis) window.WoodLeagueAnalysis.setPly(state.ply + 1);
+        else renderPly(state.ply + 1);
+      }, 800);
+    }
+  };
+
+  slider.oninput = function () {
+    if (window.WoodLeagueAnalysis) window.WoodLeagueAnalysis.setPly(parseInt(this.value));
+    else renderPly(parseInt(this.value));
+  };
+
+  // Keyboard navigation (when board has focus)
+  document.addEventListener('keydown', function (e) {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    var cur = window.WoodLeagueAnalysis ? window.WoodLeagueAnalysis.getState().ply : parseInt(slider.value);
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      if (window.WoodLeagueAnalysis) window.WoodLeagueAnalysis.setPly(cur - 1);
+      else renderPly(cur - 1);
+    } else if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      if (window.WoodLeagueAnalysis) window.WoodLeagueAnalysis.setPly(cur + 1);
+      else renderPly(cur + 1);
+    } else if (e.key === ' ') {
+      e.preventDefault();
+      btnPlay.click();
+    }
+  });
+
+  // Clean up subscription when HTMX removes this element
+  document.getElementById('board-inner').addEventListener('htmx:beforeCleanupElement', function () {
+    if (unsubscribe) unsubscribe();
+    if (playTimer) clearInterval(playTimer);
+  });
+})();
+</script>

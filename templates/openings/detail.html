@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}{{ opening.eco }} {{ opening.name }} — Wood League Chess{% endblock %}
+
+{% block extra_head %}
+<style>
+  .ot-node rect { transition: filter .12s ease; }
+  .ot-node:hover rect { filter: brightness(0.88) drop-shadow(0 2px 8px rgba(26,20,16,.28)); }
+</style>
+{% endblock %}
+
+{% block content %}
+
+{# ── Page hero ─────────────────────────────────────────────────────────── #}
+<div class="page-hero">
+  <div>
+    <p style="font-family:var(--font-mono);font-size:.6rem;font-weight:500;
+              letter-spacing:.14em;text-transform:uppercase;color:var(--color-peat);
+              margin-bottom:.3rem;">{{ opening.eco }}</p>
+    <h1>{{ opening.name }}</h1>
+    <p class="page-hero-sub">
+      {{ opening.ply_depth }} half-moves ·
+      <span style="color:var(--color-peat);">{{ opening.pgn }}</span>
+    </p>
+  </div>
+  <a href="{% url 'dashboard:index' %}" class="wc-btn wc-btn-ghost"
+     style="align-self:flex-start;margin-top:.25rem;">← Dashboard</a>
+</div>
+
+{# ── Filters ───────────────────────────────────────────────────────────── #}
+<div class="filter-panel" id="opening-filters">
+  <input type="hidden" name="opening_id" value="{{ opening.id }}">
+  <div class="flex flex-wrap items-end gap-6">
+    <div>
+      <label class="wc-label">Timeframe</label>
+      <select id="filter-days" name="days"
+              class="wc-select" style="width:auto;min-width:10rem;"
+              hx-get="/_partials/openings/{{ opening.id }}/stats/"
+              hx-trigger="change"
+              hx-target="#opening-stats-panel"
+              hx-include="#opening-filters"
+              hx-indicator="#htmx-indicator">
+        {% for value, label in timeframe_options %}
+        <option value="{{ value }}" {% if value == default_days %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="wc-label">Players</label>
+      <div class="flex flex-wrap gap-3 mt-1" id="player-checkboxes">
+        {% for member in all_members %}
+        <label class="flex items-center gap-1.5 cursor-pointer"
+               style="font-family:var(--font-mono);font-size:.68rem;letter-spacing:.04em;color:var(--color-ebony);">
+          <input type="checkbox" name="players" value="{{ member }}" checked
+                 style="accent-color:var(--color-forest);"
+                 hx-trigger="change"
+                 hx-get="/_partials/openings/{{ opening.id }}/stats/"
+                 hx-target="#opening-stats-panel"
+                 hx-include="#opening-filters"
+                 hx-indicator="#htmx-indicator">
+          {{ member }}
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Board + Opening share ─────────────────────────────────────────────── #}
+<div class="pg-section">
+  <div class="pg-head">
+    <span class="pg-title">Position</span>
+  </div>
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
+    <div>
+      <div style="display:inline-block;border:1.5px solid color-mix(in srgb, var(--color-ebony) 18%, transparent);overflow:hidden;">
+        {{ board_svg|safe }}
+      </div>
+    </div>
+    <div id="opening-share-chart">
+      <p style="font-family:var(--font-mono);font-size:.68rem;color:var(--color-slate);">Loading stats…</p>
+    </div>
+  </div>
+</div>
+
+{# ── Opening Tree ──────────────────────────────────────────────────────── #}
+<div class="pg-section">
+  <div class="pg-head">
+    <span class="pg-title">Opening Tree Context</span>
+    <span class="pg-caption">Last 90 days · all members</span>
+  </div>
+  <p style="font-family:var(--font-mono);font-size:.65rem;color:var(--color-slate);margin-bottom:1rem;">
+    Arrow width reflects how many games used each transition.
+    {% if tree_selected_games %}
+      {{ tree_selected_games }} game{% if tree_selected_games != 1 %}s{% endif %} reached this position
+      {% if tree_total_scoped %}(of {{ tree_total_scoped }}){% endif %}.
+    {% endif %}
+    Nodes link to their opening page.
+  </p>
+  {% if tree_svg %}
+  <div class="overflow-x-auto"
+       style="border:1px solid color-mix(in srgb, var(--color-ebony) 12%, transparent);background:var(--color-parchment);padding:.5rem;">
+    {{ tree_svg|safe }}
+  </div>
+  {% else %}
+  <p style="font-family:var(--font-mono);font-size:.8rem;color:var(--color-slate);">No lineage data available.</p>
+  {% endif %}
+</div>
+
+{# ── Stats Panel ───────────────────────────────────────────────────────── #}
+<div id="opening-stats-panel"
+     hx-get="/_partials/openings/{{ opening.id }}/stats/?days={{ default_days }}"
+     hx-trigger="load"
+     hx-indicator="#htmx-indicator">
+  <div class="flex items-center gap-2 font-mono text-sm text-slate">
+    {% include "partials/_spinner.html" %}
+    Loading…
+  </div>
+</div>
+
+{% endblock %}

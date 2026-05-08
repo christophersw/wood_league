@@ -1,0 +1,42 @@
+{# Queue confirmation modal — opened via window.openQueueModal(engine) from stat card buttons #}
+<dialog id="queue-confirm-modal" style="border:2px solid #1A1A1A;background:#F2E6D0;padding:2rem 2.5rem;max-width:420px;font-family:'DM Mono',monospace;">
+  <form method="dialog">
+    <p style="font-family:'Playfair Display SC',Georgia,serif;font-size:1rem;letter-spacing:.06em;color:#1A3A2A;margin-bottom:1rem;">
+      Re-run Analysis
+    </p>
+    <p style="font-size:.72rem;line-height:1.6;color:#1A1A1A;margin-bottom:.5rem;">
+      Running <strong id="queue-modal-engine-label"></strong> analysis uses electricity and compute credits.
+    </p>
+    <p style="font-size:.68rem;color:#8B3A2A;line-height:1.5;margin-bottom:1.5rem;">
+      Please confirm you want to queue this game for re-analysis.
+    </p>
+    <div style="display:flex;gap:10px;justify-content:flex-end;">
+      <button type="button" class="wc-btn wc-btn-ghost" onclick="document.getElementById('queue-confirm-modal').close()">
+        Cancel
+      </button>
+      <button type="button" id="queue-modal-confirm-btn" class="wc-btn">
+        Confirm
+      </button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+window.openQueueModal = function (engine) {
+  var label = engine === 'stockfish' ? 'Stockfish' : 'Lc0';
+  document.getElementById('queue-modal-engine-label').textContent = label;
+  var confirmBtn = document.getElementById('queue-modal-confirm-btn');
+  confirmBtn.onclick = function () {
+    document.getElementById('queue-confirm-modal').close();
+    var queueUrl = window.ANALYSIS_DATA && window.ANALYSIS_DATA.queue_url;
+    if (!queueUrl) return;
+    htmx.ajax('POST', queueUrl, {
+      target: '#queue-btn-' + engine,
+      swap: 'outerHTML',
+      values: { engine: engine },
+      headers: { 'X-CSRFToken': document.cookie.match(/csrftoken=([^;]+)/)?.[1] || '' },
+    });
+  };
+  document.getElementById('queue-confirm-modal').showModal();
+};
+</script>

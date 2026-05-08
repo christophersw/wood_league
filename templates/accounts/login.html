@@ -1,0 +1,76 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sign In — Wood League Chess</title>
+  <link rel="stylesheet" href="{% static 'css/tailwind.css' %}">
+</head>
+<body class="login-shell">
+
+  <div class="login-card">
+
+    {# ── Masthead ──────────────────────────────────────────────────────── #}
+    <div class="login-masthead">
+      <span class="login-masthead-rule"></span>
+      <h1 class="login-masthead-title">Wood League</h1>
+      <p class="login-masthead-sub">Chess · Analytics</p>
+    </div>
+
+    {# ── Form panel ────────────────────────────────────────────────────── #}
+    <div class="login-form-area">
+      <p class="login-form-title">Sign In</p>
+
+      {% if messages %}
+      <div style="margin-bottom:1.25rem;">
+        {% for message in messages %}
+        <div class="flash-msg flash-msg--error">{{ message }}</div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      <form method="post" novalidate>
+        {% csrf_token %}
+
+        <div style="margin-bottom:1rem;">
+          <label for="{{ form.email.id_for_label }}" class="wc-label">Email</label>
+          <input type="email"
+                 id="{{ form.email.id_for_label }}"
+                 name="{{ form.email.html_name }}"
+                 value="{{ form.email.value|default:'' }}"
+                 autocomplete="email"
+                 class="wc-input"
+                 placeholder="you@example.com">
+          {% if form.email.errors %}
+          <p style="margin-top:.3rem;font-family:var(--font-mono);font-size:.62rem;color:var(--color-crimson);">
+            {{ form.email.errors|join:", " }}
+          </p>
+          {% endif %}
+        </div>
+
+        <div style="margin-bottom:1.5rem;">
+          <label for="{{ form.password.id_for_label }}" class="wc-label">Password</label>
+          <input type="password"
+                 id="{{ form.password.id_for_label }}"
+                 name="{{ form.password.html_name }}"
+                 autocomplete="current-password"
+                 class="wc-input">
+          {% if form.password.errors %}
+          <p style="margin-top:.3rem;font-family:var(--font-mono);font-size:.62rem;color:var(--color-crimson);">
+            {{ form.password.errors|join:", " }}
+          </p>
+          {% endif %}
+        </div>
+
+        <button type="submit" class="wc-btn wc-btn-solid"
+                style="width:100%;text-align:center;">
+          Sign In
+        </button>
+      </form>
+    </div>
+
+  </div>
+
+</body>
+</html>

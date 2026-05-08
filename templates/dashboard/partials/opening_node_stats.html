@@ -1,0 +1,51 @@
+{% if node_stats %}
+<div class="bg-cream border border-peat/20 rounded p-5 mt-2">
+  <div class="flex items-baseline justify-between mb-3">
+    <h3 class="font-display text-lg text-forest">{{ node_label }}</h3>
+    <span class="font-mono text-xs text-slate">{{ node_stats.games }} games</span>
+  </div>
+
+  <div class="grid grid-cols-3 gap-4 mb-4">
+    <div class="analysis-stat-card">
+      <div class="text-2xl font-mono font-bold text-moss">{{ node_stats.wins }}</div>
+      <div class="text-xs font-mono uppercase tracking-wide text-slate mt-1">
+        Wins · {{ node_stats.win_pct|floatformat:0 }}%
+      </div>
+    </div>
+    <div class="analysis-stat-card">
+      <div class="text-2xl font-mono font-bold text-steel">{{ node_stats.draws }}</div>
+      <div class="text-xs font-mono uppercase tracking-wide text-slate mt-1">
+        Draws · {{ node_stats.draw_pct|floatformat:0 }}%
+      </div>
+    </div>
+    <div class="analysis-stat-card">
+      <div class="text-2xl font-mono font-bold text-peat">{{ node_stats.losses }}</div>
+      <div class="text-xs font-mono uppercase tracking-wide text-slate mt-1">
+        Losses · {{ node_stats.loss_pct|floatformat:0 }}%
+      </div>
+    </div>
+  </div>
+
+  {% if node_stats.avg_white_accuracy or node_stats.avg_black_accuracy %}
+  <div class="font-mono text-xs text-slate mb-3">
+    Avg accuracy:
+    {% if node_stats.avg_white_accuracy %}W {{ node_stats.avg_white_accuracy|floatformat:0 }}%{% endif %}
+    {% if node_stats.avg_black_accuracy %} / B {{ node_stats.avg_black_accuracy|floatformat:0 }}%{% endif %}
+  </div>
+  {% endif %}
+
+  {% if node_stats.players %}
+  <table class="wc-table" style="max-width:320px">
+    <thead><tr><th>Player</th><th>Games</th></tr></thead>
+    <tbody>
+      {% for player, count in node_stats.players.items %}
+      <tr>
+        <td class="font-serif">{{ player }}</td>
+        <td class="font-mono text-xs font-bold text-forest">{{ count }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+{% endif %}

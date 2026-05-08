@@ -1,0 +1,44 @@
+{% if games %}
+<div class="overflow-x-auto">
+  <table class="wc-table">
+    <thead>
+      <tr>
+        <th>#</th><th>White</th><th>Black</th>
+        {% if show_acpl %}<th>Avg ACPL</th><th>W/B ACPL</th>{% endif %}
+        <th>Avg Acc</th><th>Date</th><th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for g in games %}
+      <tr>
+        <td class="font-mono text-xs text-peat">#{{ forloop.counter }}</td>
+        <td class="font-serif">♙ {{ g.white }}</td>
+        <td class="font-serif">♟ {{ g.black }}</td>
+        {% if show_acpl %}
+        <td class="font-mono text-xs font-bold text-forest">
+          {% if g.avg_acpl %}{{ g.avg_acpl|floatformat:1 }}{% else %}—{% endif %}
+        </td>
+        <td class="font-mono text-xs text-slate">
+          {{ g.white_acpl|floatformat:1|default:"—" }} / {{ g.black_acpl|floatformat:1|default:"—" }}
+        </td>
+        {% endif %}
+        <td class="font-mono text-xs font-bold text-forest">
+          {% if g.avg_accuracy %}{{ g.avg_accuracy|floatformat:1 }}%
+          {% elif g.white_accuracy and g.black_accuracy %}
+            {{ g.white_accuracy|floatformat:1 }}% / {{ g.black_accuracy|floatformat:1 }}%
+          {% else %}—{% endif %}
+        </td>
+        <td class="font-mono text-xs text-peat">{{ g.played_at|date:"d M Y" }}</td>
+        <td>
+          {% if g.slug %}
+          <a href="{% url 'games:analysis' g.slug %}" class="wc-btn">Open</a>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="font-mono text-sm text-slate">No analysed games found.</p>
+{% endif %}
