@@ -1,0 +1,18 @@
+[project]
+name = "wood-league-shared"
+version = "0.1.0"
+description = "Shared internal library for Wood League services"
+requires-python = ">=3.11"
+dependencies = [
+    "sqlalchemy>=2.0.29",
+    "psycopg[binary]>=3.2.0",
+    "python-chess>=1.999",
+]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["wood_league_shared*"]

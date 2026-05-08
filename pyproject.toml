@@ -1,0 +1,8 @@
+[tool.uv.workspace]
+members = [
+    "packages/shared",
+    "services/app",
+    "services/dispatchers",
+    "services/stockfish_worker",
+    "services/lc0_worker",
+]
