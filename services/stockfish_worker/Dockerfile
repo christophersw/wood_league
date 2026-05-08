@@ -1,11 +1,12 @@
+# services/stockfish_worker/Dockerfile
+# Build from REPO ROOT: docker build -f services/stockfish_worker/Dockerfile .
+
 FROM python:3.11-slim
 
-# Install system dependencies
 RUN apt-get update \
     && apt-get install -y --no-install-recommends wget tar \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Stockfish 18 AVX2 — optimised for modern x86-64 CPUs (RunPod compute nodes)
 RUN wget -q "https://github.com/official-stockfish/Stockfish/releases/download/sf_18/stockfish-ubuntu-x86-64-avx2.tar" \
         -O /tmp/stockfish.tar \
     && tar -xf /tmp/stockfish.tar -C /tmp \
@@ -20,12 +21,18 @@ ENV STOCKFISH_PATH=/usr/games/stockfish \
 
 WORKDIR /app
 
-# Install Python dependencies first for better layer caching
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir uv
 
-# Copy the RunPod handler and the analysis pipeline package
-COPY handler.py .
-COPY stockfish_pipeline/ ./stockfish_pipeline/
+# Copy shared package first (better layer caching — changes less often)
+COPY packages/shared ./packages/shared
+
+# Copy service code
+COPY services/stockfish_worker/pyproject.toml .
+COPY services/stockfish_worker/handler.py .
+COPY services/stockfish_worker/stockfish_pipeline ./stockfish_pipeline
+
+# Install shared package then service
+RUN uv pip install --system --no-cache packages/shared && \
+    uv pip install --system --no-cache .
 
 CMD ["python", "handler.py"]
