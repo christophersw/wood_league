@@ -21,8 +21,6 @@ ENV STOCKFISH_PATH=/usr/games/stockfish \
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir uv
-
 # Copy shared package first (better layer caching — changes less often)
 COPY packages/shared ./packages/shared
 
@@ -31,8 +29,8 @@ COPY services/stockfish_worker/pyproject.toml .
 COPY services/stockfish_worker/handler.py .
 COPY services/stockfish_worker/stockfish_pipeline ./stockfish_pipeline
 
-# Install shared package then service
-RUN uv pip install --system --no-cache packages/shared && \
-    uv pip install --system --no-cache .
+# Use pip (not uv) so [tool.uv.sources] workspace refs are ignored
+RUN pip install --no-cache-dir packages/shared && \
+    pip install --no-cache-dir .
 
 CMD ["python", "handler.py"]
