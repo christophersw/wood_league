@@ -341,7 +341,6 @@ def keyword_game_search(query: str, limit: int = 200) -> list[dict[str, Any]]:
     q = query.strip()
     if not q:
         return []
-    like = f"%{q}%"
     qs = (
         Game.objects.filter(
             white_username__icontains=q,

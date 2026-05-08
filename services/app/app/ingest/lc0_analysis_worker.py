@@ -11,8 +11,6 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import and_, func, select
 
-_IS_TTY = sys.stdout.isatty()
-
 from app.services.lc0_service import analyze_pgn
 from app.storage.database import ENGINE, get_session, init_db
 from app.storage.models import (
@@ -22,6 +20,8 @@ from app.storage.models import (
     Lc0MoveAnalysis,
     WorkerHeartbeat,
 )
+
+_IS_TTY = sys.stdout.isatty()
 
 log = logging.getLogger(__name__)
 

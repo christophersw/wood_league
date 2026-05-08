@@ -9,6 +9,7 @@ Changelog:
     2026-05-06: Auto-configure ALLOWED_HOSTS with Railway health check domain
                 to fix DisallowedHost errors during health checks
 """
+import os
 from pathlib import Path
 
 from decouple import Csv, config
@@ -172,7 +173,6 @@ REST_FRAMEWORK = {
 API_KEY_CUSTOM_HEADER = 'HTTP_X_API_KEY'
 
 # Tunable fault-tolerance constants (override in .env)
-import os
 STALE_JOB_TIMEOUT_MINUTES = int(os.environ.get('STALE_JOB_TIMEOUT_MINUTES', 15))
 MAX_JOB_RETRIES = int(os.environ.get('MAX_JOB_RETRIES', 3))
 

@@ -114,14 +114,14 @@ def _extract_wdl(info: chess.engine.InfoDict) -> tuple[int, int, int]:
     if wdl is not None:
         # info["wdl"] is PovWdl; .relative gives Wdl(wins, draws, losses) from side-to-move's perspective.
         wdl_rel = wdl.relative if hasattr(wdl, "relative") else wdl
-        w, d, l = int(wdl_rel.wins), int(wdl_rel.draws), int(wdl_rel.losses)
-        total = w + d + l
+        w, d, loss = int(wdl_rel.wins), int(wdl_rel.draws), int(wdl_rel.losses)
+        total = w + d + loss
         if total > 0 and total != 1000:
             # Normalize to sum to 1000
             w = round(w * 1000 / total)
             d = round(d * 1000 / total)
-            l = 1000 - w - d
-        return w, d, l
+            loss = 1000 - w - d
+        return w, d, loss
     # Fallback: derive from score Q value
     score = info.get("score")
     if score is not None:
