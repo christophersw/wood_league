@@ -20,4 +20,4 @@ class UserAdmin(BaseUserAdmin):
     add_fieldsets = [
         (None, {"fields": ["email", "password1", "password2", "role"]}),
     ]
-    filter_horizontal = []
+    filter_horizontal: tuple[str, ...] = ()

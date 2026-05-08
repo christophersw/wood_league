@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import shutil
 import sys
 
@@ -37,7 +38,7 @@ def _find_stockfish(given: str) -> str:
         return found
     # Common macOS Homebrew / Linux paths
     for candidate in ["/usr/local/bin/stockfish", "/usr/bin/stockfish", "/opt/homebrew/bin/stockfish"]:
-        if shutil.os.path.isfile(candidate):
+        if os.path.isfile(candidate):
             return candidate
     return ""
 

@@ -407,7 +407,7 @@ def build_sf_card(data: GameAnalysisData, queued: bool = False) -> str:
             content += f'<div class="dub-player-name">{escape(name)}{" 🏆" if is_winner else ""}</div>'
             
             # Accuracy bar with label
-            if has_acc:
+            if has_acc and acc_val is not None:
                 content += '<div class="dub-metric-label" title="Percentage of moves that match the engine\'s top choice or were within 50 centipawns of the best move">Accuracy</div>'
                 content += _metric_bar(acc_val, f"{acc_val:.1f}%")
             

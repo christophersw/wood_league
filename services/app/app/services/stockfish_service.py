@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import math
 import statistics
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -216,7 +217,7 @@ def analyze_pgn(
     depth: int = 20,
     threads: int = 1,
     hash_mb: int = 256,
-    move_callback: "callable[[int, int, str], None] | None" = None,
+    move_callback: Callable[[int, int, str], None] | None = None,
 ) -> GameResult:
     """Analyze a full game PGN and return per-move results plus player stats.
 

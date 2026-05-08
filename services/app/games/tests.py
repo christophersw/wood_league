@@ -66,7 +66,7 @@ def _minimal_data(**kwargs) -> GameAnalysisData:
         moves=[MOVE_E4, MOVE_E5, MOVE_NF3, MOVE_NC6],
     )
     defaults.update(kwargs)
-    return GameAnalysisData(**defaults)
+    return GameAnalysisData(**defaults)  # type: ignore[arg-type]
 
 
 # ---------------------------------------------------------------------------

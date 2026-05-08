@@ -543,7 +543,7 @@ def engine_line_partial(request: HttpRequest, slug: str) -> HttpResponse:
     flipped = orientation == "black"
     frames = []
     san_list = []
-    arrow_labels_by_ply = {}
+    arrow_labels_by_ply: dict[int, list[str]] = {}
 
     # Frame 0: position after the clicked move, with that move highlighted clearly.
     frames.append(chess.svg.board(

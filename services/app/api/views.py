@@ -29,7 +29,7 @@ def _touch_key(request) -> None:
 class HealthView(APIView):
     """Public health check — no auth, no throttle."""
 
-    permission_classes = []
+    permission_classes: list[type] = []
 
     def get(self, request):  # pylint: disable=unused-argument
         """Return health status."""
@@ -39,7 +39,7 @@ class HealthView(APIView):
 class JobCheckoutView(APIView):
     """Checkout available analysis jobs."""
 
-    permission_classes = [HasWorkerAPIKey]
+    permission_classes: list[type] = [HasWorkerAPIKey]
     throttle_scope = 'checkout'
 
     def post(self, request):
@@ -68,7 +68,7 @@ class JobCheckoutView(APIView):
 class JobCompleteView(APIView):
     """Report completion of an analysis job."""
 
-    permission_classes = [HasWorkerAPIKey]
+    permission_classes: list[type] = [HasWorkerAPIKey]
     throttle_scope = 'complete'
 
     def post(self, request, job_id):
@@ -115,7 +115,7 @@ class JobCompleteView(APIView):
 class JobFailView(APIView):
     """Report failure of an analysis job."""
 
-    permission_classes = [HasWorkerAPIKey]
+    permission_classes: list[type] = [HasWorkerAPIKey]
 
     def post(self, request, job_id):
         """Process job failure request."""
@@ -143,7 +143,7 @@ class JobFailView(APIView):
 class HeartbeatView(APIView):
     """Worker heartbeat status update."""
 
-    permission_classes = [HasWorkerAPIKey]
+    permission_classes: list[type] = [HasWorkerAPIKey]
     throttle_scope = 'heartbeat'
 
     def post(self, request):
@@ -167,7 +167,7 @@ class HeartbeatView(APIView):
 class QueueStatusView(APIView):
     """Query the status of the analysis job queue."""
 
-    permission_classes = [HasWorkerAPIKey]
+    permission_classes: list[type] = [HasWorkerAPIKey]
 
     def get(self, request):  # pylint: disable=unused-argument
         """Return queue statistics by engine and status."""

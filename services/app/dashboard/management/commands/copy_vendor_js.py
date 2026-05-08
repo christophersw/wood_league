@@ -10,9 +10,21 @@ from django.core.management.base import BaseCommand
 
 
 def _package_path(import_path: str) -> Path:
-    """Return the directory of an installed package."""
+    """Return the directory of an installed package.
+
+    Args:
+        import_path: Dotted import path of the installed package (e.g. "django_htmx").
+
+    Returns:
+        Path to the package's directory on disk.
+
+    Raises:
+        ValueError: If the package has no ``__file__`` attribute (e.g. namespace packages).
+    """
     import importlib
     mod = importlib.import_module(import_path)
+    if mod.__file__ is None:
+        raise ValueError(f"Package '{import_path}' has no __file__ (namespace package?)")
     return Path(mod.__file__).parent
 
 

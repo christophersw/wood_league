@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import io
 import math
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -173,7 +174,7 @@ def analyze_pgn(
     pgn_text: str,
     lc0_path: str,
     nodes: int = 800,
-    move_callback: "callable[[int, int, str], None] | None" = None,
+    move_callback: Callable[[int, int, str], None] | None = None,
 ) -> Lc0GameResult:
     """Analyze a full PGN with Lc0 and return per-move WDL results.
 
