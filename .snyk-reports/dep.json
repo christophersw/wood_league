@@ -1,0 +1,5 @@
+{
+  "ok": false,
+  "error": "Failed to get dependencies for all 1 potential projects.\n\n/Users/christopherwebster/Projects/woodland_stockfish_runpod/requirements.txt:\nSomething went wrong getting dependencies",
+  "path": "/Users/christopherwebster/Projects/woodland_stockfish_runpod"
+}

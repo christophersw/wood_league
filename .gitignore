@@ -1,0 +1,11 @@
+BT4-it332.pb.gz
+credentials
+
+# Python cache artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Snyk scan artifacts
+.snyk-venv/
+.snyk-requirements.txt
