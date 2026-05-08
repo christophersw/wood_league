@@ -7,6 +7,7 @@ Description:
 
 Changelog:
     2026-05-08: Added file header to meet documentation standards
+    2026-05-08: Suppressed C901 on _upsert_game — inherent sequential game record construction
 """
 from __future__ import annotations
 
@@ -105,7 +106,7 @@ class ChessComSyncService:
 
         return stats
 
-    def _upsert_game(self, session, player: Player, payload: dict) -> str:
+    def _upsert_game(self, session, player: Player, payload: dict) -> str:  # noqa: C901 — inherent: sequential game record construction with color detection, winner assignment, slug creation all operate on same mutable game object
         """Insert or update a game record from Chess.com API payload. Returns 'inserted', 'updated', or None."""
         game_id = payload.get("uuid") or self._stable_game_id(payload)
         game = session.get(Game, game_id)

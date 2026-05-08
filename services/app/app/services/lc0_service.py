@@ -8,6 +8,7 @@ Description:
 
 Changelog:
     2026-05-08: Added file header to meet documentation standards
+    2026-05-08: Suppressed C901 on analyze_pgn — inherent tightly-coupled engine loop
 """
 
 from __future__ import annotations
@@ -167,7 +168,7 @@ def _classify(
     return "excellent"
 
 
-def analyze_pgn(
+def analyze_pgn(  # noqa: C901 — inherent: tightly-coupled move loop with board state, pre/post WDL analysis, per-side accumulators, and perspective transforms are all interdependent
     pgn_text: str,
     lc0_path: str,
     nodes: int = 800,

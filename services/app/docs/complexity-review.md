@@ -8,6 +8,7 @@ Description:
 Changelog:
     2026-05-08: Initial creation from quality gate audit (Task 8)
     2026-05-08: Task 9 — refactored 4 grade-D/E functions; updated decisions table
+    2026-05-08: Task 10 — evaluated all 7 remaining grade-D functions; 2 refactored, 5 suppressed
 -->
 
 # Complexity Review — Flagged for Human Review
@@ -22,6 +23,13 @@ Functions where AI could not safely simplify — require domain expert judgement
 | `get_games` | `openings/services.py` | ~~E~~ → C | ~~21~~ → ~8 | **Refactored** | Extracted `_pgn_reaches_epd`, `_build_games_queryset`, `_participant_to_record`; see Details §4 |
 | `opening_tree_context` | `app/services/opening_position_service.py` | ~~E~~ → C | ~~25~~ → ~10 | **Refactored + Flag dedup** | Same 2 helpers extracted as module-level; near-identical to `openings/services.py` — see Details §5 |
 | `get_opening_flow` | `dashboard/services.py` | ~~E~~ → C | ~~23~~ → ~8 | **Refactored** | Extracted `_query_deduped_participants`, `_accumulate_flow_stats`, `_build_flow_dataframes`; see Details §6 |
+| `analyze_pgn` | `app/services/lc0_service.py` | D | 16-20 | **Suppressed** | `# noqa: C901` — inherent: tightly-coupled move loop with board state, pre/post WDL analysis, per-side accumulators, and perspective transforms all interdependent; see Details §7 |
+| `analyze_pgn` | `app/services/stockfish_service.py` | D | 16-20 | **Suppressed** | `# noqa: C901` — inherent: same pattern as lc0_service; board state, multi-pv analysis, CPL computation, and per-side accumulators all interdependent; see Details §7 |
+| `_upsert_game` | `app/ingest/sync_service.py` | D | 16-20 | **Suppressed** | `# noqa: C901` — inherent: sequential game record construction (color detection, winner assignment, slug creation) all operate on same mutable object; see Details §8 |
+| `get_opening_flow` | `app/services/welcome_service.py` | ~~D~~ → C | ~~16-20~~ → ~6 | **Refactored** | Extracted `_query_deduped_flow_records`, `_accumulate_opening_flow_stats`, `_build_opening_flow_dataframes`; see Details §9 |
+| `_sanitize_sql` | `app/services/game_search_service.py` | D | 16-20 | **Suppressed** | `# noqa: C901` — inherent: security validation with each branch checking a distinct SQL injection vector; see Details §10 |
+| `_sanitize_sql` | `search/services.py` | D | 16-20 | **Suppressed** | `# noqa: C901` — inherent: same SQL sanitizer pattern; see Details §10 |
+| `get_game_analysis` | `app/services/analysis_service.py` | ~~D~~ → C | ~~16-20~~ → ~8 | **Refactored** | Extracted `_load_db_game_records`, `_build_pgn_fallback_moves`; see Details §11 |
 
 ---
 
@@ -98,6 +106,89 @@ future refactor should consolidate into `wood_league_shared`.
   to DataFrames and filters by min_games threshold. Pure transformation.
 
 The outer `get_opening_flow` is now a 4-line coordinator.
+
+### §7 — `lc0_service.py::analyze_pgn` and `stockfish_service.py::analyze_pgn` (D, suppressed)
+
+**Decision: Suppress.** Both functions implement a chess engine analysis loop that is
+inherently stateful and tightly coupled:
+
+- Board position (`board.push(move)`) must be maintained for legal move detection
+- Pre-move analysis (multipv=3) must precede the board push; post-move analysis follows it
+- Per-side accumulators (white_win_probs, black_loss_probs, etc.) depend on `is_white_move`
+  which in turn depends on `board.turn` before the push
+- WDL perspective transforms (mover → white-perspective) interleave with the board state
+- Lc0: additional `is_game_over()` check with synthesized terminal WDL adds another branch
+
+Extraction would require threading `board`, `ply`, `is_white_move`, `pre_*`, `post_*`, and
+both accumulator lists through helper boundaries — making helpers that only make sense in
+one place and obscuring the algorithm. Suppressed with `# noqa: C901`.
+
+### §8 — `sync_service.py::_upsert_game` (D, suppressed)
+
+**Decision: Suppress.** The function builds a single `game` ORM object through a series
+of sequential assignments with inherent branching:
+
+- Color detection (3-branch: white/black/fallback) feeds `is_white`, `my_side`, `opp_side`
+- Winner assignment (3-branch: 1-0/0-1/draw) depends on the resolved `result_header`
+- Slug creation (guarded by `created and game.slug is None`) adds another branch
+
+All branches operate on the same mutable `game` object and share local variables (`white_user`,
+`black_user`, `result_header`). Extracting sub-steps would push these as parameters into
+helpers with no independent utility. Suppressed with `# noqa: C901`.
+
+### §9 — `welcome_service.py::WelcomeService.get_opening_flow` (D→C, CC 16-20→~6)
+
+**Decision: Refactored.** Same 3-phase decomposition as `dashboard/services.py::get_opening_flow`
+(§6 above), applied to the SQLAlchemy version:
+
+- `_query_deduped_flow_records(lookback_days, players)` — SQLAlchemy query with deduplication
+  by (game_id, club_player). Returns records list outside the session context.
+- `_accumulate_opening_flow_stats(records, opening_name_path_fn)` — scans PGNs and builds
+  edge_counts + node_data accumulators. Takes `opening_name_path_fn` as a callable parameter
+  to avoid coupling to the method's `self._opening_name_path`.
+- `_build_opening_flow_dataframes(edge_counts, node_data, min_games)` — converts accumulators
+  to DataFrames. Identical logic to dashboard version.
+
+The outer `get_opening_flow` is now a 4-line coordinator (query → check empty → accumulate → build).
+
+**Deduplication flag:** This SQLAlchemy version and `dashboard/services.py::get_opening_flow`
+now share the same decomposition pattern. The three helpers could be consolidated into
+`wood_league_shared` in a future refactor.
+
+### §10 — `game_search_service.py::_sanitize_sql` and `search/services.py::_sanitize_sql` (D, suppressed)
+
+**Decision: Suppress.** Both functions are SQL sanitizers implementing defense-in-depth
+security validation. Every branch guards against a distinct attack vector:
+
+- Markdown fence stripping (LLM output artifact)
+- Multi-statement injection (`;` check)
+- Comment-based payload hiding (`--`, `/*`, `*/`)
+- Non-SELECT statements (`lowered.startswith("select")`)
+- CTE and INTO subquery masking
+- DML/DDL keyword blocklist (11 terms via loop)
+- Set operations (`UNION`/`INTERSECT`/`EXCEPT`)
+- System catalog access (`pg_catalog`, `information_schema`, `pg_*`)
+- Table allowlist enforcement
+- LIMIT enforcement/injection
+
+Each check is independently necessary for security. Reducing CC by grouping checks into
+helpers would only obscure the security model. Suppressed with `# noqa: C901`. The
+Snyk SQLI finding for the callers of these functions is documented in "Security Findings"
+below.
+
+### §11 — `analysis_service.py::AnalysisService.get_game_analysis` (D→C, CC 16-20→~8)
+
+**Decision: Refactored.** Two separable concerns were extracted as module-level helpers:
+
+- `_load_db_game_records(session, game_id)` — queries Game, GameAnalysis, and Lc0GameAnalysis
+  rows; parses PGN headers; resolves opening metadata; extracts Lc0 scalars before the session
+  closes. Returns a dict with all data needed for both return paths. Returns None if game
+  not found or PGN invalid.
+- `_build_pgn_fallback_moves(game, lc0_by_ply)` — reconstructs move list from PGN, annotating
+  each ply with Lc0 data where available. Pure function over parsed game + index dict.
+
+The outer `get_game_analysis` is now a clear coordinator: load records → Stockfish path
+(early return) → build Lc0-by-ply index → PGN fallback return.
 
 ---
 

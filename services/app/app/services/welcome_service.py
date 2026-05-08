@@ -7,6 +7,7 @@ Description:
 
 Changelog:
     2026-05-08: Added file header to meet documentation standards
+    2026-05-08: Refactored get_opening_flow — extracted _query_deduped_flow_records, _accumulate_opening_flow_stats, _build_opening_flow_dataframes helpers
 """
 
 from __future__ import annotations
@@ -48,6 +49,167 @@ def _sufficient_moves_subquery():
         .group_by(GameAnalysis.game_id)
         .having(func.count(MoveAnalysis.id) >= _MIN_PLIES)
     )
+
+
+def _query_deduped_flow_records(lookback_days: int, players: list[str] | None) -> list:
+    """Query games with PGN and accuracy data; deduplicate by (game_id, club_player).
+
+    Args:
+        lookback_days: Number of days of history to include.
+        players: Optional list of usernames to filter to; None means all club players.
+
+    Returns:
+        Deduplicated list of SQLAlchemy row objects with game_id, pgn, result,
+        white_accuracy, black_accuracy, and club_player fields.
+    """
+    floor_date = datetime.utcnow() - timedelta(days=lookback_days)
+    with get_session() as session:
+        stmt = (
+            select(
+                Game.id.label("game_id"),
+                Game.pgn,
+                Game.white_username,
+                Game.black_username,
+                GameParticipant.color,
+                GameParticipant.result,
+                Player.username.label("club_player"),
+                GameAnalysis.white_accuracy,
+                GameAnalysis.black_accuracy,
+            )
+            .join(GameParticipant, GameParticipant.game_id == Game.id)
+            .join(Player, Player.id == GameParticipant.player_id)
+            .outerjoin(GameAnalysis, GameAnalysis.game_id == Game.id)
+            .where(
+                and_(
+                    Game.played_at >= floor_date,
+                    Game.pgn.is_not(None),
+                    Game.pgn != "",
+                )
+            )
+            .order_by(Game.played_at.desc())
+        )
+        if players:
+            stmt = stmt.where(
+                func.lower(Player.username).in_([p.lower() for p in players])
+            )
+        rows = session.execute(stmt).all()
+
+    seen: set[tuple] = set()
+    records = []
+    for row in rows:
+        key = (row.game_id, row.club_player)
+        if key in seen:
+            continue
+        seen.add(key)
+        records.append(row)
+    return records
+
+
+def _accumulate_opening_flow_stats(
+    records: list,
+    opening_name_path_fn,
+) -> tuple[dict, dict]:
+    """Scan PGN records and build edge counts and per-node stat accumulators.
+
+    Args:
+        records: Deduplicated row objects from _query_deduped_flow_records.
+        opening_name_path_fn: Callable(pgn_text) -> list[str] that returns the opening path.
+
+    Returns:
+        Tuple of (edge_counts, node_data) where edge_counts maps (source, target) to game
+        count and node_data maps node label to a stats dict.
+    """
+    edge_counts: dict[tuple[str, str], int] = defaultdict(int)
+    node_data: dict[str, dict] = {}
+
+    for row in records:
+        path = opening_name_path_fn(row.pgn)
+        if not path:
+            continue
+
+        result = row.result
+        w_acc = row.white_accuracy
+        b_acc = row.black_accuracy
+        player = row.club_player
+
+        for i in range(len(path) - 1):
+            edge_counts[(path[i], path[i + 1])] += 1
+
+        for node_label in path:
+            if node_label not in node_data:
+                node_data[node_label] = {
+                    "games": 0, "wins": 0, "draws": 0, "losses": 0,
+                    "white_acc_sum": 0.0, "white_acc_n": 0,
+                    "black_acc_sum": 0.0, "black_acc_n": 0,
+                    "players": defaultdict(int),
+                }
+            nd = node_data[node_label]
+            nd["games"] += 1
+            if result == "Win":
+                nd["wins"] += 1
+            elif result == "Draw":
+                nd["draws"] += 1
+            else:
+                nd["losses"] += 1
+            if w_acc is not None:
+                nd["white_acc_sum"] += w_acc
+                nd["white_acc_n"] += 1
+            if b_acc is not None:
+                nd["black_acc_sum"] += b_acc
+                nd["black_acc_n"] += 1
+            nd["players"][player] += 1
+
+    return edge_counts, node_data
+
+
+def _build_opening_flow_dataframes(
+    edge_counts: dict,
+    node_data: dict,
+    min_games: int,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Convert edge_counts and node_data accumulators to filtered DataFrames.
+
+    Args:
+        edge_counts: Mapping of (source, target) -> game count.
+        node_data: Mapping of node label -> stats dict with games/wins/draws/losses/accuracy.
+        min_games: Minimum edge game count to include in edges_df.
+
+    Returns:
+        Tuple of (edges_df, node_stats_df). Returns (empty, empty) if no edges after filtering.
+    """
+    if not edge_counts:
+        return pd.DataFrame(), pd.DataFrame()
+
+    edges_df = pd.DataFrame(
+        [{"source": s, "target": t, "games": c} for (s, t), c in edge_counts.items()]
+    )
+    edges_df = edges_df[edges_df["games"] >= min_games].reset_index(drop=True)
+
+    node_rows = []
+    for label, nd in node_data.items():
+        g = nd["games"]
+        node_rows.append({
+            "node": label,
+            "games": g,
+            "wins": nd["wins"],
+            "draws": nd["draws"],
+            "losses": nd["losses"],
+            "win_pct": round(nd["wins"] / g * 100, 1) if g else 0.0,
+            "draw_pct": round(nd["draws"] / g * 100, 1) if g else 0.0,
+            "loss_pct": round(nd["losses"] / g * 100, 1) if g else 0.0,
+            "avg_white_accuracy": (
+                round(nd["white_acc_sum"] / nd["white_acc_n"], 1)
+                if nd["white_acc_n"] else None
+            ),
+            "avg_black_accuracy": (
+                round(nd["black_acc_sum"] / nd["black_acc_n"], 1)
+                if nd["black_acc_n"] else None
+            ),
+            "players": dict(nd["players"]),
+        })
+    node_stats_df = pd.DataFrame(node_rows)
+
+    return edges_df, node_stats_df
 
 
 class WelcomeService:
@@ -431,126 +593,12 @@ class WelcomeService:
             avg_white_accuracy, avg_black_accuracy,
             players (dict: username → game_count)
         """
-        floor_date = datetime.utcnow() - timedelta(days=lookback_days)
-
-        with get_session() as session:
-            stmt = (
-                select(
-                    Game.id.label("game_id"),
-                    Game.pgn,
-                    Game.white_username,
-                    Game.black_username,
-                    GameParticipant.color,
-                    GameParticipant.result,
-                    Player.username.label("club_player"),
-                    GameAnalysis.white_accuracy,
-                    GameAnalysis.black_accuracy,
-                )
-                .join(GameParticipant, GameParticipant.game_id == Game.id)
-                .join(Player, Player.id == GameParticipant.player_id)
-                .outerjoin(GameAnalysis, GameAnalysis.game_id == Game.id)
-                .where(
-                    and_(
-                        Game.played_at >= floor_date,
-                        Game.pgn.is_not(None),
-                        Game.pgn != "",
-                    )
-                )
-                .order_by(Game.played_at.desc())
-            )
-            if players:
-                stmt = stmt.where(
-                    func.lower(Player.username).in_([p.lower() for p in players])
-                )
-            rows = session.execute(stmt).all()
-
-        if not rows:
+        records = _query_deduped_flow_records(lookback_days, players)
+        if not records:
             return pd.DataFrame(), pd.DataFrame()
 
-        # One record per (game_id, club_player) — games with two club players
-        # appear twice so each player's W/L/D perspective is counted.
-        seen: set[tuple[int, str]] = set()
-        records = []
-        for row in rows:
-            key = (row.game_id, row.club_player)
-            if key in seen:
-                continue
-            seen.add(key)
-            records.append(row)
-
-        edge_counts: dict[tuple[str, str], int] = defaultdict(int)
-        node_data: dict[str, dict] = {}
-
-        for row in records:
-            path = self._opening_name_path(row.pgn)
-            if not path:
-                continue
-
-            result = row.result
-            w_acc = row.white_accuracy
-            b_acc = row.black_accuracy
-            player = row.club_player
-
-            for i in range(len(path) - 1):
-                edge_counts[(path[i], path[i + 1])] += 1
-
-            for node_label in path:
-                if node_label not in node_data:
-                    node_data[node_label] = {
-                        "games": 0, "wins": 0, "draws": 0, "losses": 0,
-                        "white_acc_sum": 0.0, "white_acc_n": 0,
-                        "black_acc_sum": 0.0, "black_acc_n": 0,
-                        "players": defaultdict(int),
-                    }
-                nd = node_data[node_label]
-                nd["games"] += 1
-                if result == "Win":
-                    nd["wins"] += 1
-                elif result == "Draw":
-                    nd["draws"] += 1
-                else:
-                    nd["losses"] += 1
-                if w_acc is not None:
-                    nd["white_acc_sum"] += w_acc
-                    nd["white_acc_n"] += 1
-                if b_acc is not None:
-                    nd["black_acc_sum"] += b_acc
-                    nd["black_acc_n"] += 1
-                nd["players"][player] += 1
-
-        if not edge_counts:
-            return pd.DataFrame(), pd.DataFrame()
-
-        edges_df = pd.DataFrame(
-            [{"source": s, "target": t, "games": c} for (s, t), c in edge_counts.items()]
-        )
-        edges_df = edges_df[edges_df["games"] >= min_games].reset_index(drop=True)
-
-        node_rows = []
-        for label, nd in node_data.items():
-            g = nd["games"]
-            node_rows.append({
-                "node": label,
-                "games": g,
-                "wins": nd["wins"],
-                "draws": nd["draws"],
-                "losses": nd["losses"],
-                "win_pct": round(nd["wins"] / g * 100, 1) if g else 0.0,
-                "draw_pct": round(nd["draws"] / g * 100, 1) if g else 0.0,
-                "loss_pct": round(nd["losses"] / g * 100, 1) if g else 0.0,
-                "avg_white_accuracy": (
-                    round(nd["white_acc_sum"] / nd["white_acc_n"], 1)
-                    if nd["white_acc_n"] else None
-                ),
-                "avg_black_accuracy": (
-                    round(nd["black_acc_sum"] / nd["black_acc_n"], 1)
-                    if nd["black_acc_n"] else None
-                ),
-                "players": dict(nd["players"]),
-            })
-        node_stats_df = pd.DataFrame(node_rows)
-
-        return edges_df, node_stats_df
+        edge_counts, node_data = _accumulate_opening_flow_stats(records, self._opening_name_path)
+        return _build_opening_flow_dataframes(edge_counts, node_data, min_games)
 
     @staticmethod
     def _opening_name_path(pgn_text: str) -> list[str]:

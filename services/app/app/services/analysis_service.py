@@ -8,6 +8,7 @@ Description:
 
 Changelog:
     2026-05-08: Added file header to meet documentation standards
+    2026-05-08: Refactored get_game_analysis — extracted _load_db_game_records and _build_pgn_fallback_moves helpers
 """
 from __future__ import annotations
 
@@ -77,6 +78,110 @@ class GameAnalysisData:
     opening_id: int | None = None
 
 
+def _load_db_game_records(session, game_id: str) -> dict | None:
+    """Load Game, GameAnalysis, and Lc0GameAnalysis rows plus derived metadata for a game.
+
+    Args:
+        session: Active SQLAlchemy session.
+        game_id: Game primary key.
+
+    Returns:
+        Dict with keys: db_game, game (parsed chess.pgn.Game), pgn_text, white, black,
+        result, date, time_control, url, ga (GameAnalysis or None), lc0_moves_df,
+        lc0_kwargs, eco_code, opening_name, lichess_opening, opening_id.
+        Returns None if the game is not found or PGN cannot be parsed.
+    """
+    db_game = session.get(Game, game_id)
+    if db_game is None:
+        return None
+
+    pgn_text = db_game.pgn or ""
+    date = ""
+    time_control = db_game.time_control or ""
+    if db_game.played_at:
+        date = db_game.played_at.strftime("%Y-%m-%d %H:%M")
+
+    game = chess.pgn.read_game(io.StringIO(pgn_text)) if pgn_text else None
+    if game is None:
+        return None
+
+    white = db_game.white_username or game.headers.get("White", "White")
+    black = db_game.black_username or game.headers.get("Black", "Black")
+    result = db_game.result_pgn or game.headers.get("Result", "*")
+    if not date:
+        date = game.headers.get("Date", "")
+    if not time_control:
+        time_control = game.headers.get("TimeControl", "")
+    url = game.headers.get("Link", "")
+
+    ga = session.execute(
+        select(GameAnalysis).where(GameAnalysis.game_id == game_id)
+    ).scalar_one_or_none()
+
+    lga = session.execute(
+        select(Lc0GameAnalysis).where(Lc0GameAnalysis.game_id == game_id)
+    ).scalar_one_or_none()
+
+    lc0_moves_df: pd.DataFrame | None = None
+    if lga is not None and lga.analyzed_at is not None and lga.moves:
+        lc0_moves_df = _lc0_moves_from_db(lga.moves)
+
+    opening_match = matched_opening_from_pgn(pgn_text, max_ply=20)
+
+    return {
+        "db_game": db_game,
+        "game": game,
+        "pgn_text": pgn_text,
+        "white": white,
+        "black": black,
+        "result": result,
+        "date": date,
+        "time_control": time_control,
+        "url": url,
+        "ga": ga,
+        "lc0_moves_df": lc0_moves_df,
+        "lc0_kwargs": _lc0_summary_kwargs(lga),
+        "eco_code": db_game.eco_code or "",
+        "opening_name": db_game.opening_name or "",
+        "lichess_opening": db_game.lichess_opening,
+        "opening_id": opening_match[0] if opening_match else None,
+    }
+
+
+def _build_pgn_fallback_moves(
+    game: "chess.pgn.Game",
+    lc0_by_ply: dict,
+) -> pd.DataFrame:
+    """Reconstruct a moves DataFrame from PGN, optionally annotating with Lc0 data.
+
+    Args:
+        game: Parsed chess.pgn.Game object.
+        lc0_by_ply: Dict mapping ply (int) to a pandas Series row from the Lc0 moves DataFrame.
+
+    Returns:
+        DataFrame with columns: ply, san, fen, cp_eval, best_move, arrow_uci, cpl, classification.
+    """
+    board = game.board()
+    rows: list[dict] = []
+    for ply, move in enumerate(game.mainline_moves(), start=1):
+        san = board.san(move)
+        board.push(move)
+        lm = lc0_by_ply.get(ply)
+        rows.append(
+            {
+                "ply": ply,
+                "san": san,
+                "fen": board.fen(),
+                "cp_eval": float(lm["cp_equiv"]) if lm is not None else None,
+                "best_move": str(lm["best_move"]) if lm is not None else "",
+                "arrow_uci": str(lm["arrow_uci"]) if lm is not None else "",
+                "cpl": None,
+                "classification": str(lm["classification"]) if lm is not None else None,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
 class AnalysisService:
     """Retrieves and reconstructs game analysis from database."""
     def __init__(self) -> None:
@@ -89,65 +194,26 @@ class AnalysisService:
             return None
 
         with get_session() as session:
-            db_game = session.get(Game, game_id)
-            if db_game is None:
+            rec = _load_db_game_records(session, game_id)
+            if rec is None:
                 return None
 
-            pgn_text = db_game.pgn or ""
-            date = ""
-            time_control = db_game.time_control or ""
-            if db_game.played_at:
-                date = db_game.played_at.strftime("%Y-%m-%d %H:%M")
+            ga = rec["ga"]
+            lc0_moves_df = rec["lc0_moves_df"]
 
-            game = chess.pgn.read_game(io.StringIO(pgn_text)) if pgn_text else None
-            if game is None:
-                return None
-
-            white = db_game.white_username or game.headers.get("White", "White")
-            black = db_game.black_username or game.headers.get("Black", "Black")
-            result = db_game.result_pgn or game.headers.get("Result", "*")
-            if not date:
-                date = game.headers.get("Date", "")
-            if not time_control:
-                time_control = game.headers.get("TimeControl", "")
-            url = game.headers.get("Link", "")
-
-            # Load Stockfish analysis
-            ga = session.execute(
-                select(GameAnalysis).where(GameAnalysis.game_id == game_id)
-            ).scalar_one_or_none()
-
-            # Load Lc0 WDL analysis
-            lga = session.execute(
-                select(Lc0GameAnalysis).where(Lc0GameAnalysis.game_id == game_id)
-            ).scalar_one_or_none()
-
-            lc0_moves_df: pd.DataFrame | None = None
-            if lga is not None and lga.analyzed_at is not None and lga.moves:
-                lc0_moves_df = _lc0_moves_from_db(lga.moves)
-
-            # Extract Lc0 scalars before session closes
-            lc0_kwargs = _lc0_summary_kwargs(lga)
-
-            # Common game metadata used in both return paths
-            _eco_code = db_game.eco_code or ""
-            _opening_name = db_game.opening_name or ""
-            _lichess_opening = db_game.lichess_opening
-            _opening_match = matched_opening_from_pgn(pgn_text, max_ply=20)
-            _opening_id = _opening_match[0] if _opening_match else None
-
+            # Stockfish path — full analysis available
             if ga is not None and ga.analyzed_at is not None and ga.moves:
                 moves_df = _moves_from_db(ga.moves)
                 return GameAnalysisData(
                     game_id=game_id,
-                    white=white,
-                    black=black,
-                    result=result,
-                    pgn=pgn_text,
+                    white=rec["white"],
+                    black=rec["black"],
+                    result=rec["result"],
+                    pgn=rec["pgn_text"],
                     moves=moves_df,
-                    date=date,
-                    time_control=time_control,
-                    url=url,
+                    date=rec["date"],
+                    time_control=rec["time_control"],
+                    url=rec["url"],
                     white_accuracy=ga.white_accuracy,
                     black_accuracy=ga.black_accuracy,
                     white_acpl=ga.white_acpl,
@@ -159,61 +225,42 @@ class AnalysisService:
                     black_mistakes=ga.black_mistakes,
                     black_inaccuracies=ga.black_inaccuracies,
                     engine_depth=ga.engine_depth,
-                    white_rating=db_game.white_rating,
-                    black_rating=db_game.black_rating,
+                    white_rating=rec["db_game"].white_rating,
+                    black_rating=rec["db_game"].black_rating,
                     lc0_moves=lc0_moves_df,
-                    eco_code=_eco_code,
-                    opening_name=_opening_name,
-                    lichess_opening=_lichess_opening,
-                    opening_id=_opening_id,
-                    **lc0_kwargs,
+                    eco_code=rec["eco_code"],
+                    opening_name=rec["opening_name"],
+                    lichess_opening=rec["lichess_opening"],
+                    opening_id=rec["opening_id"],
+                    **rec["lc0_kwargs"],
                 )
 
-            # No Stockfish analysis — build move list from PGN, attach Lc0 if present
+            # No Stockfish analysis — build Lc0-by-ply index before session closes
             lc0_by_ply: dict[int, pd.Series] = {}
             if lc0_moves_df is not None and not lc0_moves_df.empty:
                 for _, row in lc0_moves_df.iterrows():
                     lc0_by_ply[int(row["ply"])] = row
 
-        board = game.board()
-        rows: list[dict] = []
-        for ply, move in enumerate(game.mainline_moves(), start=1):
-            san = board.san(move)
-            board.push(move)
-            lm = lc0_by_ply.get(ply)
-            rows.append(
-                {
-                    "ply": ply,
-                    "san": san,
-                    "fen": board.fen(),
-                    "cp_eval": float(lm["cp_equiv"]) if lm is not None else None,
-                    "best_move": str(lm["best_move"]) if lm is not None else "",
-                    "arrow_uci": str(lm["arrow_uci"]) if lm is not None else "",
-                    "cpl": None,
-                    "classification": str(lm["classification"])
-                    if lm is not None
-                    else None,
-                }
-            )
-
+        # PGN fallback — reconstruct move list from PGN, attach Lc0 where present
+        moves_df = _build_pgn_fallback_moves(rec["game"], lc0_by_ply)
         return GameAnalysisData(
             game_id=game_id,
-            white=white,
-            black=black,
-            result=result,
-            pgn=pgn_text,
-            moves=pd.DataFrame(rows),
-            date=date,
-            time_control=time_control,
-            url=url,
-            white_rating=db_game.white_rating,
-            black_rating=db_game.black_rating,
+            white=rec["white"],
+            black=rec["black"],
+            result=rec["result"],
+            pgn=rec["pgn_text"],
+            moves=moves_df,
+            date=rec["date"],
+            time_control=rec["time_control"],
+            url=rec["url"],
+            white_rating=rec["db_game"].white_rating,
+            black_rating=rec["db_game"].black_rating,
             lc0_moves=lc0_moves_df,
-            eco_code=_eco_code,
-            opening_name=_opening_name,
-            lichess_opening=_lichess_opening,
-            opening_id=_opening_id,
-            **lc0_kwargs,
+            eco_code=rec["eco_code"],
+            opening_name=rec["opening_name"],
+            lichess_opening=rec["lichess_opening"],
+            opening_id=rec["opening_id"],
+            **rec["lc0_kwargs"],
         )
 
 
