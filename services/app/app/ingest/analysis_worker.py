@@ -1,4 +1,14 @@
-"""Worker that claims AnalysisJob rows and runs Stockfish analysis."""
+"""
+Title: analysis_worker.py — Stockfish analysis worker process
+Description:
+    Claims pending AnalysisJob rows from the database and runs Stockfish engine analysis
+    on game PGNs. Saves move-by-move evaluations, accuracy metrics, and player statistics
+    to the database. Implements job lifecycle management (claiming, completion, failure handling)
+    and worker heartbeat monitoring for crash detection.
+
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
+"""
 
 from __future__ import annotations
 

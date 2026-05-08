@@ -1,7 +1,12 @@
-"""Game search service using Claude AI to parse natural language queries into SQL.
+"""
+Title: game_search_service.py — Natural language game search via Claude
+Description:
+    Translates natural language game search requests into safe SQL using Anthropic Claude API.
+    Provides schema documentation, player directory context, and comprehensive SQL injection
+    prevention. Also implements keyword search fallback for usernames, openings, and metadata.
 
-Translates user game search requests into parameterized SQL queries with sanitization,
-supports keyword search, and integrates with Anthropic API for NL-to-SQL generation.
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
 """
 from __future__ import annotations
 

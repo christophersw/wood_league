@@ -1,4 +1,13 @@
-"""Management command: sync games from Chess.com for all club members."""
+"""
+Title: sync_games.py — Django management command for Chess.com game sync
+Description:
+    Syncs chess games from Chess.com for club members using their usernames.
+    Supports syncing all members or specific usernames, with optional filtering
+    by number of recent days.
+
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
+"""
 
 from __future__ import annotations
 

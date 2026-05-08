@@ -1,10 +1,12 @@
 """
-WSGI config for config project.
+Title: config/wsgi.py — WSGI application entry point for synchronous web servers
+Description:
+    WSGI configuration for the Wood League Django application. Exposes the WSGI callable
+    as a module-level variable named 'application' for use with synchronous web servers
+    like Gunicorn and uWSGI in production deployments.
 
-It exposes the WSGI callable as a module-level variable named ``application``.
-
-For more information on this file, see
-https://docs.djangoproject.com/en/6.0/howto/deployment/wsgi/
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
 """
 
 import os

@@ -1,4 +1,12 @@
-"""URL routes for authentication views (login and logout)."""
+"""
+Title: urls.py — Accounts URL routing
+Description:
+    URL routing configuration for the accounts app. Maps authentication views
+    (login and logout) to their respective URL patterns with namespace 'accounts'.
+
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
+"""
 
 from django.urls import path
 from . import views

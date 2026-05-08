@@ -1,4 +1,14 @@
-"""Stockfish analysis service using python-chess chess.engine."""
+"""
+Title: stockfish_service.py — Stockfish engine analysis processor
+Description:
+    Runs Stockfish engine analysis on game PGNs and processes output. Computes per-move
+    centipawn loss (CPL), move classifications (brilliant/great/best/inaccuracy/mistake/blunder),
+    and aggregated player statistics (accuracy, ACPL, error counts). Implements Lichess-compatible
+    accuracy formulas and win-percentage derivation.
+
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
+"""
 
 from __future__ import annotations
 

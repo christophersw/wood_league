@@ -1,10 +1,12 @@
 """
-ASGI config for config project.
+Title: config/asgi.py — ASGI application entry point for async web servers
+Description:
+    ASGI configuration for the Wood League Django application. Exposes the ASGI callable
+    as a module-level variable named 'application' for use with async web servers like
+    Uvicorn and Daphne in production deployments.
 
-It exposes the ASGI callable as a module-level variable named ``application``.
-
-For more information on this file, see
-https://docs.djangoproject.com/en/6.0/howto/deployment/asgi/
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
 """
 
 import os

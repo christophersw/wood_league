@@ -1,7 +1,12 @@
-"""Opening analysis service for statistical analysis of opening repertoires and frequency.
+"""
+Title: opening_analysis_service.py — Opening repertoire analytics
+Description:
+    Statistical analysis of opening repertoires including metrics (W/D/L, accuracy, game count),
+    timeline bucketing (daily/weekly/monthly), opening family fingerprints, and Sankey-ready
+    variation flows. Supports player and color filtering with configurable result aggregation.
 
-Computes opening metrics, win rates, timelines, family distributions, and variation flows
-from game history with configurable player and color filters.
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
 """
 from __future__ import annotations
 

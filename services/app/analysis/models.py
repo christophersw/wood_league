@@ -1,6 +1,12 @@
-"""Database models for chess game analysis storage and retrieval.
+"""
+Title: models.py — Game analysis database models
+Description:
+    Database models for chess game analysis including Stockfish engine analysis,
+    LC0 neural engine analysis, move-level metrics, analysis job queue management,
+    and worker heartbeat tracking for distributed analysis workers.
 
-Includes models for engine-based analysis (Stockfish), Lc0 analysis, and job queue management.
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
 """
 from django.db import models
 

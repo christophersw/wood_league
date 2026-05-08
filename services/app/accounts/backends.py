@@ -1,4 +1,13 @@
-"""Custom authentication backends for legacy password migration and user authentication."""
+"""
+Title: backends.py — Custom authentication backends
+Description:
+    Provides custom authentication backends for email-based login and legacy password
+    migration from the Streamlit app. Includes LegacyPbkdf2Hasher for verifying passwords
+    stored with URL-safe base64 encoding and EmailAuthBackend for email-based authentication.
+
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
+"""
 
 import base64
 import hashlib

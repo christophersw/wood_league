@@ -1,10 +1,12 @@
-"""Data service for the Welcome tab.
+"""
+Title: welcome_service.py — Welcome dashboard data aggregation
+Description:
+    Provides analytics data for the welcome dashboard including ELO timeseries for all players,
+    player accuracy timelines, top recent games by combined accuracy, best all-time games by ACPL,
+    most recent games with openings, and opening continuation flows for Sankey visualization.
 
-Provides:
-  - ELO timeseries for all club players
-  - Top-N recent games by combined accuracy
-  - Top-N all-time games by lowest combined ACPL
-  - Opening flow data for Sankey chart (3-move continuations)
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
 """
 
 from __future__ import annotations

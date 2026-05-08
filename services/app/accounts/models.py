@@ -1,6 +1,12 @@
 """
-Custom user model for Wood League Chess using email as the primary identifier
-instead of a username, with role-based admin permissions.
+Title: models.py — Custom user model
+Description:
+    Defines the custom User model for Wood League Chess with email as the primary
+    identifier instead of username. Includes role-based permissions (admin, moderator, player)
+    and account status tracking. The UserManager provides create_user and create_superuser methods.
+
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
 """
 
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager

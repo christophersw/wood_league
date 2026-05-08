@@ -1,4 +1,12 @@
-"""URL routing for the Analysis Worker API."""
+"""
+Title: urls.py — URL routing for the Analysis Worker API
+Description:
+    Defines REST API endpoints for workers to checkout analysis jobs, report
+    completion, report failures, send heartbeats, and query queue status.
+
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
+"""
 from django.urls import path
 from . import views
 

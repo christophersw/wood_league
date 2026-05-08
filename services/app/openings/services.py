@@ -1,4 +1,14 @@
-"""Django ORM port of OpeningPositionService."""
+"""
+Title: services.py — Opening repertoire analysis and lookup services
+Description:
+    Core business logic for opening analysis using Django ORM. Provides opening
+    lookup by EPD position, game filtering by opening, per-player statistics,
+    opening frequency trends, continuation Sankey flows, and opening tree context
+    with lineage and child continuations.
+
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
+"""
 
 from __future__ import annotations
 

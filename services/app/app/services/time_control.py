@@ -1,6 +1,12 @@
-"""Time control formatting service for display-friendly chess time control strings.
+"""
+Title: time_control.py — Chess time control formatter
+Description:
+    Converts standard Chess.com/Lichess time control notation (base+increment or daily formats)
+    to human-readable strings. Handles seconds, minutes, hours, daily/correspondence formats
+    with proper pluralization and abbreviation.
 
-Converts standard Chess.com/Lichess time control notation to human-readable format.
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
 """
 from __future__ import annotations
 

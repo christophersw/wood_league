@@ -1,6 +1,12 @@
-"""Service for syncing Chess.com player games to the local database.
+"""
+Title: sync_service.py — Chess.com synchronization service
+Description:
+    Fetches player game archives from Chess.com API, parses PGN records, and upserts Game
+    and GameParticipant rows with opening extraction, result normalization, and slug generation.
+    Supports archive filtering by date range and provides progress callbacks for UI feedback.
 
-Fetches archives from Chess.com API, parses PGNs, and upserts Game and GameParticipant records with opening and participant analysis.
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
 """
 from __future__ import annotations
 

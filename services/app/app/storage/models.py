@@ -1,6 +1,13 @@
-"""SQLAlchemy ORM models for Wood League Chess application.
+"""
+Title: app/storage/models.py — SQLAlchemy ORM models for Wood League Chess
+Description:
+    Comprehensive SQLAlchemy ORM model definitions for the Wood League chess application.
+    Includes Player and User authentication models, Game records with PGN and metadata,
+    Stockfish and Lc0 analysis results with per-move evaluations, AnalysisJob queue tracking,
+    and SystemEvent logging for background processes.
 
-Defines all database models: Players, Users, Games, GameParticipant, GameAnalysis, Lc0GameAnalysis, AnalysisJob, SystemEvent, and related move analysis models.
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
 """
 from __future__ import annotations
 

@@ -1,4 +1,12 @@
-"""Management command: run the Stockfish analysis worker."""
+"""
+Title: run_analysis_worker.py — Django management command for Stockfish worker
+Description:
+    Launches the Stockfish analysis worker process as a Django management
+    command. Supports --once flag to process a single job and exit.
+
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,12 @@
-"""URL routing for API key management admin views."""
+"""
+Title: admin_urls.py — URL routing for API key management admin interface
+Description:
+    Provides admin endpoints for managing worker API keys, including listing keys,
+    issuing new keys, and revoking existing keys.
+
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
+"""
 from django.urls import path
 from . import admin_views
 

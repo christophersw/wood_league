@@ -1,4 +1,12 @@
-"""Views for game search interface (AI-powered and keyword search)."""
+"""
+Title: views.py — Search interface views and HTMX handlers
+Description:
+    View functions for rendering the search interface and handling HTMX partial
+    requests for AI search, keyword search, and animated board previews.
+
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
+"""
 
 import io
 import json

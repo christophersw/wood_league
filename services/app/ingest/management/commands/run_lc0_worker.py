@@ -1,4 +1,12 @@
-"""Management command: run the Lc0 analysis worker."""
+"""
+Title: run_lc0_worker.py — Django management command for Lc0 worker
+Description:
+    Launches the Lc0 neural-net analysis worker process as a Django management
+    command. Supports --once flag to process a single job and exit.
+
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
+"""
 
 from __future__ import annotations
 

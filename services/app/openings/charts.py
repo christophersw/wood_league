@@ -1,4 +1,13 @@
-"""Du Bois-styled Plotly chart builders for the openings app."""
+"""
+Title: charts.py — Du Bois-styled Plotly chart builders for openings
+Description:
+    Chart generation functions for opening analysis using Plotly with a custom
+    Du Bois color palette. Produces pie charts, accuracy bar charts, and
+    frequency trend lines for opening repertoire analysis.
+
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
+"""
 
 from __future__ import annotations
 

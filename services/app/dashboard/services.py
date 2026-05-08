@@ -1,4 +1,13 @@
-"""Django ORM port of WelcomeService — dashboard data queries."""
+"""
+Title: services.py — Dashboard data queries and analytics
+Description:
+    Core business logic for dashboard data retrieval using Django ORM. Provides
+    timeseries data for accuracy and ELO, game rankings, opening flow analysis,
+    and aggregated statistics across the club player base.
+
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
+"""
 
 from __future__ import annotations
 

@@ -1,7 +1,12 @@
-"""Game history service for retrieving player statistics, ratings, and opening distributions.
+"""
+Title: history_service.py — Player game history and statistics
+Description:
+    Retrieves player game history with ELO timeseries, recent games with evaluations, and
+    opening frequency distributions. Falls back to demo data when database is empty. Supports
+    flexible date range filtering and per-player analytics.
 
-Fetches player game history from database with fallback to demo data, supporting ELO timeseries,
-recent games with evaluations, and opening frequency analysis.
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
 """
 from __future__ import annotations
 

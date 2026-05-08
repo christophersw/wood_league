@@ -1,7 +1,13 @@
-"""Views for the Analysis Worker API.
+"""
+Title: views.py — Analysis Worker API endpoints
+Description:
+    REST API views for Stockfish and Lc0 workers to checkout analysis jobs,
+    report job completion with move analysis results, report job failures,
+    send periodic heartbeats, and query queue status. All endpoints require
+    API key authentication.
 
-Provides endpoints for workers to checkout jobs, report completion,
-report failures, send heartbeats, and query queue status.
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
 """
 from django.db.models import Count
 from django.utils import timezone

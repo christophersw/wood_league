@@ -1,7 +1,12 @@
-"""Opening label generation service for display-friendly opening names.
+"""
+Title: opening_labels.py — Opening name formatting and fallback
+Description:
+    Generates display-friendly opening names from PGN headers (Lichess ECOUrl, Opening, Event),
+    ECO codes, and move-sequence reconstruction. Handles URL decoding, move detection heuristics,
+    and graceful fallback when standard catalogs are unavailable.
 
-Extracts opening names from PGN headers, Lichess database, ECO codes, and fallback
-heuristics when standard catalogs are unavailable.
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
 """
 from __future__ import annotations
 

@@ -1,4 +1,13 @@
-"""Views for displaying opening repertoire analysis and statistics."""
+"""
+Title: views.py — Opening detail and statistics views
+Description:
+    View functions for rendering opening detail pages with lineage tree,
+    board visualization, and HTMX partial handlers for filtered statistics
+    (accuracy, frequency, continuations) based on scope parameters.
+
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
+"""
 
 from __future__ import annotations
 

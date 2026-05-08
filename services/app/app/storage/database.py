@@ -1,6 +1,12 @@
-"""Database connection and session management using SQLAlchemy.
+"""
+Title: app/storage/database.py — SQLAlchemy database engine and session factory
+Description:
+    Database connection and session management using SQLAlchemy. Provides the database
+    engine with PostgreSQL/SQLite support, session factory, and thread-safe initialization
+    utilities for creating database tables on application startup.
 
-Provides database engine, session factory, and initialization utilities for the Wood League application.
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
 """
 import threading
 

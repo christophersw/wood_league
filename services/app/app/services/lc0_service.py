@@ -1,16 +1,13 @@
-"""Leela Chess Zero (Lc0) analysis service.
+"""
+Title: lc0_service.py — Leela Chess Zero WDL analysis processor
+Description:
+    Processes Lc0 engine output, extracting WDL (win/draw/loss) probabilities in permille format.
+    Derives per-move quality metrics, centipawn equivalents via Q-to-CP conversion, and move
+    classifications. Computes game-level WDL summaries for both players with blunder/mistake
+    counting. Unlike Stockfish, models draws explicitly for endgame accuracy.
 
-Lc0 outputs native WDL (Win/Draw/Loss) probabilities in permille (0-1000, sum=1000)
-via UCI_ShowWDL=true. This service captures per-move WDL and derives:
-  - Win probability for each side at each ply
-  - Move quality (win% delta from the mover's perspective)
-  - Move classification (brilliant/great/best/excellent/inaccuracy/mistake/blunder)
-  - Q-equivalent centipawns via: cp = 111.71 * tan(1.56 * Q)
-  - Game-level WDL summary (final position probabilities averaged over the game)
-
-Unlike Stockfish, Lc0 explicitly models draws, making its eval more meaningful for
-endgame and fortress positions. The WDL values are from white's perspective, so
-the mover's win% for black is the wdl_loss value.
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
 """
 
 from __future__ import annotations

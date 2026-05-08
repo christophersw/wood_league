@@ -1,4 +1,13 @@
-"""Views for member management: list, add, edit, delete, and invite players."""
+"""
+Title: views.py — Member management views
+Description:
+    Provides views for managing club members: listing all members with login
+    status, adding new members, editing member details, deleting members,
+    and inviting members to create login accounts. Admin-only access.
+
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
+"""
 
 from __future__ import annotations
 

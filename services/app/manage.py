@@ -1,5 +1,13 @@
 #!/usr/bin/env python
-"""Django's command-line utility for administrative tasks."""
+"""
+Title: manage.py — Django management command entry point
+Description:
+    Entry point for Django administrative tasks and command-line operations. Configures
+    the Django settings module and delegates to Django's core management command handler.
+
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
+"""
 import os
 import sys
 

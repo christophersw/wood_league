@@ -1,4 +1,12 @@
-"""Copy vendored JS files (htmx, plotly) from installed packages into static/js/."""
+"""
+Title: copy_vendor_js.py — Copy vendored JavaScript libraries to static files
+Description:
+    Django management command that copies htmx.min.js and plotly.min.js from
+    installed packages into the project's static files directory for deployment.
+
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
+"""
 
 from __future__ import annotations
 

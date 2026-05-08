@@ -1,6 +1,12 @@
-"""Chess.com API client for fetching player archives and games.
+"""
+Title: chesscom_client.py — Chess.com API HTTP client
+Description:
+    Provides HTTP interface to Chess.com's public REST API for fetching player game archives
+    and individual games. Handles JSON parsing, proper user-agent headers, and archive URL
+    discovery for a given Chess.com username.
 
-Provides HTTP interface to Chess.com's public API with JSON parsing and user-agent handling.
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
 """
 from __future__ import annotations
 

@@ -1,4 +1,13 @@
-"""Django admin interface for user management and role-based access control."""
+"""
+Title: admin.py — Django admin interface for user management
+Description:
+    Configures the Django admin interface for the User model with email-based authentication.
+    Provides admin list display, filtering, and search capabilities for user management
+    and role-based access control.
+
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
+"""
 
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin

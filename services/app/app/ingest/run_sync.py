@@ -1,6 +1,12 @@
-"""CLI entry point for syncing Chess.com player archives to local database.
+"""
+Title: run_sync.py — Chess.com synchronization CLI
+Description:
+    Command-line entry point for syncing Chess.com player archives to the local database.
+    Accepts usernames from CLI or environment, orchestrates game fetching from Chess.com API,
+    parses PGNs, and upserts Game and GameParticipant records with real-time progress display.
 
-Fetches games and game records from Chess.com for configured player accounts.
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
 """
 from __future__ import annotations
 

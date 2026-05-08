@@ -1,7 +1,12 @@
-"""Serializers for the Analysis Worker API.
+"""
+Title: serializers.py — DRF serializers for the Analysis Worker API
+Description:
+    Validates and serializes requests and responses for worker API operations
+    including job checkout, completion reporting, failure reporting, heartbeat
+    updates, and status queries. Supports both Stockfish and Lc0 chess engines.
 
-Handles validation and serialization of requests and responses for job
-checkout, completion, failure, and heartbeat operations.
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
 """
 from rest_framework import serializers
 

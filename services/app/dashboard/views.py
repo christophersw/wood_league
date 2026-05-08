@@ -1,4 +1,12 @@
-"""Dashboard views and HTMX partial endpoints."""
+"""
+Title: views.py — Dashboard page and HTMX partial handlers
+Description:
+    View functions for rendering the main dashboard page and handling HTMX
+    partial requests for charts, statistics, and filtered game tables.
+
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
+"""
 
 from __future__ import annotations
 

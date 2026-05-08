@@ -1,7 +1,13 @@
-"""Game analysis service for retrieving and reconstructing game moves with Stockfish and Lc0 evaluations.
+"""
+Title: analysis_service.py — Game analysis reconstruction service
+Description:
+    Retrieves complete game analysis from database combining Stockfish and Lc0 evaluations.
+    Reconstructs move sequences from PGN when Stockfish analysis unavailable. Returns
+    GameAnalysisData objects with move DataFrames, accuracy metrics, WDL probabilities,
+    and opening information for UI rendering.
 
-Loads game data from database, parses PGN, and assembles move-by-move analysis with accuracy
-metrics, classifications, and WDL probabilities from both Stockfish and Lc0 engines.
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
 """
 from __future__ import annotations
 

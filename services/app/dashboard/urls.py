@@ -1,4 +1,12 @@
-"""Main URL routes for the dashboard app."""
+"""
+Title: urls.py — Main URL routes for dashboard app
+Description:
+    Primary URL routing for the dashboard application, defining the main
+    dashboard index page endpoint and app namespacing.
+
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
+"""
 
 from django.urls import path
 from . import views

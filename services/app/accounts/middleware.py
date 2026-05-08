@@ -1,4 +1,13 @@
-"""Middleware for enforcing authentication across the application."""
+"""
+Title: middleware.py — Authentication enforcement middleware
+Description:
+    Middleware that enforces login requirements across the application. Redirects
+    unauthenticated users to the login page, with exemptions for public auth endpoints
+    and API routes that use token-based authentication. Respects the AUTH_ENABLED setting.
+
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
+"""
 
 from django.conf import settings
 from django.shortcuts import redirect

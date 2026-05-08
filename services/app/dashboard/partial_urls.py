@@ -1,4 +1,12 @@
-"""URL routes for HTMX partial endpoints in the dashboard app."""
+"""
+Title: partial_urls.py — HTMX partial endpoint URLs for dashboard
+Description:
+    URL routing for HTMX partial endpoints in the dashboard app, including
+    accuracy charts, ELO trends, Sankey diagrams, and game tables.
+
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
+"""
 
 from django.urls import path
 

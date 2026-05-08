@@ -1,4 +1,14 @@
-"""Worker that claims lc0 AnalysisJob rows and runs Leela Chess Zero WDL analysis."""
+"""
+Title: lc0_analysis_worker.py — Leela Chess Zero analysis worker process
+Description:
+    Claims pending lc0 AnalysisJob rows from the database and runs Leela Chess Zero engine
+    analysis on game PGNs. Captures per-move WDL (win/draw/loss) probabilities, centipawn
+    equivalents, and move classifications. Implements job lifecycle management and worker
+    heartbeat monitoring similar to Stockfish worker but tailored for WDL output.
+
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
+"""
 
 from __future__ import annotations
 

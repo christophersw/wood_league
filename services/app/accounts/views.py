@@ -1,4 +1,13 @@
-"""Authentication views for user login and logout."""
+"""
+Title: views.py — Authentication views
+Description:
+    Django views for handling user login and logout. Implements email-based authentication,
+    form validation, session management, and conditional auth based on AUTH_ENABLED setting.
+    Includes error messaging and redirect handling for authenticated/unauthenticated users.
+
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
+"""
 
 from django.conf import settings
 from django.contrib import auth, messages

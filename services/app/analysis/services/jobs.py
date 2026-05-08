@@ -1,8 +1,12 @@
-"""Service layer for analysis job management.
+"""
+Title: jobs.py — Analysis job service layer
+Description:
+    Shared business logic for analysis job management including claiming,
+    completing, and failing jobs. Used by both management commands and API views
+    to maintain consistency across the analysis workflow.
 
-This module provides the shared business logic for claiming, completing, and
-failing analysis jobs. Both the management commands and API views use these
-functions to maintain consistency.
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
 """
 from datetime import timedelta
 

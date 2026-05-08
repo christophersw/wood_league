@@ -1,12 +1,12 @@
-"""Data service for the Opening Position detail page.
+"""
+Title: opening_position_service.py — Opening position detail analytics
+Description:
+    Provides complete analytics for an opening position detail page. Given an OpeningBook ID,
+    returns metadata, matching games (EPD-based), per-player statistics, opening share pie data,
+    frequency timelines, and continuation flows for Sankey visualization up to 3 moves deep.
 
-Given an OpeningBook.id, provides:
-  - Opening metadata (eco, name, pgn, ply depth)
-  - Games that passed through the opening position (EPD match)
-  - Per-player W/D/L and accuracy stats
-  - Opening share vs all openings (for pie chart)
-  - Frequency-over-time per player (for trend line)
-  - Continuation flow for Sankey (3 more moves deep)
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
 """
 
 from __future__ import annotations

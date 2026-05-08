@@ -1,6 +1,12 @@
-"""Application configuration and settings management via Pydantic.
+"""
+Title: app/config.py — Application configuration and environment settings
+Description:
+    Application-level configuration management using Pydantic Settings. Defines the Settings
+    class that loads configuration from environment variables and .env files, including
+    database URLs, API keys, chess engine paths, analysis parameters, and feature flags.
 
-Defines the Settings class that loads configuration from environment variables and .env files.
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
 """
 from pydantic_settings import BaseSettings, SettingsConfigDict
 

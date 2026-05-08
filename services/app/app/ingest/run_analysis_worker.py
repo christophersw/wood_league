@@ -1,17 +1,12 @@
-"""CLI entry point for the Stockfish analysis worker.
+"""
+Title: run_analysis_worker.py — Stockfish analysis worker CLI
+Description:
+    Command-line entry point for the Stockfish analysis worker. Parses arguments for
+    binary location, depth, threading, memory limits, and control flow (enqueue, analyze,
+    poll). Locates Stockfish binary and coordinates job enqueueing and worker loop execution.
 
-Usage examples:
-  # Enqueue all unanalyzed games, then run analysis on this machine:
-  python -m app.ingest.run_analysis_worker --enqueue
-
-  # Run worker using a specific Stockfish binary:
-  python -m app.ingest.run_analysis_worker --stockfish /usr/local/bin/stockfish
-
-  # Full pipeline: enqueue + analyze, depth 18, exit when queue empty:
-  python -m app.ingest.run_analysis_worker --enqueue --stockfish /path/to/sf --depth 18 --no-poll
-
-  # Just show queue status:
-  python -m app.ingest.run_analysis_worker --status
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
 """
 from __future__ import annotations
 

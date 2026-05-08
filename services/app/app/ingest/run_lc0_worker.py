@@ -1,4 +1,13 @@
-"""CLI entry point for the Lc0 analysis worker."""
+"""
+Title: run_lc0_worker.py — Leela Chess Zero analysis worker CLI
+Description:
+    Command-line entry point for the Lc0 analysis worker. Parses arguments for engine
+    binary path, node count limits, and control flow (enqueue, analyze, poll). Enqueues
+    lc0 analysis jobs for all games and runs the worker loop.
+
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
+"""
 from __future__ import annotations
 
 import argparse

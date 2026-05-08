@@ -1,4 +1,13 @@
-"""Search services: AI-powered SQL generation and keyword search."""
+"""
+Title: services.py — AI-powered and keyword search services
+Description:
+    Core business logic for game search functionality. Provides AI-powered SQL
+    generation using Claude API with prompt caching, SQL sanitization and validation,
+    and keyword-based search across player names, openings, and time controls.
+
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
+"""
 
 from __future__ import annotations
 

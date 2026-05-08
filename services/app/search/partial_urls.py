@@ -1,4 +1,12 @@
-"""HTMX partial URL routes for the search app."""
+"""
+Title: partial_urls.py — HTMX partial endpoint URLs for search
+Description:
+    URL routing for HTMX partial endpoints in the search app, including
+    AI-powered search, keyword search, and board preview endpoints.
+
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
+"""
 
 from django.urls import path
 from . import views

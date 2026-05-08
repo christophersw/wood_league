@@ -1,6 +1,12 @@
-"""URL routing configuration for the Django application.
+"""
+Title: config/urls.py — Root URL routing configuration
+Description:
+    Root-level URL routing for the Wood League chess application. Maps URL paths to
+    app-specific handlers including the dashboard, games, search, openings, authentication,
+    player admin, analysis tools, HTMX partial views, and RESTful API endpoints.
 
-Maps URL paths to app-specific URL handlers and includes admin, authentication, and HTMX partial views.
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
 """
 from django.contrib import admin
 from django.urls import include, path

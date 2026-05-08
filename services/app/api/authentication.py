@@ -1,4 +1,13 @@
-"""Custom authentication for the API."""
+"""
+Title: authentication.py — Custom authentication for the Analysis Worker API
+Description:
+    Implements API key-based authentication for worker requests using WorkerAPIKey
+    credentials. Includes the WorkerAPIKeyAuthentication class for authenticating
+    requests via X-Api-Key headers and HasWorkerAPIKey permission class.
+
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
+"""
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.permissions import BasePermission

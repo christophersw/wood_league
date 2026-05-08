@@ -1,4 +1,13 @@
-"""Database models for club members in the players app."""
+"""
+Title: models.py — Player database models
+Description:
+    Defines the Player model representing club members with username, display
+    name, real name, and email fields. Includes display name sorting and
+    validation for unique usernames and emails.
+
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
+"""
 
 from django.db import models
 

@@ -1,4 +1,13 @@
-"""Views for displaying game analysis status and job queue metrics."""
+"""
+Title: views.py — Game analysis status dashboard and queue monitoring
+Description:
+    Provides views for displaying analysis job queue status, including job counts
+    by engine and status, RunPod worker health checks, and worker heartbeat
+    tracking. Restricted to admin users.
+
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
+"""
 from __future__ import annotations
 
 from django.contrib.auth.decorators import login_required, user_passes_test

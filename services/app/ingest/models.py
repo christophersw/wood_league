@@ -1,4 +1,13 @@
-"""Data models for the ingest app."""
+"""
+Title: models.py — System event tracking data models
+Description:
+    Defines the SystemEvent model for tracking system operations including game
+    syncs and analysis job execution. Records event type, status, timing, and
+    any associated errors or JSON details.
+
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
+"""
 
 from django.db import models
 

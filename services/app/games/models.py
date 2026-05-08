@@ -1,4 +1,12 @@
-"""Database models for chess games and participant tracking."""
+"""
+Title: models.py — Database models for chess games and participants
+Description:
+    Defines Game and GameParticipant models for storing chess games from
+    Chess.com with PGN, metadata, and per-player performance metrics.
+
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
+"""
 
 from django.db import models
 

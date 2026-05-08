@@ -1,6 +1,12 @@
-"""Authentication service for user login, token management, and password hashing.
+"""
+Title: auth_service.py — User authentication and session management
+Description:
+    Manages user authentication, password hashing (PBKDF2-SHA256), and HMAC-signed token
+    lifecycle. Supports account creation, email normalization, token expiration, and legacy
+    bcrypt compatibility. Provides bootstrap admin user initialization from config.
 
-Handles PBKDF2 password hashing, HMAC-based login token generation and verification, and user account management.
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
 """
 from __future__ import annotations
 

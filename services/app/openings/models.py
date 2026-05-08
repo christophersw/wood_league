@@ -1,4 +1,12 @@
-"""Database models for chess openings in the openings app."""
+"""
+Title: models.py — Database models for chess openings
+Description:
+    Defines the OpeningBook model representing chess openings by ECO code,
+    name, PGN, and final EPD (endgame position description) for lookup.
+
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
+"""
 
 from django.db import models
 

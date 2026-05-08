@@ -1,4 +1,12 @@
-"""Login form with email and password fields for user authentication."""
+"""
+Title: forms.py — User login form
+Description:
+    Django form for user authentication with email and password fields.
+    Provides HTML form rendering with Tailwind CSS styling for login interface.
+
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
+"""
 
 from django import forms
 

@@ -1,4 +1,13 @@
-"""Du Bois-styled Plotly chart builders for the dashboard."""
+"""
+Title: charts.py — Du Bois-styled Plotly chart builders
+Description:
+    Chart generation functions for the dashboard using Plotly with a custom
+    Du Bois color palette and typography. Produces accuracy trends, ELO trends,
+    and opening move Sankey diagrams.
+
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
+"""
 
 from __future__ import annotations
 

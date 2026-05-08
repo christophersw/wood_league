@@ -1,4 +1,13 @@
-"""Enqueue analysis jobs for games that have not yet been analyzed by Stockfish."""
+"""
+Title: enqueue_analysis.py — Analysis job queueing service
+Description:
+    Identifies games that need Stockfish analysis and creates AnalysisJob rows in the database.
+    Queries games with PGN content and no existing completed analysis, respecting depth
+    requirements and avoiding duplicates. Provides job status reporting.
+
+Changelog:
+    2026-05-08: Added file header to meet documentation standards
+"""
 from __future__ import annotations
 
 from sqlalchemy import select, func, and_
