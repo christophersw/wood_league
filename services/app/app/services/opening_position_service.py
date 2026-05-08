@@ -20,7 +20,7 @@ import chess.pgn
 import pandas as pd
 from sqlalchemy import and_, func, select
 
-from app.services.opening_book import lookup_opening, lookup_opening_entry
+from wood_league_shared.services.opening_book import lookup_opening, lookup_opening_entry
 from app.storage.database import get_session, init_db
 from app.storage.models import (
     Game,

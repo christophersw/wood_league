@@ -5,6 +5,7 @@ description = "Club chess analytics — Django + Tailwind + HTMX"
 readme = "README.md"
 requires-python = ">=3.13,<3.14"
 dependencies = [
+  "wood-league-shared",
   "django>=5.0",
   "psycopg2-binary",
   "gunicorn",
@@ -25,6 +26,9 @@ dependencies = [
   "tqdm>=4.66.0",
   "runpod>=1.7.0",
 ]
+
+[tool.uv.sources]
+wood-league-shared = { workspace = true }
 
 [tool.setuptools.packages.find]
 where = ["."]

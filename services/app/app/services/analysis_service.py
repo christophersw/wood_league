@@ -12,7 +12,7 @@ import chess.pgn
 import pandas as pd
 from sqlalchemy import select
 
-from app.services.opening_book import matched_opening_from_pgn
+from wood_league_shared.services.opening_book import matched_opening_from_pgn
 from app.storage.database import get_session, init_db
 from app.storage.models import (
     Game,

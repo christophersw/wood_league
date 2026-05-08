@@ -302,7 +302,7 @@ class ChessComSyncService:
     @staticmethod
     def _lichess_opening_from_pgn(pgn: str) -> str | None:
         """Return the most specific Lichess opening name for a PGN, or None."""
-        from app.services.opening_book import opening_at_each_ply
+        from wood_league_shared.services.opening_book import opening_at_each_ply
         if not pgn or not pgn.strip():
             return None
         plies = opening_at_each_ply(pgn, max_ply=20)
