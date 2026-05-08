@@ -1,0 +1,24 @@
+{# Full roster table — swapped in after add/delete #}
+{% if rows %}
+<div class="overflow-x-auto">
+  <table class="wc-table">
+    <thead>
+      <tr>
+        <th>Username</th>
+        <th>Display Name</th>
+        <th>Full Name</th>
+        <th>Email</th>
+        <th>Login</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody id="roster-rows">
+      {% for row in rows %}
+      {% include "players/_row.html" %}
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="font-mono text-sm text-slate">No members yet. Add one below.</p>
+{% endif %}

@@ -1,0 +1,91 @@
+{# Single roster row — hx-swap="outerHTML" targets this element #}
+{# Hidden form owns the CSRF token; inputs reference it via form= attribute #}
+<tr id="member-row-{{ row.player.pk }}">
+  <form id="edit-form-{{ row.player.pk }}"
+        hx-post="/_partials/members/{{ row.player.pk }}/edit/"
+        hx-target="#member-row-{{ row.player.pk }}"
+        hx-swap="outerHTML"
+        style="display:none">
+    {% csrf_token %}
+  </form>
+
+  <td class="font-mono text-xs">{{ row.player.username }}</td>
+  <td class="font-serif text-sm">{{ row.player.display_name }}</td>
+
+  <td>
+    <input type="text" name="name"
+           form="edit-form-{{ row.player.pk }}"
+           value="{{ row.player.name|default:'' }}"
+           placeholder="—"
+           class="w-36 px-1.5 py-0.5 border border-transparent hover:border-peat/30 focus:border-forest rounded bg-transparent font-mono text-xs focus:outline-none focus:bg-white"
+           hx-trigger="change"
+           hx-post="/_partials/members/{{ row.player.pk }}/edit/"
+           hx-target="#member-row-{{ row.player.pk }}"
+           hx-swap="outerHTML"
+           hx-include="[form='edit-form-{{ row.player.pk }}']">
+  </td>
+
+  <td>
+    <input type="email" name="email"
+           form="edit-form-{{ row.player.pk }}"
+           value="{{ row.player.email|default:'' }}"
+           placeholder="—"
+           class="w-44 px-1.5 py-0.5 border border-transparent hover:border-peat/30 focus:border-forest rounded bg-transparent font-mono text-xs focus:outline-none focus:bg-white"
+           hx-trigger="change"
+           hx-post="/_partials/members/{{ row.player.pk }}/edit/"
+           hx-target="#member-row-{{ row.player.pk }}"
+           hx-swap="outerHTML"
+           hx-include="[form='edit-form-{{ row.player.pk }}']">
+  </td>
+
+  <td>
+    {% if row.has_login %}
+    <span class="font-mono text-xs text-moss border border-moss px-2 py-0.5">Active</span>
+    {% elif row.player.email %}
+    <span class="font-mono text-xs text-steel border border-steel px-2 py-0.5">No login</span>
+    {% else %}
+    <span class="font-mono text-xs text-slate">No email</span>
+    {% endif %}
+  </td>
+
+  <td class="flex items-center gap-2 py-2">
+    {% if not row.has_login and row.player.email %}
+    <details class="relative">
+      <summary class="font-mono text-xs text-forest border border-forest px-2 py-0.5 cursor-pointer list-none hover:bg-forest hover:text-parchment transition-colors">
+        Invite
+      </summary>
+      <div class="absolute z-10 right-0 top-full mt-1 w-64 bg-parchment border border-ebony p-4 shadow-lg"
+           id="invite-popover-{{ row.player.pk }}">
+        <p class="font-mono text-xs text-slate mb-3">
+          Create login for <strong>{{ row.player.display_name }}</strong> ({{ row.player.email }})
+        </p>
+        <form hx-post="/_partials/members/{{ row.player.pk }}/invite/"
+              hx-target="#invite-popover-{{ row.player.pk }}"
+              hx-swap="outerHTML"
+              class="space-y-2">
+          {% csrf_token %}
+          <input type="password" name="password" required placeholder="Temporary password (8+ chars)"
+                 class="w-full px-2 py-1 border border-peat/30 rounded font-mono text-xs focus:outline-none focus:ring-1 focus:ring-forest">
+          <select name="role"
+                  class="w-full px-2 py-1 border border-peat/30 rounded font-mono text-xs focus:outline-none focus:ring-1 focus:ring-forest">
+            <option value="member">Member</option>
+            <option value="admin">Admin</option>
+          </select>
+          <button type="submit"
+                  class="w-full border border-forest text-forest font-mono text-xs uppercase tracking-wide py-1 hover:bg-forest hover:text-parchment transition-colors">
+            Create Login
+          </button>
+        </form>
+      </div>
+    </details>
+    {% endif %}
+
+    <button hx-delete="/_partials/members/{{ row.player.pk }}/delete/"
+            hx-target="#member-row-{{ row.player.pk }}"
+            hx-swap="outerHTML"
+            hx-confirm="Remove {{ row.player.username }}? Their game records will be unlinked."
+            class="font-mono text-xs text-crimson border border-crimson px-2 py-0.5 hover:bg-crimson hover:text-parchment transition-colors">
+      Remove
+    </button>
+  </td>
+</tr>

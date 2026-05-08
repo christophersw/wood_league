@@ -1,0 +1,19 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../wood_league_dispatchers"
+		},
+		{
+			"path": "../wood_league_lc0_runpod"
+		},
+		{
+			"path": "../wood_league_stockfish_runpod"
+		}
+	],
+	"settings": {
+		"snyk.advanced.additionalParameters": "--exclude=.venv"
+	}
+}

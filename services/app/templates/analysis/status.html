@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Analysis Status — Wood League Chess{% endblock %}
+
+{% block content %}
+
+<div class="page-hero">
+  <div>
+    <h1>Analysis Status</h1>
+    <p class="page-hero-sub">RunPod serverless pipeline — Stockfish and Lc0.</p>
+  </div>
+</div>
+
+{# ── Queue ─────────────────────────────────────────────────────────────── #}
+<div class="pg-section">
+  <div class="pg-head">
+    <span class="pg-title">Queue</span>
+    <span class="pg-caption">Auto-refreshes every 30s</span>
+  </div>
+  <div id="queue-panel"
+       hx-get="/_partials/analysis/queue/"
+       hx-trigger="load, every 30s"
+       hx-indicator="#htmx-indicator">
+    <div class="flex items-center gap-2 font-mono text-sm text-slate">
+      {% include "partials/_spinner.html" %}
+      Loading…
+    </div>
+  </div>
+</div>
+
+{# ── Recent Jobs ───────────────────────────────────────────────────────── #}
+<div class="pg-section">
+  <div class="pg-head">
+    <span class="pg-title">Recent Jobs</span>
+    <span class="pg-caption">Last 100</span>
+  </div>
+  {% if jobs %}
+  <div class="overflow-x-auto">
+    <table class="wc-table">
+      <thead>
+        <tr>
+          <th>ID</th><th>Engine</th><th>Status</th><th>Game</th>
+          <th>Depth</th><th>RunPod Job</th><th>Submitted</th>
+          <th>Duration</th><th>Retries</th><th>Error</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for job in jobs %}
+        <tr>
+          <td class="font-mono text-xs text-peat">{{ job.id }}</td>
+          <td class="font-mono text-xs">{{ job.engine }}</td>
+          <td>
+            <span class="font-mono text-xs
+              {% if job.status == 'completed' %}text-moss
+              {% elif job.status == 'failed' %}text-crimson
+              {% elif job.status == 'running' %}text-forest font-bold
+              {% else %}text-slate{% endif %}">
+              {{ job.status }}
+            </span>
+          </td>
+          <td class="font-mono text-xs">{{ job.game_id|truncatechars:16 }}</td>
+          <td class="font-mono text-xs text-slate">{{ job.depth|default:"—" }}</td>
+          <td class="font-mono text-xs text-slate">{{ job.runpod_job_id|default:"—"|truncatechars:16 }}</td>
+          <td class="font-mono text-xs text-peat">{{ job.submitted_at|date:"d M H:i"|default:"—" }}</td>
+          <td class="font-mono text-xs text-slate">
+            {% if job.duration_seconds %}{{ job.duration_seconds|floatformat:0 }}s{% else %}—{% endif %}
+          </td>
+          <td class="font-mono text-xs text-slate">{{ job.retry_count|default:0 }}</td>
+          <td class="font-mono text-xs text-crimson">{{ job.error_message|default:""|truncatechars:40 }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="font-mono text-sm text-slate">No analysis jobs found.</p>
+  {% endif %}
+</div>
+
+{% endblock %}

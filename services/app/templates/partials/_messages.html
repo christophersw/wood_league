@@ -1,0 +1,15 @@
+{% if messages %}
+<div class="fixed top-16 left-1/2 -translate-x-1/2 z-50 space-y-2 w-full max-w-md px-4"
+     id="flash-messages" style="pointer-events:none;">
+  {% for message in messages %}
+  <div class="flash-msg
+    {% if message.tags == 'error' %}flash-msg--error
+    {% elif message.tags == 'success' %}flash-msg--success
+    {% elif message.tags == 'warning' %}flash-msg--warning
+    {% else %}flash-msg--info{% endif %}"
+    style="pointer-events:auto;">
+    {{ message }}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}

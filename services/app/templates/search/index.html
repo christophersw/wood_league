@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Game Search — Wood League Chess{% endblock %}
+
+{% block content %}
+
+<div class="page-hero">
+  <div>
+    <h1>Game Search</h1>
+    <p class="page-hero-sub">Search games and preview openings.</p>
+  </div>
+</div>
+
+{# ── Mode tabs ─────────────────────────────────────────────────────────── #}
+<div class="tab-bar" id="search-tabs">
+  <button id="tab-ai"
+          class="tab-btn search-tab tab-btn--active"
+          onclick="switchTab('ai')"
+          {% if not ai_available %}disabled title="ANTHROPIC_API_KEY not configured"{% endif %}>
+    AI Search
+  </button>
+  <button id="tab-kw" class="tab-btn search-tab" onclick="switchTab('kw')">
+    Keyword
+  </button>
+</div>
+
+{# ── AI Search form ────────────────────────────────────────────────────── #}
+<div id="panel-ai" class="search-panel">
+  {% if not ai_available %}
+  <p style="font-family:var(--font-mono);font-size:.68rem;color:var(--color-peat);margin-bottom:.75rem;">
+    ANTHROPIC_API_KEY not configured — AI search unavailable.
+  </p>
+  {% endif %}
+  <form hx-post="{% url 'search_ai_partial' %}"
+        hx-target="#search-results"
+        hx-indicator="#search-spinner"
+        class="flex gap-2" style="margin-bottom:.75rem;">
+    {% csrf_token %}
+    <input type="text" name="query"
+           placeholder="e.g. last 30 days losses as black in sicilian openings"
+           class="wc-input" style="flex:1;"
+           {% if not ai_available %}disabled{% endif %}>
+    <button type="submit" class="wc-btn wc-btn-solid"
+            {% if not ai_available %}disabled{% endif %}>
+      Search
+    </button>
+  </form>
+  <p style="font-family:var(--font-mono);font-size:.65rem;color:var(--color-slate);">
+    Describe games in plain English — the app generates validated SQL and runs it.
+  </p>
+</div>
+
+{# ── Keyword Search form ───────────────────────────────────────────────── #}
+<div id="panel-kw" class="search-panel hidden">
+  <form hx-post="{% url 'search_keyword_partial' %}"
+        hx-target="#search-results"
+        hx-indicator="#search-spinner"
+        class="flex gap-2" style="margin-bottom:.75rem;">
+    {% csrf_token %}
+    <input type="text" name="query"
+           placeholder="e.g. sicilian, 15+10, player name, opening"
+           class="wc-input" style="flex:1;">
+    <button type="submit" class="wc-btn wc-btn-solid">Search</button>
+  </form>
+  <p style="font-family:var(--font-mono);font-size:.65rem;color:var(--color-slate);">
+    Searches player names, opening names, ECO codes, and time controls.
+  </p>
+</div>
+
+<div id="search-spinner" class="htmx-indicator"
+     style="font-family:var(--font-mono);font-size:.65rem;color:var(--color-peat);padding:.5rem 0;">
+  Searching…
+</div>
+
+<div id="search-results" style="margin-top:1.5rem;"></div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function switchTab(mode) {
+  document.querySelectorAll('.search-tab').forEach(t => t.classList.remove('tab-btn--active'));
+  document.querySelectorAll('.search-panel').forEach(p => p.classList.add('hidden'));
+  document.getElementById('tab-' + mode).classList.add('tab-btn--active');
+  document.getElementById('panel-' + mode).classList.remove('hidden');
+  document.getElementById('search-results').innerHTML = '';
+}
+{% if not ai_available %}
+document.addEventListener('DOMContentLoaded', () => switchTab('kw'));
+{% endif %}
+</script>
+{% endblock %}

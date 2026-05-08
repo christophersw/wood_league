@@ -1,0 +1,41 @@
+<h2 style="margin: 0 0 1.5rem 0;">Issue New API Key</h2>
+
+<form hx-post="{% url 'api-keys-issue' %}" hx-target="#modal-body" hx-swap="innerHTML">
+  {% csrf_token %}
+  
+  {% if error %}
+    <div style="color: var(--color-crimson); margin-bottom: 1rem; padding: 0.75rem; background: var(--color-cream); border-left: 3px solid var(--color-crimson);">
+      {{ error }}
+    </div>
+  {% endif %}
+  
+  <div style="margin-bottom: 1.5rem;">
+    <label for="worker_name" style="display: block; margin-bottom: 0.5rem; font-weight: 500;">
+      Worker Name <span style="color: var(--color-crimson);">*</span>
+    </label>
+    <input type="text" 
+           name="worker_name" 
+           id="worker_name"
+           placeholder="e.g., stockfish-runpod-us-east"
+           required
+           maxlength="128"
+           style="width: 100%; padding: 0.5rem; border: 1px solid var(--color-peat); border-radius: 3px; font-family: inherit;">
+  </div>
+  
+  <div style="margin-bottom: 1.5rem;">
+    <label for="notes" style="display: block; margin-bottom: 0.5rem; font-weight: 500;">
+      Notes <span style="color: var(--color-slate);">(optional)</span>
+    </label>
+    <textarea name="notes" 
+              id="notes"
+              placeholder="e.g., Production server, EU region"
+              maxlength="1000"
+              rows="3"
+              style="width: 100%; padding: 0.5rem; border: 1px solid var(--color-peat); border-radius: 3px; font-family: inherit; resize: vertical;"></textarea>
+  </div>
+  
+  <div style="display: flex; gap: 1rem; justify-content: flex-end;">
+    <button type="button" class="btn" onclick="closeModal()">Cancel</button>
+    <button type="submit" class="btn btn-primary">Issue Key</button>
+  </div>
+</form>

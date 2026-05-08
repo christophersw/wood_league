@@ -1,0 +1,11 @@
+{% if empty %}
+<p class="font-mono text-sm text-slate py-4">No rating data available for this period.</p>
+{% else %}
+<div id="elo-chart" style="height:380px;"></div>
+<script>
+(function() {
+  var data = {{ chart_json|safe }};
+  Plotly.react("elo-chart", data.data, data.layout, {responsive: true, displaylogo: false});
+})();
+</script>
+{% endif %}

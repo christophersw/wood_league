@@ -1,0 +1,5 @@
+{
+  "ok": false,
+  "error": "Failed to get dependencies for all 2 potential projects.\n\n/Users/christopherwebster/Projects/woodland_app/requirements.txt:\nSomething went wrong getting dependencies\n\n/Users/christopherwebster/Projects/woodland_app/.venv/share/jupyter/labextensions/jupyterlab-plotly/package.json:\nMissing node_modules folder: we can't test without dependencies.\nPlease run 'npm install' first.",
+  "path": "/Users/christopherwebster/Projects/woodland_app"
+}

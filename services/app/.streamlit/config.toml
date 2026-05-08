@@ -1,0 +1,13 @@
+[browser]
+gatherUsageStats = false
+
+[server]
+enableStaticServing = true
+
+[theme]
+base                     = "light"
+primaryColor             = "#D4A843"
+backgroundColor          = "#F2E6D0"
+secondaryBackgroundColor = "#E8D5B0"
+textColor                = "#1A1A1A"
+font                     = "serif"

@@ -1,0 +1,78 @@
+{% if error %}
+<div class="border border-peat/40 bg-cream p-4 mb-4 font-mono text-sm text-peat">
+  {{ error }}
+  {% if sql %}<pre class="mt-2 text-xs overflow-x-auto text-slate">{{ sql }}</pre>{% endif %}
+</div>
+{% endif %}
+
+{% if reasoning %}
+<p class="font-mono text-xs text-slate mb-2">Reasoning: {{ reasoning }}</p>
+{% endif %}
+
+{% if sql and not error %}
+<details class="mb-3">
+  <summary class="font-mono text-xs text-slate cursor-pointer hover:text-forest">Show SQL</summary>
+  <pre class="font-mono text-xs text-slate mt-1 overflow-x-auto border border-peat/20 p-2 bg-cream">{{ sql }}</pre>
+</details>
+{% endif %}
+
+{% if results %}
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+  {# ── Results table ───────────────────────────────────────────────────── #}
+  <div class="lg:col-span-2">
+    <p class="font-mono text-xs text-slate mb-2">{{ results|length }} game{{ results|length|pluralize }} found</p>
+    <div class="overflow-x-auto">
+      <table class="wc-table w-full">
+        <thead>
+          <tr>
+            <th class="text-left">Date</th>
+            <th class="text-left">White</th>
+            <th class="text-left">Black</th>
+            <th class="text-left">Result</th>
+            <th class="text-left">Opening</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in results %}
+          <tr
+            class="cursor-pointer hover:bg-parchment/60 transition-colors"
+            hx-get="{% url 'search_board_partial' row.game_id %}"
+            hx-target="#board-preview-panel"
+            hx-swap="innerHTML"
+            hx-indicator="#board-spinner">
+            <td class="font-mono text-xs text-peat whitespace-nowrap">{{ row.played_at }}</td>
+            <td class="font-serif text-sm">♙ {{ row.white_username }}</td>
+            <td class="font-serif text-sm">♟ {{ row.black_username }}</td>
+            <td class="font-mono text-xs">{{ row.result_pgn }}</td>
+            <td class="font-mono text-xs text-slate max-w-xs truncate">{{ row.opening }}</td>
+            <td>
+              {% if row.slug %}
+              <a href="{% url 'games:analysis' row.slug %}"
+                 class="inline-block border border-ebony text-forest font-mono text-xs uppercase tracking-wide px-2 py-0.5 hover:bg-ebony hover:text-parchment transition-colors"
+                 onclick="event.stopPropagation()">
+                Open
+              </a>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {# ── Board preview ────────────────────────────────────────────────────── #}
+  <div class="lg:col-span-1">
+    <p class="font-mono text-xs text-slate mb-2">Board Preview</p>
+    <div id="board-spinner" class="htmx-indicator font-mono text-xs text-slate py-2">Loading…</div>
+    <div id="board-preview-panel" class="border border-peat/20 p-3 bg-cream min-h-[200px]">
+      <p class="font-mono text-xs text-slate">Select a row to preview the game.</p>
+    </div>
+  </div>
+
+</div>
+{% elif not error %}
+<p class="font-mono text-sm text-slate">No games matched.</p>
+{% endif %}

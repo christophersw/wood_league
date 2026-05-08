@@ -1,0 +1,28 @@
+{% load static %}
+
+{# Game info header #}
+<div class="mb-3">
+  {% if game.lichess_opening or game.opening_name %}
+  <p class="font-mono text-xs text-forest font-bold mb-1">{{ game.lichess_opening|default:game.opening_name }}</p>
+  {% endif %}
+  <p class="font-serif text-sm text-ebony">
+    ♙ {{ game.white_username }} vs ♟ {{ game.black_username }}
+  </p>
+  <p class="font-mono text-xs text-slate">
+    {{ game.display_result }}
+    {% if game.played_at %} · {{ game.played_at|date:"d M Y" }}{% endif %}
+  </p>
+  {% if game.slug %}
+  <a href="{% url 'games:analysis' game.slug %}"
+     class="inline-block mt-2 border border-forest text-forest font-mono text-xs uppercase tracking-wide px-3 py-1 hover:bg-forest hover:text-parchment transition-colors">
+    Open Analysis
+  </a>
+  {% endif %}
+</div>
+
+{# Animated board #}
+{% if board_html %}
+{{ board_html|safe }}
+{% else %}
+<p class="font-mono text-xs text-slate">No PGN available for this game.</p>
+{% endif %}

@@ -1,0 +1,21 @@
+{
+	"folders": [
+		{
+			"path": "../",
+			"name": "wood_league_app"
+		},
+		{
+			"path": "../../wood_league_dispatchers",
+			"name": "wood_league_dispatchers"
+		},
+		{
+			"path": "../../wood_league_stockfish_runpod",
+			"name": "wood_league_stockfish_runpod"
+		},
+		{
+			"path": "../../wood_league_lc0_runpod",
+			"name": "wood_league_lc0_runpod"
+		}
+	],
+	"settings": {}
+}

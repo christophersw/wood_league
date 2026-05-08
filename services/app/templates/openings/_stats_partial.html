@@ -1,0 +1,160 @@
+{# HTMX partial: opening stats panel — swapped in response to filter changes #}
+
+{% if not has_games %}
+<div class="border border-peat/20 bg-cream p-6 rounded">
+  <p class="font-mono text-sm text-peat">No games found for this opening in the selected period.</p>
+  <p class="font-mono text-xs text-slate mt-1">Scope: {{ scope_label }}</p>
+</div>
+{% else %}
+
+{# ── Summary ──────────────────────────────────────────────────────────── #}
+<p class="font-mono text-xs text-slate mb-6">
+  <strong class="text-ebony">{{ total_games }}</strong> club game{% if total_games != 1 %}s{% endif %}
+  played through this opening — {{ scope_label }}.
+</p>
+
+{# ── Charts: share pie + accuracy bar ─────────────────────────────────── #}
+<div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+  <div>
+    <h3 class="text-lg font-display text-forest mb-3">Opening Share</h3>
+    {% if share_chart_json and share_chart_json != "{}" %}
+    <div id="opening-share-chart-{{ opening.id }}"
+         data-chart="{{ share_chart_json }}"
+         class="w-full h-80 plotly-chart"></div>
+    {% else %}
+    <p class="font-mono text-sm text-slate">No share data.</p>
+    {% endif %}
+  </div>
+  <div>
+    <h3 class="text-lg font-display text-forest mb-3">Average Accuracy by Player</h3>
+    {% if acc_chart_json and acc_chart_json != "{}" %}
+    <div id="opening-acc-chart-{{ opening.id }}"
+         data-chart="{{ acc_chart_json }}"
+         class="w-full plotly-chart"></div>
+    {% else %}
+    <p class="font-mono text-sm text-slate">No accuracy data available for this scope.</p>
+    {% endif %}
+  </div>
+</div>
+
+{# ── Per-player W/D/L ────────────────────────────────────────────────── #}
+{% if stats_rows %}
+<section class="mb-8">
+  <h3 class="text-lg font-display text-forest mb-3">Results by Player</h3>
+  <div class="space-y-2 max-w-lg">
+    {% for row in stats_rows %}
+    <div class="font-mono text-sm">
+      <div class="flex items-center gap-3 mb-1">
+        <span class="w-28 text-xs truncate text-ebony">{{ row.player }}</span>
+        <div class="flex-1 flex h-6 border border-ebony overflow-hidden">
+          {% if row.win_pct > 0 %}
+          <div class="flex items-center justify-center text-parchment text-xs font-bold bg-forest"
+               style="flex: {{ row.win_pct }}">
+            {% if row.win_pct >= 9 %}W {{ row.win_pct|floatformat:0 }}%{% endif %}
+          </div>
+          {% endif %}
+          {% if row.draw_pct > 0 %}
+          <div class="flex items-center justify-center text-parchment text-xs font-bold bg-peat"
+               style="flex: {{ row.draw_pct }}">
+            {% if row.draw_pct >= 9 %}D {{ row.draw_pct|floatformat:0 }}%{% endif %}
+          </div>
+          {% endif %}
+          {% if row.loss_pct > 0 %}
+          <div class="flex items-center justify-center text-parchment text-xs font-bold"
+               style="flex: {{ row.loss_pct }}; background: #B53541">
+            {% if row.loss_pct >= 9 %}L {{ row.loss_pct|floatformat:0 }}%{% endif %}
+          </div>
+          {% endif %}
+        </div>
+        <span class="text-xs text-slate w-12 text-right">{{ row.games }}g</span>
+      </div>
+      <div class="text-xs text-slate pl-[7.5rem]">
+        W {{ row.wins }} · D {{ row.draws }} · L {{ row.losses }}
+        · ♙ {{ row.as_white }} ♟ {{ row.as_black }}
+        {% if row.avg_accuracy %} · Acc: {{ row.avg_accuracy|floatformat:1 }}%{% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{# ── Frequency over time ──────────────────────────────────────────────── #}
+<section class="mb-8">
+  <h3 class="text-lg font-display text-forest mb-3">Frequency Over Time</h3>
+  {% if freq_chart_json and freq_chart_json != "{}" %}
+  <div id="opening-freq-chart-{{ opening.id }}"
+       data-chart="{{ freq_chart_json }}"
+       class="w-full h-80 plotly-chart"></div>
+  {% else %}
+  <p class="font-mono text-sm text-slate">Not enough data for a trend chart.</p>
+  {% endif %}
+</section>
+
+{# ── Game table ───────────────────────────────────────────────────────── #}
+<section>
+  <h3 class="text-lg font-display text-forest mb-3">Games</h3>
+  <p class="font-mono text-xs text-slate mb-3">Scope: {{ scope_label }}</p>
+  {% if game_rows %}
+  <div class="overflow-x-auto">
+    <table class="wc-table">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Player</th>
+          <th></th>
+          <th>Opponent</th>
+          <th>Result</th>
+          <th>Accuracy</th>
+          <th>ACPL</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in game_rows %}
+        <tr>
+          <td class="font-mono text-xs text-peat">{{ row.date }}</td>
+          <td class="font-serif">{{ row.club_player }}</td>
+          <td>{{ row.color_sym }}</td>
+          <td class="font-serif">{{ row.opponent }}</td>
+          <td class="font-mono text-xs font-bold
+            {% if row.result == 'Win' %}text-moss
+            {% elif row.result == 'Loss' %}text-crimson
+            {% else %}text-steel{% endif %}">
+            {{ row.result }}
+          </td>
+          <td class="font-mono text-xs font-bold text-forest">{{ row.accuracy }}</td>
+          <td class="font-mono text-xs text-slate">{{ row.acpl }}</td>
+          <td>
+            {% if row.slug %}
+            <a href="{% url 'games:analysis' row.slug %}"
+               class="inline-block border border-ebony text-forest font-mono text-xs uppercase tracking-wide px-3 py-1 hover:bg-ebony hover:text-parchment transition-colors">
+              Open
+            </a>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="font-mono text-xs text-slate mt-2">{{ game_rows|length }} unique game{% if game_rows|length != 1 %}s{% endif %} shown.</p>
+  {% else %}
+  <p class="font-mono text-sm text-slate">No games match the current filters.</p>
+  {% endif %}
+</section>
+
+{% endif %}
+
+<script>
+(function() {
+  document.querySelectorAll('.plotly-chart[data-chart]').forEach(function(el) {
+    try {
+      var spec = JSON.parse(el.dataset.chart);
+      if (spec && spec.data) {
+        Plotly.react(el, spec.data, spec.layout || {}, {responsive: true, displaylogo: false});
+      }
+    } catch (e) {}
+  });
+})();
+</script>
