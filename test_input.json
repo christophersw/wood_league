@@ -1,0 +1,8 @@
+{
+  "id": "local-test-job",
+  "input": {
+    "game_id": "test-game-id",
+    "pgn": "[Event \"Live Chess\"]\n[Site \"Chess.com\"]\n[Date \"2025.01.01\"]\n[Round \"?\"]\n[White \"white\"]\n[Black \"black\"]\n[Result \"1-0\"]\n\n1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 1-0",
+    "nodes": 25000
+  }
+}
