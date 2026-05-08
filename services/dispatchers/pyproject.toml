@@ -5,16 +5,15 @@ description = "Unified Railway dispatchers for Stockfish and Lc0 RunPod endpoint
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-  "runpod>=1.7.0",
-  "sqlalchemy>=2.0.29",
-  "psycopg[binary]>=3.2.0",
-  "python-chess>=1.999",
+    "wood-league-shared",
+    "runpod>=1.7.0",
 ]
 
 [project.optional-dependencies]
-dev = [
-  "pytest>=8.2.0",
-]
+dev = ["pytest>=8.2.0"]
+
+[tool.uv.sources]
+wood-league-shared = { workspace = true }
 
 [tool.setuptools.packages.find]
 where = ["."]

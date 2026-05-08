@@ -9,9 +9,9 @@ from datetime import datetime, timezone
 import runpod
 from sqlalchemy import and_, select
 
-from dispatchers.db import get_session, init_db
-from dispatchers.ingest.sync_service import ChessComSyncService
-from dispatchers.models import AnalysisJob, Game, SystemEvent
+from wood_league_shared.storage.database import get_session, init_db
+from wood_league_shared.ingest.sync_service import ChessComSyncService
+from wood_league_shared.storage.models import AnalysisJob, Game, SystemEvent
 
 logging.basicConfig(
     level=logging.INFO,
