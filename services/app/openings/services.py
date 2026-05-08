@@ -10,6 +10,10 @@ Changelog:
     2026-05-08: Added file header to meet documentation standards
     2026-05-08: Refactored continuation_flow (E→B): extracted _advance_board_to_opening,
         _collect_continuation_names, _accumulate_node_stats, _build_node_stats_df helpers
+    2026-05-08: Refactored opening_tree_context (E→C): extracted _scan_game_for_tree,
+        _annotate_tree_results helpers
+    2026-05-08: Refactored get_games (E→C): extracted _pgn_reaches_epd,
+        _build_games_queryset, _participant_to_record helpers
 """
 
 from __future__ import annotations
@@ -117,21 +121,44 @@ def search_openings(query: str, limit: int = 30) -> list[dict]:
 
 # ── Game fetching ─────────────────────────────────────────────────────────────
 
-def get_games(
-    opening: dict,
-    lookback_days: int | None = 90,
-    players: list[str] | None = None,
-) -> pd.DataFrame:
-    """Return club-player games that passed through the opening position (EPD match)."""
-    target_epd = opening["epd"]
-    ply_depth = opening["ply_depth"]
 
-    floor_date = (
-        datetime.now(tz=timezone.utc) - timedelta(days=lookback_days)
-        if lookback_days is not None
-        else None
-    )
+def _pgn_reaches_epd(pgn_text: str, target_epd: str, ply_depth: int) -> bool:
+    """Scan a PGN string and return True if the game passes through target_epd.
 
+    Args:
+        pgn_text: Raw PGN string to parse and scan.
+        target_epd: EPD string of the target opening position.
+        ply_depth: Maximum ply depth to scan (stops early if exceeded).
+
+    Returns:
+        True if a board position matching target_epd was found, False otherwise.
+    """
+    try:
+        game = chess.pgn.read_game(io.StringIO(pgn_text))
+        if game is None:
+            return False
+        board = game.board()
+        for move in game.mainline_moves():
+            board.push(move)
+            if board.epd() == target_epd:
+                return True
+            if board.ply() > ply_depth:
+                break
+    except Exception:
+        return False
+    return False
+
+
+def _build_games_queryset(lookback_days: int | None, players: list[str] | None):  # type: ignore[return]
+    """Build the Django ORM queryset for game participants filtered by date and players.
+
+    Args:
+        lookback_days: Number of days to look back; None means no date filter.
+        players: Optional list of player usernames to restrict results to.
+
+    Returns:
+        Django QuerySet of GameParticipant objects with game and analysis pre-fetched.
+    """
     qs = (
         GameParticipant.objects
         .select_related("game", "player", "game__analysis")
@@ -139,68 +166,85 @@ def get_games(
         .exclude(game__pgn="")
         .order_by("-game__played_at")
     )
-    if floor_date is not None:
+    if lookback_days is not None:
+        floor_date = datetime.now(tz=timezone.utc) - timedelta(days=lookback_days)
         qs = qs.filter(game__played_at__gte=floor_date)
     if players:
         lower_players = [p.lower() for p in players]
         qs = qs.filter(
             Q(*[Q(player__username__iexact=p) for p in lower_players], _connector=Q.OR)
         )
+    return qs
+
+
+def _participant_to_record(gp: GameParticipant) -> dict:  # type: ignore[type-arg]
+    """Convert a GameParticipant ORM object into a flat record dict for DataFrame construction.
+
+    Args:
+        gp: GameParticipant instance with game and analysis pre-fetched.
+
+    Returns:
+        Dict with game metadata, player info, analysis metrics, and raw PGN.
+    """
+    g = gp.game
+    analysis = getattr(g, "analysis", None)
+    return {
+        "game_id": g.id,
+        "slug": g.slug or "",
+        "played_at": g.played_at,
+        "club_player": gp.player.username,
+        "color": (gp.color or "").lower(),
+        "result": gp.result or "",
+        "white_username": g.white_username or "?",
+        "black_username": g.black_username or "?",
+        "white_accuracy": analysis.white_accuracy if analysis else None,
+        "black_accuracy": analysis.black_accuracy if analysis else None,
+        "white_acpl": analysis.white_acpl if analysis else None,
+        "black_acpl": analysis.black_acpl if analysis else None,
+        "player_rating": gp.player_rating,
+        "opponent_rating": gp.opponent_rating,
+        "result_pgn": g.result_pgn or "",
+        "pgn": g.pgn or "",
+    }
+
+
+def get_games(
+    opening: dict,
+    lookback_days: int | None = 90,
+    players: list[str] | None = None,
+) -> pd.DataFrame:
+    """Return club-player games that passed through the opening position (EPD match).
+
+    Args:
+        opening: Opening dict with keys epd and ply_depth.
+        lookback_days: Number of days to look back; None means no date filter.
+        players: Optional list of player usernames to filter results.
+
+    Returns:
+        DataFrame of matching game-participant rows, or empty DataFrame if none found.
+    """
+    target_epd = opening["epd"]
+    ply_depth = opening["ply_depth"]
+
+    qs = _build_games_queryset(lookback_days, players)
 
     seen_game_epd: dict[str, bool] = {}
-
-    def _matches(pgn_text: str, gid: str) -> bool:
-        """Check if game PGN passes through the target opening position."""
-        if gid in seen_game_epd:
-            return seen_game_epd[gid]
-        try:
-            game = chess.pgn.read_game(io.StringIO(pgn_text))
-            if game is None:
-                seen_game_epd[gid] = False
-                return False
-            board = game.board()
-            result = False
-            for move in game.mainline_moves():
-                board.push(move)
-                if board.epd() == target_epd:
-                    result = True
-                    break
-                if board.ply() > ply_depth:
-                    break
-        except Exception:
-            result = False
-        seen_game_epd[gid] = result
-        return result
-
     seen_keys: set[tuple[str, str]] = set()
     records = []
+
     for gp in qs:
         g = gp.game
         key = (g.id, gp.player.username)
         if key in seen_keys:
             continue
         seen_keys.add(key)
-        if not _matches(g.pgn, g.id):
+
+        if g.id not in seen_game_epd:
+            seen_game_epd[g.id] = _pgn_reaches_epd(g.pgn, target_epd, ply_depth)
+        if not seen_game_epd[g.id]:
             continue
-        analysis = getattr(g, "analysis", None)
-        records.append({
-            "game_id": g.id,
-            "slug": g.slug or "",
-            "played_at": g.played_at,
-            "club_player": gp.player.username,
-            "color": (gp.color or "").lower(),
-            "result": gp.result or "",
-            "white_username": g.white_username or "?",
-            "black_username": g.black_username or "?",
-            "white_accuracy": analysis.white_accuracy if analysis else None,
-            "black_accuracy": analysis.black_accuracy if analysis else None,
-            "white_acpl": analysis.white_acpl if analysis else None,
-            "black_acpl": analysis.black_acpl if analysis else None,
-            "player_rating": gp.player_rating,
-            "opponent_rating": gp.opponent_rating,
-            "result_pgn": g.result_pgn or "",
-            "pgn": g.pgn or "",
-        })
+
+        records.append(_participant_to_record(gp))
 
     if not records:
         return pd.DataFrame()
@@ -581,15 +625,112 @@ def continuation_flow(
 
 # ── Opening tree context (lineage + continuations) ────────────────────────────
 
+
+def _scan_game_for_tree(
+    game: chess.pgn.Game,
+    lineage_epd_set: set[str],
+    selected_epd: str,
+    selected_ply: int,
+) -> tuple[set[str], bool, tuple[int, str, str, str, str] | None]:
+    """Walk a parsed game and collect tree-context data for one game.
+
+    Args:
+        game: Parsed chess.pgn.Game object to scan.
+        lineage_epd_set: Set of EPD strings belonging to the opening lineage.
+        selected_epd: EPD of the target opening position.
+        selected_ply: Ply depth of the target opening (used to bound child search).
+
+    Returns:
+        Tuple of:
+          - seen_lineage_epds: EPDs from lineage_epd_set hit during this game.
+          - reached_selected: Whether the game passed through selected_epd.
+          - selected_child: (opening_id, epd, fen, eco, name) of the first
+            child opening found after selected_epd, or None.
+    """
+    board = game.board()
+    seen_lineage_epds: set[str] = set()
+    reached_selected = False
+    selected_child: tuple[int, str, str, str, str] | None = None
+
+    for move in game.mainline_moves():
+        board.push(move)
+        epd = board.epd()
+
+        if epd in lineage_epd_set:
+            seen_lineage_epds.add(epd)
+
+        if epd == selected_epd:
+            reached_selected = True
+            continue
+
+        if reached_selected and board.ply() > selected_ply:
+            hit = lookup_opening_entry(board)
+            if hit is None:
+                continue
+            opening_id, eco, name = hit
+            if board.epd() == selected_epd:
+                continue
+            selected_child = (opening_id, board.epd(), board.fen(), eco, name)
+            break
+
+    return seen_lineage_epds, reached_selected, selected_child
+
+
+def _annotate_tree_results(
+    lineage: list[dict],
+    lineage_game_counts: dict[str, int],
+    child_counts: dict[str, dict],
+    total_scoped_games: int,
+    selected_games: int,
+    max_children: int,
+) -> tuple[list[dict], list[dict]]:
+    """Attach game counts and percentages to lineage nodes and child list.
+
+    Args:
+        lineage: List of lineage node dicts (mutated in-place with games/pct_scoped).
+        lineage_game_counts: Mapping of EPD → game count for lineage nodes.
+        child_counts: Mapping of EPD → child stats dict (mutated in-place with label/pct_selected).
+        total_scoped_games: Total unique games in the scoped dataset.
+        selected_games: Number of games that reached the selected opening.
+        max_children: Maximum number of children to return (0 = unlimited).
+
+    Returns:
+        Tuple of (annotated lineage list, sorted+truncated children list).
+    """
+    for n in lineage:
+        g = lineage_game_counts.get(n["epd"], 0)
+        n["games"] = int(g)
+        n["pct_scoped"] = round((g / total_scoped_games * 100.0), 1) if total_scoped_games else 0.0
+
+    children = sorted(child_counts.values(), key=lambda x: x["games"], reverse=True)
+    if max_children > 0:
+        children = children[:max_children]
+
+    for c in children:
+        c["label"] = f"{c['eco']} {c['name']}".strip()
+        c["pct_selected"] = round((c["games"] / selected_games * 100.0), 1) if selected_games else 0.0
+
+    return lineage, children
+
+
 def opening_tree_context(
     opening: dict,
     lookback_days: int | None = 90,
     players: list[str] | None = None,
     max_children: int = 8,
 ) -> dict:
-    """Build opening lineage and continuation context for tree visualization."""
-    scoped_games = _scoped_games(lookback_days=lookback_days, players=players)
+    """Build opening lineage and continuation context for tree visualization.
 
+    Args:
+        opening: Opening dict with keys epd, ply_depth, id, eco, name, final_fen, pgn.
+        lookback_days: Number of days to look back for scoped games (None = all time).
+        players: Optional list of player usernames to filter games.
+        max_children: Maximum child openings to return (0 = unlimited).
+
+    Returns:
+        Dict with keys: total_scoped_games, selected_games, lineage, children.
+    """
+    scoped_games = _scoped_games(lookback_days=lookback_days, players=players)
     total_scoped_games = int(scoped_games["game_id"].nunique()) if not scoped_games.empty else 0
 
     lineage = _lineage_for_opening(opening)
@@ -605,6 +746,7 @@ def opening_tree_context(
 
     selected_epd = opening["epd"]
     selected_ply = int(opening["ply_depth"])
+    lineage_epd_set: set[str] = {n["epd"] for n in lineage}
 
     lineage_game_counts: dict[str, int] = {n["epd"]: 0 for n in lineage}
     child_counts: dict[str, dict] = {}
@@ -621,40 +763,18 @@ def opening_tree_context(
         if game is None:
             continue
 
-        board = game.board()
-        seen_lineage_epds: set[str] = set()
-        reached_selected = False
-        selected_child: tuple[int, str, str, str, str] | None = None
+        seen_epds, reached, child = _scan_game_for_tree(
+            game, lineage_epd_set, selected_epd, selected_ply
+        )
 
-        for move in game.mainline_moves():
-            board.push(move)
-            epd = board.epd()
-
-            if epd in lineage_game_counts:
-                seen_lineage_epds.add(epd)
-
-            if epd == selected_epd:
-                reached_selected = True
-                continue
-
-            if reached_selected and board.ply() > selected_ply:
-                hit = lookup_opening_entry(board)
-                if hit is None:
-                    continue
-                opening_id, eco, name = hit
-                if board.epd() == selected_epd:
-                    continue
-                selected_child = (opening_id, board.epd(), board.fen(), eco, name)
-                break
-
-        for epd in seen_lineage_epds:
+        for epd in seen_epds:
             lineage_game_counts[epd] += 1
 
-        if reached_selected:
+        if reached:
             selected_games += 1
 
-        if selected_child is not None:
-            c_id, c_epd, c_fen, c_eco, c_name = selected_child
+        if child is not None:
+            c_id, c_epd, c_fen, c_eco, c_name = child
             if c_epd not in child_counts:
                 child_counts[c_epd] = {
                     "opening_id": c_id,
@@ -666,18 +786,10 @@ def opening_tree_context(
                 }
             child_counts[c_epd]["games"] += 1
 
-    for n in lineage:
-        g = lineage_game_counts.get(n["epd"], 0)
-        n["games"] = int(g)
-        n["pct_scoped"] = round((g / total_scoped_games * 100.0), 1) if total_scoped_games else 0.0
-
-    children = sorted(child_counts.values(), key=lambda x: x["games"], reverse=True)
-    if max_children > 0:
-        children = children[:max_children]
-
-    for c in children:
-        c["label"] = f"{c['eco']} {c['name']}".strip()
-        c["pct_selected"] = round((c["games"] / selected_games * 100.0), 1) if selected_games else 0.0
+    lineage, children = _annotate_tree_results(
+        lineage, lineage_game_counts, child_counts,
+        total_scoped_games, selected_games, max_children,
+    )
 
     return {
         "total_scoped_games": total_scoped_games,

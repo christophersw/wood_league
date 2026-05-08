@@ -7,6 +7,7 @@ Description:
 
 Changelog:
     2026-05-08: Initial creation from quality gate audit (Task 8)
+    2026-05-08: Task 9 — refactored 4 grade-D/E functions; updated decisions table
 -->
 
 # Complexity Review — Flagged for Human Review
@@ -17,6 +18,10 @@ Functions where AI could not safely simplify — require domain expert judgement
 |----------|------|-------|----|----------|-------|
 | `continuation_flow` | `openings/services.py` | ~~E~~ → C | ~~37~~ → 14 | **Refactored** | Extracted 4 helpers; see Details §1 |
 | `continuation_flow` | `app/services/opening_position_service.py` | ~~E~~ → C | ~~37~~ → 14 | **Refactored + Flag dedup** | Same 4 helpers extracted; near-identical to `openings/services.py` — see Details §2 |
+| `opening_tree_context` | `openings/services.py` | ~~E~~ → C | ~~25~~ → ~10 | **Refactored** | Extracted `_scan_game_for_tree`, `_annotate_tree_results`; see Details §3 |
+| `get_games` | `openings/services.py` | ~~E~~ → C | ~~21~~ → ~8 | **Refactored** | Extracted `_pgn_reaches_epd`, `_build_games_queryset`, `_participant_to_record`; see Details §4 |
+| `opening_tree_context` | `app/services/opening_position_service.py` | ~~E~~ → C | ~~25~~ → ~10 | **Refactored + Flag dedup** | Same 2 helpers extracted as module-level; near-identical to `openings/services.py` — see Details §5 |
+| `get_opening_flow` | `dashboard/services.py` | ~~E~~ → C | ~~23~~ → ~8 | **Refactored** | Extracted `_query_deduped_participants`, `_accumulate_flow_stats`, `_build_flow_dataframes`; see Details §6 |
 
 ---
 
@@ -46,26 +51,69 @@ continuation Sankey algorithm — one via Django ORM, one via SQLAlchemy. The he
 are already identical. A future refactor should move the four helpers (and possibly the
 outer loop) into `wood_league_shared` so both callers share one implementation.
 
+### §3 — `openings/services.py::opening_tree_context` (E→C, CC 25→~10)
+
+**Decision: Refactored.** The main loop had two separable concerns: scanning each game
+for lineage/child data, and annotating results with percentages. Two helpers extracted:
+
+- `_scan_game_for_tree(game, lineage_epd_set, selected_epd, selected_ply)` — walks moves,
+  returns `(seen_lineage_epds, reached_selected, selected_child)`. Pure function over a
+  parsed game; can be tested independently.
+- `_annotate_tree_results(lineage, lineage_game_counts, child_counts, ...)` — attaches
+  games counts, pct_scoped, pct_selected and sorts children. Pure transformation.
+
+The outer function is now a coordinator: scope query → lineage setup → per-game loop →
+annotate → return.
+
+### §4 — `openings/services.py::get_games` (E→C, CC 21→~8)
+
+**Decision: Refactored.** Three separable concerns extracted as named helpers:
+
+- `_pgn_reaches_epd(pgn_text, target_epd, ply_depth)` — pure PGN scan; the nested
+  `_matches` closure was eliminated, with the cache moved to the outer loop.
+- `_build_games_queryset(lookback_days, players)` — builds the filtered Django queryset.
+  Isolates the ORM query construction from the iteration logic.
+- `_participant_to_record(gp)` — converts a GameParticipant ORM object to a flat record
+  dict. The 14-key dict literal is now in its own function with a clear return type.
+
+### §5 — `app/services/opening_position_service.py::OpeningPositionService.opening_tree_context` (E→C, CC 25→~10)
+
+**Decision: Refactored.** Same two helpers as §3 (`_scan_game_for_tree`,
+`_annotate_tree_results`) added as module-level functions before the class definition.
+The method body now delegates to them identically to §3.
+
+**Deduplication flag:** `opening_tree_context` in both files is near-identical (same
+pattern as `continuation_flow` in §2). Both files now have the same two helpers. A
+future refactor should consolidate into `wood_league_shared`.
+
+### §6 — `dashboard/services.py::get_opening_flow` (E→C, CC 23→~8)
+
+**Decision: Refactored.** Three distinct phases were extracted:
+
+- `_query_deduped_participants(lookback_days, players)` — ORM query with deduplication
+  by (game_id, player.username). Isolates DB access from the stats accumulation.
+- `_accumulate_flow_stats(records)` — scans PGNs and builds edge_counts + node_data
+  accumulators. Contains all the per-result/accuracy branching (inherent domain logic).
+- `_build_flow_dataframes(edge_counts, node_data, min_games)` — converts accumulators
+  to DataFrames and filters by min_games threshold. Pure transformation.
+
+The outer `get_opening_flow` is now a 4-line coordinator.
+
 ---
 
 ## Grade-C+ Issues Queued for Future Work
 
-Discovered during the 2026-05-08 quality gate run. **Do not fix in this task** — listed
-for prioritisation in a future audit pass.
+Discovered during the 2026-05-08 quality gate run. Lower-priority items not yet addressed.
 
 | Function | File | Grade | CC | Notes |
 |----------|------|-------|----|-------|
 | *(file-level)* | `openings/services.py` | — | MI=5.75 | **CRITICAL** — maintainability index below threshold of 20; entire file needs architectural attention |
-| `opening_tree_context` | `openings/services.py` | D | 25 | Likely candidate for helper extraction |
-| `get_games` | `openings/services.py` | D | 21 | Inner `_matches` closure + filter chain |
 | `opening_tree_svg` | `openings/services.py` | C | 13 | SVG generation branching |
-| `opening_tree_context` | `app/services/opening_position_service.py` | D | 25 | Near-duplicate of `openings/services.py::opening_tree_context` |
 | `player_stats` | `app/services/opening_position_service.py` | C | 18 | Per-player aggregation loop |
 | `get_games` | `app/services/opening_position_service.py` | C | 16 | SQLAlchemy filter chain |
 | `_uncatalogued_label` | `app/services/opening_labels.py` | C | 19 | Classification logic — may be inherent |
 | `_opening_family` | `app/services/opening_analysis_service.py` | C | 14 | Family classification |
 | `_recent_games` | `app/services/opening_analysis_service.py` | C | 13 | Game filtering |
-| `get_opening_flow` | `dashboard/services.py` | D | 23 | Sankey edge builder — similar pattern to continuation_flow |
 | `_opening_name_path` | `dashboard/services.py` | C | 14 | Name parsing |
 | `get_most_recent_games` | `dashboard/services.py` | C | 11 | Game query with branching |
 | `welcome_opening_sankey` | `dashboard/charts.py` | C | 14 | Chart rendering branches |
@@ -73,11 +121,10 @@ for prioritisation in a future audit pass.
 ### Priority recommendations
 
 1. **`openings/services.py` MI=5.75** — highest urgency; the entire file's maintainability
-   score is critically low. The D/C functions above concentrated in this file are
-   contributors. A dedicated refactor sprint is warranted.
-2. **Deduplication of `opening_tree_context`** — appears in both `openings/services.py`
-   and `opening_position_service.py` with identical signatures; same pattern as
-   `continuation_flow`.
-3. **`dashboard/services.py::get_opening_flow` (D, CC=23)** — another Sankey builder;
-   likely shares logic with the now-refactored `continuation_flow` helpers and could
-   be unified.
+   score is critically low. Task 9 improvements should raise MI, but a dedicated refactor
+   sprint is still warranted for the remaining C-grade functions.
+2. **Deduplication of `opening_tree_context` and `continuation_flow` helpers** — both sets
+   of helpers now exist in both `openings/services.py` and `opening_position_service.py`
+   as near-identical copies. Consolidation into `wood_league_shared` would eliminate drift.
+3. **`_accumulate_flow_stats` in `dashboard/services.py`** — the win/draw/loss/accuracy
+   accumulation loop may still score C; if so, consider a dataclass accumulator pattern.

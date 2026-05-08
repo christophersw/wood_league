@@ -7,6 +7,8 @@ Description:
 
 Changelog:
     2026-05-08: Added file header to meet documentation standards
+    2026-05-08: Refactored get_opening_flow (E→C): extracted _query_deduped_participants,
+        _accumulate_flow_stats, _build_flow_dataframes helpers
 """
 
 from __future__ import annotations
@@ -265,14 +267,20 @@ def get_best_all_time_games_by_acpl(limit: int = 10) -> list[dict]:
     ]
 
 
-def get_opening_flow(
-    lookback_days: int = 90,
-    players: list[str] | None = None,
-    min_games: int = 2,
-) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Return opening move flow as edge and node statistics dataframes."""
-    floor_date = datetime.now(timezone.utc) - timedelta(days=lookback_days)
+def _query_deduped_participants(
+    lookback_days: int,
+    players: list[str] | None,
+) -> list:  # list[GameParticipant]
+    """Query game participants for the lookback window, deduplicating per game+player.
 
+    Args:
+        lookback_days: Number of days to look back from now.
+        players: Optional list of player usernames to restrict the query.
+
+    Returns:
+        List of unique GameParticipant ORM objects within the time window.
+    """
+    floor_date = datetime.now(timezone.utc) - timedelta(days=lookback_days)
     qs = (
         GameParticipant.objects
         .filter(
@@ -293,7 +301,22 @@ def get_opening_flow(
             continue
         seen.add(key)
         records.append(gp)
+    return records
 
+
+def _accumulate_flow_stats(
+    records: list,  # list[GameParticipant]
+) -> tuple[dict[tuple[str, str], int], dict[str, dict]]:
+    """Scan game PGNs and accumulate edge counts and per-node statistics.
+
+    Args:
+        records: List of GameParticipant ORM objects with game and analysis pre-fetched.
+
+    Returns:
+        Tuple of:
+          - edge_counts: Mapping of (source_node, target_node) → game count.
+          - node_data: Mapping of node_label → stat accumulator dict.
+    """
     edge_counts: dict[tuple[str, str], int] = defaultdict(int)
     node_data: dict[str, dict] = {}
 
@@ -333,9 +356,25 @@ def get_opening_flow(
                 nd["black_acc_n"] += 1
             nd["players"][player] += 1
 
-    if not edge_counts:
-        return pd.DataFrame(), pd.DataFrame()
+    return edge_counts, node_data
 
+
+def _build_flow_dataframes(
+    edge_counts: dict[tuple[str, str], int],
+    node_data: dict[str, dict],
+    min_games: int,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Convert accumulated flow stats into edges and node-stats DataFrames.
+
+    Args:
+        edge_counts: Mapping of (source, target) → game count.
+        node_data: Mapping of node_label → stat accumulator dict.
+        min_games: Minimum games threshold for including an edge.
+
+    Returns:
+        Tuple of (edges_df, node_stats_df), each a pandas DataFrame.
+        Returns two empty DataFrames if no edges meet the threshold.
+    """
     edges_df = pd.DataFrame(
         [{"source": s, "target": t, "games": c} for (s, t), c in edge_counts.items()]
     )
@@ -363,9 +402,32 @@ def get_opening_flow(
             ),
             "players": dict(nd["players"]),
         })
-    node_stats_df = pd.DataFrame(node_rows)
+    return edges_df, pd.DataFrame(node_rows)
 
-    return edges_df, node_stats_df
+
+def get_opening_flow(
+    lookback_days: int = 90,
+    players: list[str] | None = None,
+    min_games: int = 2,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Return opening move flow as edge and node statistics dataframes.
+
+    Args:
+        lookback_days: Number of days to look back from now for games.
+        players: Optional list of player usernames to filter results.
+        min_games: Minimum number of games required to include an edge.
+
+    Returns:
+        Tuple of (edges_df, node_stats_df). Both are empty DataFrames if no
+        games were found or no edges met the min_games threshold.
+    """
+    records = _query_deduped_participants(lookback_days, players)
+    edge_counts, node_data = _accumulate_flow_stats(records)
+
+    if not edge_counts:
+        return pd.DataFrame(), pd.DataFrame()
+
+    return _build_flow_dataframes(edge_counts, node_data, min_games)
 
 
 def _opening_name_path(pgn_text: str) -> list[str]:
