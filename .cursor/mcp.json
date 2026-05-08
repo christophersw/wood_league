@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "vexp": {
+      "command": "node",
+      "args": [
+        "/Users/christopherwebster/.vscode/extensions/vexp.vexp-vscode-2.0.12-darwin-arm64/dist/mcp-server.cjs"
+      ],
+      "env": {
+        "VEXP_WORKSPACE": "/Users/christopherwebster/Projects/wood_league"
+      }
+    }
+  }
+}

@@ -1,18 +1,15 @@
 #!/bin/bash
 # build-and-push-runpod-image.sh
-# Automates building and pushing the wood-league-chess-runpod Docker image
+# Builds from monorepo root so COPY packages/shared resolves correctly.
 
 set -e
 
-DOCKER_USERNAME="${1:-}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+
+DOCKER_USERNAME="${1:-christophersw}"
 IMAGE_NAME="wood-league-chess-runpod"
 IMAGE_TAG="latest"
-
-if [ -z "$DOCKER_USERNAME" ]; then
-    echo "Usage: $0 <docker-username>"
-    echo "Example: $0 christophersw"
-    exit 1
-fi
 
 FULL_IMAGE="$DOCKER_USERNAME/$IMAGE_NAME:$IMAGE_TAG"
 
@@ -21,18 +18,11 @@ echo "Building wood-league-chess-runpod image"
 echo "========================================="
 echo "Docker Hub username: $DOCKER_USERNAME"
 echo "Full image name: $FULL_IMAGE"
+echo "Build context: $REPO_ROOT"
 echo ""
 
-cd "$(dirname "$0")"
-
-if [ ! -f "Dockerfile" ]; then
-    echo "ERROR: Dockerfile not found in $(pwd)"
-    exit 1
-fi
-
-if [ ! -d "stockfish_pipeline" ]; then
-    echo "ERROR: stockfish_pipeline/ not found. Did you run:"
-    echo "  cp -r ../wood_league_stockfish_runpod/stockfish_pipeline ."
+if [ ! -f "${SCRIPT_DIR}/Dockerfile" ]; then
+    echo "ERROR: Dockerfile not found at ${SCRIPT_DIR}/Dockerfile"
     exit 1
 fi
 
@@ -40,8 +30,8 @@ echo "✓ Prerequisites OK"
 echo ""
 
 # Build
-echo "Building Docker image (this may take 5–10 minutes)..."
-docker build -t "$FULL_IMAGE" .
+echo "Building Docker image (this may take 5-10 minutes)..."
+docker build -f "${SCRIPT_DIR}/Dockerfile" -t "$FULL_IMAGE" "$REPO_ROOT"
 
 if [ $? -eq 0 ]; then
     echo ""

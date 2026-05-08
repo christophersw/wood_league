@@ -1,0 +1,14 @@
+{
+  "servers": {
+    "vexp": {
+      "type": "stdio",
+      "command": "/opt/homebrew/lib/node_modules/vexp-cli/node_modules/@vexp/core-darwin-arm64/bin/vexp-core",
+      "args": [
+        "mcp"
+      ],
+      "env": {
+        "VEXP_WORKSPACE": "/Users/christopherwebster/Projects/wood_league"
+      }
+    }
+  }
+}
