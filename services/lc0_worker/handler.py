@@ -15,7 +15,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 
 from lc0_worker.services.lc0_service import analyze_pgn
-from lc0_worker.storage.models import (
+from wood_league_shared.storage.models import (
     AnalysisJob,
     Lc0GameAnalysis,
     Lc0MoveAnalysis,
