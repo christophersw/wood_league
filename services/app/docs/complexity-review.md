@@ -128,3 +128,35 @@ Discovered during the 2026-05-08 quality gate run. Lower-priority items not yet 
    as near-identical copies. Consolidation into `wood_league_shared` would eliminate drift.
 3. **`_accumulate_flow_stats` in `dashboard/services.py`** — the win/draw/loss/accuracy
    accumulation loop may still score C; if so, consider a dataclass accumulator pattern.
+
+---
+
+## Security Findings — Accepted Risks
+
+### Snyk Code: python/Sqli (Medium) — `search/services.py::execute_sql_search`
+
+**Finding:** Snyk's taint analysis traces `response.json()` (Anthropic API response) →
+`cursor.execute()` and flags it as SQL injection.
+
+**Assessment: Accepted risk / architectural false positive.**
+
+The AI-to-SQL search feature works as follows:
+1. User's natural language query → Anthropic Claude API (user text is NOT interpolated into SQL)
+2. Claude generates SQL → `_sanitize_sql()` validates it before execution
+3. `_sanitize_sql()` enforces: SELECT-only, allowlisted tables only (`games`, `game_analysis`,
+   `move_analysis`, `game_participants`), no UNION/system catalog/DML keywords, LIMIT enforced
+
+Snyk's taint analysis cannot reason about custom sanitizers, so it reports this as unfixed
+even though the sanitization is comprehensive. Parameterized queries cannot be used because
+the SQL structure itself is dynamic (AI-generated column selection, WHERE conditions, JOINs).
+
+**Mitigations in place:**
+- User input never reaches SQL as a string value — only natural language to Claude
+- SELECT-only enforced; all DML/DDL keywords blocked
+- Only 4 non-sensitive chess-game tables accessible
+- `cursor.execute()` annotated with `# nosec B608` for bandit tracking
+- No PII or credentials in the 4 allowlisted tables
+
+**Action needed:** Suppress via Snyk dashboard (project-level ignore) or accept as known risk.
+If the search feature is ever extended to inject user-provided values as SQL parameters,
+use `cursor.execute(sql, params)` with proper Django parameterization for those values.

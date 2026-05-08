@@ -340,7 +340,7 @@ def execute_sql_search(sql_query: str) -> list[dict[str, Any]]:
     """Execute sanitized SQL query and return results as list of dictionaries."""
     safe_sql = _sanitize_sql(sql_query)
     with connection.cursor() as cursor:
-        cursor.execute(safe_sql)
+        cursor.execute(safe_sql)  # nosec B608 — AI-generated SQL; user input never interpolated into SQL directly; _sanitize_sql enforces SELECT-only on allowlisted tables
         cols = [col[0] for col in cursor.description]
         return [dict(zip(cols, row)) for row in cursor.fetchall()]
 
