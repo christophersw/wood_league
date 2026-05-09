@@ -13,6 +13,8 @@ Requires-Dist: python-decouple
 Requires-Dist: dj-database-url
 Requires-Dist: django-tailwind-cli
 Requires-Dist: django-htmx
+Requires-Dist: djangorestframework>=3.15
+Requires-Dist: djangorestframework-api-key>=3.0
 Requires-Dist: python-chess>=1.999
 Requires-Dist: plotly>=5.20.0
 Requires-Dist: pandas>=2.2.0
@@ -122,9 +124,10 @@ The complete endpoint docs (including full request/response examples) are in:
 Summary:
 
 - `GET /api/v1/health/` (public)
-- `POST /api/v1/jobs/checkout/`
+- `POST /api/v1/jobs/checkout/` (optional `dispatch_mode`: `pull` or `runpod`)
 - `POST /api/v1/jobs/{job_id}/complete/`
 - `POST /api/v1/jobs/{job_id}/fail/`
+- `POST /api/v1/jobs/{job_id}/submit/` (dispatcher records RunPod job ID)
 - `GET /api/v1/jobs/status/`
 - `POST /api/v1/heartbeat/`
 

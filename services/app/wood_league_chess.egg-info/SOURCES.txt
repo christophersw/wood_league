@@ -32,12 +32,9 @@ analysis/services/jobs.py
 app/__init__.py
 app/config.py
 app/ingest/__init__.py
-app/ingest/analysis_worker.py
 app/ingest/chesscom_client.py
 app/ingest/enqueue_analysis.py
-app/ingest/lc0_analysis_worker.py
 app/ingest/run_analysis_worker.py
-app/ingest/run_lc0_worker.py
 app/ingest/run_sync.py
 app/ingest/sync_service.py
 app/services/__init__.py

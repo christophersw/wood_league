@@ -63,9 +63,18 @@ the index is empty or rebuilding. Use Grep, Glob, and Read directly until the in
 Use `index_status` to discover available repo aliases.
 <!-- /vexp -->
 
-## Issue Tracking — git-issues
+## Issue Tracking — GitHub Issues
 
-Full workflow and command reference: `.claude/docs/git-issues.md`
+Use `gh issue` for all issue tracking. Key commands:
+```bash
+gh issue list                          # list open issues
+gh issue create --title "..." --body "..." --label bug  # create issue
+gh issue view <number>                 # view issue details
+gh issue close <number>               # close issue
+```
+
+Branch naming: `issue/<number>-<kebab-case-title>` (e.g. `issue/5-fix-debug-mode`).
+Create issues on `main`, then branch from `main` to work on them.
 
 ## Compact Instructions
 

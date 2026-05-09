@@ -65,3 +65,50 @@ Install all workspace members:
 ```bash
 uv sync
 ```
+
+### Running services locally
+
+Each service runs independently. Open a terminal for each.
+
+**Django app** (`services/app`)
+```bash
+cd services/app
+cp .env.example .env          # configure DATABASE_URL and other vars
+
+# run from withing the `services/app` directory
+uv run python manage.py runserver
+```
+App is available at `http://localhost:8000`.
+
+**Dispatcher** (`services/dispatchers`)
+
+Requires a running Django app and valid RunPod credentials.
+```bash
+cd services/dispatchers
+cp .env.example .env          # configure DATABASE_URL, WORKER_API_URL, RUNPOD_* vars
+python start_workers.py
+```
+
+**Stockfish worker** (`services/stockfish_worker`)
+
+Simulates a RunPod worker locally using a `test_input.json` file.
+```bash
+cd services/stockfish_worker
+pip install -r requirements.txt
+export WORKER_API_URL="http://localhost:8000"
+export WORKER_API_KEY="your-worker-api-key"
+export STOCKFISH_PATH="/usr/local/bin/stockfish"   # path to local stockfish binary
+python handler.py
+```
+
+**Lc0 worker** (`services/lc0_worker`)
+
+Simulates a RunPod worker locally using a `test_input.json` file.
+```bash
+cd services/lc0_worker
+pip install -e .
+export WORKER_API_URL="http://localhost:8000"
+export WORKER_API_KEY="your-worker-api-key"
+export LC0_PATH="/usr/local/bin/lc0"
+python handler.py
+```
