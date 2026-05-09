@@ -37,7 +37,9 @@ Other endpoints are not scoped.
 
 - Jobs are in `analysis_jobs` (`AnalysisJob` model).
 - `engine` is `stockfish` or `lc0`.
+- `dispatch_mode` is `pull` (local workers) or `runpod` (RunPod dispatcher). Pull workers only ever see `pull` jobs; the dispatcher uses `dispatch_mode="runpod"` in checkout.
 - Job lifecycle: `pending -> running -> completed` or `failed`.
+- RunPod jobs additionally pass through `submitted` after the dispatcher records the RunPod job ID.
 - Jobs are owned by both `worker_id` and API key prefix while running.
 
 ## Endpoint summary
@@ -45,9 +47,10 @@ Other endpoints are not scoped.
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
 | `GET` | `/api/v1/health/` | No | Liveness check |
-| `POST` | `/api/v1/jobs/checkout/` | Yes | Claim up to N pending jobs |
+| `POST` | `/api/v1/jobs/checkout/` | Yes | Claim up to N pending jobs (pull or runpod) |
 | `POST` | `/api/v1/jobs/{job_id}/complete/` | Yes | Submit Stockfish or Lc0 job result |
 | `POST` | `/api/v1/jobs/{job_id}/fail/` | Yes | Report failure and requeue/fail job |
+| `POST` | `/api/v1/jobs/{job_id}/submit/` | Yes | Record RunPod job ID after dispatcher submission |
 | `GET` | `/api/v1/jobs/status/` | Yes | Queue counts by engine and status |
 | `POST` | `/api/v1/heartbeat/` | Yes | Worker heartbeat upsert |
 
@@ -76,7 +79,8 @@ curl -s https://example.com/api/v1/health/
 Claims pending jobs for an engine.
 
 - Uses row locking (`SELECT ... FOR UPDATE SKIP LOCKED`) for safe concurrent workers.
-- Runs stale-job recovery before checkout.
+- Runs stale-job recovery before checkout (pull-mode only).
+- Pull workers omit `dispatch_mode` (defaults to `pull`). The RunPod dispatcher sends `dispatch_mode: "runpod"` to claim jobs routed to RunPod.
 
 ### Request body
 
@@ -86,6 +90,7 @@ Claims pending jobs for an engine.
 | `batch_size` | integer | No | `1..10`, default `1` |
 | `worker_id` | string | Yes | max length `64` |
 | `game_id` | string | No | Optional targeted checkout for a specific game |
+| `dispatch_mode` | string | No | `pull` (default) or `runpod` — filters which queue segment to draw from |
 
 ### Example request
 
@@ -237,15 +242,21 @@ Optional:
 
 Each Lc0 move item:
 
+Required:
 - `ply` (`>=1`)
 - `san`
 - `fen`
 - `wdl_win`, `wdl_draw`, `wdl_loss` (`0..1000`)
-- `cp_equiv` (nullable)
 - `best_move`
-- `arrow_uci` (optional)
 - `move_win_delta` (float)
 - `classification` in: `Brilliant`, `Great`, `Best`, `Excellent`, `Inaccuracy`, `Mistake`, `Blunder`
+
+Optional:
+- `cp_equiv` (nullable integer — Q-equivalent centipawns)
+- `arrow_uci` (best-move UCI for board UI, max length `8`)
+- `arrow_uci_2`, `arrow_uci_3` (2nd and 3rd candidate UCIs, max length `8`)
+- `arrow_score_1`, `arrow_score_2`, `arrow_score_3` (nullable floats — mover-perspective scores for each candidate)
+- `pv_san_1`, `pv_san_2`, `pv_san_3` (nullable JSON-encoded strings — full SAN continuation arrays, e.g. `"[\"e4\", \"e5\", \"Nf3\"]"`)
 
 ### Lc0 example
 
@@ -344,6 +355,44 @@ When retry limit reached:
 - `400`: invalid payload
 - `403`: auth error
 - `404`: job not found, not running, or not owned by this worker/key
+
+---
+
+## `POST /api/v1/jobs/{job_id}/submit/`
+
+Called by the RunPod dispatcher after successfully submitting a job to RunPod. Records the RunPod job ID and transitions the job from `running` to `submitted`.
+
+- Only valid for jobs with `dispatch_mode="runpod"` and current status `pending` (the dispatcher claims the job first via checkout, which sets it to `running`, then calls submit immediately).
+- Returns `404` if the job is not found or not in the expected state.
+
+### Request body
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `runpod_job_id` | string | Yes | RunPod job ID returned by the RunPod SDK, max length `128` |
+
+### Example
+
+```bash
+curl -s -X POST https://example.com/api/v1/jobs/123/submit/ \
+  -H 'Content-Type: application/json' \
+  -H 'X-Api-Key: <key>' \
+  -d '{
+    "runpod_job_id": "rp-abc123xyz"
+  }'
+```
+
+### Success response (`200`)
+
+```json
+{"status": "submitted"}
+```
+
+### Error responses
+
+- `400`: invalid payload
+- `403`: auth error
+- `404`: job not found or not in a submittable state
 
 ---
 

@@ -7,6 +7,7 @@ Description:
 
 Changelog:
     2026-05-08: Added file header to meet documentation standards
+    2026-05-08: Added submit_job() for RunPod dispatcher integration
 """
 from datetime import timedelta
 
@@ -56,6 +57,7 @@ def recover_stale_jobs(engine: str) -> int:
     cutoff = timezone.now() - _stale_timeout()
     return AnalysisJob.objects.filter(
         engine=engine,
+        dispatch_mode=AnalysisJob.DISPATCH_PULL,
         status=AnalysisJob.STATUS_RUNNING,
         started_at__lt=cutoff,
     ).update(
@@ -77,19 +79,29 @@ def claim_jobs(
     worker_id: str,
     key_prefix: str | None = None,
     game_id: str | None = None,
+    dispatch_mode: str = AnalysisJob.DISPATCH_PULL,
 ) -> list[AnalysisJob]:
     """Atomically claim up to batch_size pending jobs using SELECT FOR UPDATE SKIP LOCKED.
 
-    Runs stale recovery first. Returns the claimed AnalysisJob instances with their
-    related Game.
+    Runs stale recovery first (pull-mode only). Returns the claimed AnalysisJob
+    instances with their related Game.
+
+    Args:
+        engine: 'stockfish' or 'lc0'
+        batch_size: Maximum number of jobs to claim.
+        worker_id: Identifier for the claiming worker (stored for tracing).
+        key_prefix: API key prefix stored for audit (None for non-API callers).
+        game_id: Claim only this specific game's job (optional).
+        dispatch_mode: 'pull' for local workers; 'runpod' for the dispatcher.
     """
     with transaction.atomic():
-        recover_stale_jobs(engine)
+        if dispatch_mode == AnalysisJob.DISPATCH_PULL:
+            recover_stale_jobs(engine)
         if game_id:
             jobs_for_game = (
                 AnalysisJob.objects
                 .select_for_update(skip_locked=True)
-                .filter(engine=engine, game_id=game_id)
+                .filter(engine=engine, dispatch_mode=dispatch_mode, game_id=game_id)
             )
 
             if (
@@ -112,7 +124,7 @@ def claim_jobs(
             jobs = list(
                 AnalysisJob.objects
                 .select_for_update(skip_locked=True)
-                .filter(engine=engine, status=AnalysisJob.STATUS_PENDING)
+                .filter(engine=engine, dispatch_mode=dispatch_mode, status=AnalysisJob.STATUS_PENDING)
                 .order_by('-priority', 'created_at')
                 [:batch_size]
             )
@@ -224,7 +236,7 @@ def complete_lc0_job(
             filters['claimed_by_key_prefix'] = key_prefix
         job = AnalysisJob.objects.select_for_update().get(**filters)
 
-        Lc0GameAnalysis.objects.update_or_create(
+        lga, _ = Lc0GameAnalysis.objects.update_or_create(
             game=job.game,
             defaults=dict(
                 white_win_prob=payload['white_win_prob'],
@@ -245,10 +257,10 @@ def complete_lc0_job(
             ),
         )
 
-        Lc0MoveAnalysis.objects.filter(game=job.game).delete()
+        Lc0MoveAnalysis.objects.filter(analysis=lga).delete()
         Lc0MoveAnalysis.objects.bulk_create([
             Lc0MoveAnalysis(
-                game=job.game,
+                analysis=lga,
                 ply=m['ply'],
                 san=m['san'],
                 fen=m['fen'],
@@ -258,6 +270,14 @@ def complete_lc0_job(
                 cp_equiv=m.get('cp_equiv'),
                 best_move=m['best_move'],
                 arrow_uci=m.get('arrow_uci', ''),
+                arrow_uci_2=m.get('arrow_uci_2', ''),
+                arrow_uci_3=m.get('arrow_uci_3', ''),
+                arrow_score_1=m.get('arrow_score_1'),
+                arrow_score_2=m.get('arrow_score_2'),
+                arrow_score_3=m.get('arrow_score_3'),
+                pv_san_1=m.get('pv_san_1'),
+                pv_san_2=m.get('pv_san_2'),
+                pv_san_3=m.get('pv_san_3'),
                 move_win_delta=m['move_win_delta'],
                 classification=m['classification'],
             )
@@ -308,3 +328,34 @@ def fail_job(
 
         job.save()
         return outcome
+
+
+# ── Submit a RunPod job ──────────────────────────────────────────────────
+
+
+def submit_job(*, job_id: int, runpod_job_id: str) -> None:
+    """Record a RunPod submission: set status=submitted and store runpod_job_id.
+
+    Atomically transitions the job from pending → submitted and records the
+    external RunPod job identifier for tracking purposes.
+
+    Parameters:
+        job_id: Primary key of the AnalysisJob to submit.
+        runpod_job_id: The RunPod job identifier returned by the dispatch API.
+
+    Returns:
+        None
+
+    Raises:
+        AnalysisJob.DoesNotExist: If the job is not found or not in pending state.
+    """
+    with transaction.atomic():
+        job = AnalysisJob.objects.select_for_update().get(
+            id=job_id,
+            status=AnalysisJob.STATUS_PENDING,
+            dispatch_mode=AnalysisJob.DISPATCH_RUNPOD,
+        )
+        job.status = AnalysisJob.STATUS_SUBMITTED
+        job.runpod_job_id = runpod_job_id
+        job.submitted_at = timezone.now()
+        job.save(update_fields=['status', 'runpod_job_id', 'submitted_at'])

@@ -1,26 +1,24 @@
-"""RunPod Serverless handler for Lc0 analysis."""
+"""
+Title: handler.py — RunPod serverless Lc0 analysis handler
+Description:
+    RunPod serverless worker that receives job_id + PGN strings, runs Lc0
+    analysis, and reports results to the Django API via WorkerClient.
+    No direct database access — all persistence goes through the HTTP API.
 
+Changelog:
+    2026-05-08 (#1): Replace SQLAlchemy with WorkerClient HTTP API
+"""
 from __future__ import annotations
 
 import json
 import logging
 import os
 import subprocess
-import time
-from datetime import datetime, timezone
 
 import runpod
-import sqlalchemy.exc
-from sqlalchemy import create_engine, select
-from sqlalchemy.orm import sessionmaker
 
 from lc0_worker.services.lc0_service import analyze_pgn
-from wood_league_shared.storage.models import (
-    AnalysisJob,
-    Lc0GameAnalysis,
-    Lc0MoveAnalysis,
-    SystemEvent,
-)
+from wood_league_shared.worker_client import WorkerClient
 
 logging.basicConfig(
     level=logging.INFO,
@@ -34,52 +32,16 @@ LC0_NODES: int = int(os.environ.get("LC0_NODES", "25000"))
 LC0_NETWORK: str = os.environ.get("LC0_NETWORK", "")
 LC0_SYZYGY_PATH: str = os.environ.get("LC0_SYZYGY_PATH", "/runpod-volume/syzygy")
 LC0_BACKEND: str = os.environ.get("LC0_BACKEND", "cudnn-fp16")
-DATABASE_URL: str = os.environ["DATABASE_URL"]
-if DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg://", 1)
-elif (
-    DATABASE_URL.startswith("postgresql://")
-    and "+" not in DATABASE_URL.split("://", 1)[0]
-):
-    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg://", 1)
+WORKER_API_URL: str = os.environ["WORKER_API_URL"]
+WORKER_API_KEY: str = os.environ["WORKER_API_KEY"]
+_WORKER_ID: str = "runpod-lc0"
 
-_engine = create_engine(DATABASE_URL, pool_pre_ping=True)
-_SessionLocal = sessionmaker(bind=_engine, autoflush=False, autocommit=False)
-
-from lc0_worker.storage.migrate_add_pv_continuations import migrate_add_pv_continuations
-migrate_add_pv_continuations(_engine)
-
-
-def _write_system_event(
-    session,
-    *,
-    status: str,
-    started_at: datetime,
-    duration_seconds: float,
-    game_id: str,
-    runpod_job_id: str,
-    details: dict | None = None,
-    error_message: str | None = None,
-) -> None:
-    event = SystemEvent(
-        event_type="lc0",
-        status=status,
-        started_at=started_at,
-        completed_at=datetime.now(timezone.utc),
-        duration_seconds=duration_seconds,
-        details=json.dumps(
-            {
-                "game_id": game_id,
-                "runpod_job_id": runpod_job_id,
-                **(details or {}),
-            }
-        ),
-        error_message=error_message,
-    )
-    session.add(event)
+# Module-level client — reused across warm RunPod calls for connection pooling
+_client = WorkerClient(base_url=WORKER_API_URL, api_key=WORKER_API_KEY)
 
 
 def _log_startup_diagnostics() -> None:
+    """Log GPU information at startup for observability."""
     log.info(
         "Lc0 startup: path=%s backend=%s network=%s syzygy=%s",
         LC0_PATH,
@@ -87,7 +49,6 @@ def _log_startup_diagnostics() -> None:
         LC0_NETWORK or "<default>",
         LC0_SYZYGY_PATH,
     )
-
     try:
         result = subprocess.run(
             [
@@ -108,102 +69,84 @@ def _log_startup_diagnostics() -> None:
         return
 
     gpu_lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
-    if gpu_lines:
-        for index, line in enumerate(gpu_lines, start=1):
-            log.info("Lc0 startup: gpu[%d]=%s", index, line)
-    else:
+    for index, line in enumerate(gpu_lines, start=1):
+        log.info("Lc0 startup: gpu[%d]=%s", index, line)
+    if not gpu_lines:
         log.warning("Lc0 startup: nvidia-smi returned no GPU information")
 
 
-def _save_analysis(session, game_id: str, result) -> None:
-    lga = session.execute(
-        select(Lc0GameAnalysis).where(Lc0GameAnalysis.game_id == game_id)
-    ).scalar_one_or_none()
+def _build_complete_payload(result) -> dict:
+    """Build the Lc0CompleteSerializer payload dict from an Lc0GameResult.
 
-    if lga is None:
-        lga = Lc0GameAnalysis(game_id=game_id)
-        session.add(lga)
-        session.flush()
+    Args:
+        result: Lc0GameResult returned by analyze_pgn().
 
-    lga.analyzed_at = result.analyzed_at
-    lga.engine_nodes = result.engine_nodes
-    lga.network_name = result.network_name
-    lga.white_win_prob = result.white_stats.avg_win_prob
-    lga.white_draw_prob = result.white_stats.avg_draw_prob
-    lga.white_loss_prob = result.white_stats.avg_loss_prob
-    lga.black_win_prob = result.black_stats.avg_win_prob
-    lga.black_draw_prob = result.black_stats.avg_draw_prob
-    lga.black_loss_prob = result.black_stats.avg_loss_prob
-    lga.white_blunders = result.white_stats.blunders
-    lga.white_mistakes = result.white_stats.mistakes
-    lga.white_inaccuracies = result.white_stats.inaccuracies
-    lga.black_blunders = result.black_stats.blunders
-    lga.black_mistakes = result.black_stats.mistakes
-    lga.black_inaccuracies = result.black_stats.inaccuracies
-
-    for old in list(lga.moves):
-        session.delete(old)
-    session.flush()
-
-    for mr in result.moves:
-        session.add(
-            Lc0MoveAnalysis(
-                analysis_id=lga.id,
-                ply=mr.ply,
-                san=mr.san,
-                fen=mr.fen,
-                wdl_win=mr.wdl_win,
-                wdl_draw=mr.wdl_draw,
-                wdl_loss=mr.wdl_loss,
-                cp_equiv=mr.cp_equiv,
-                best_move=mr.best_move,
-                arrow_uci=mr.arrow_uci,
-                arrow_uci_2=mr.arrow_uci_2,
-                arrow_uci_3=mr.arrow_uci_3,
-                arrow_score_1=mr.arrow_score_1,
-                arrow_score_2=mr.arrow_score_2,
-                arrow_score_3=mr.arrow_score_3,
-                move_win_delta=mr.move_win_delta,
-                classification=mr.classification,
-                pv_san_1=json.dumps(mr.pv_san_1) if mr.pv_san_1 else None,
-                pv_san_2=json.dumps(mr.pv_san_2) if mr.pv_san_2 else None,
-                pv_san_3=json.dumps(mr.pv_san_3) if mr.pv_san_3 else None,
-            )
-        )
-
-
-def _mark_job_completed(session, game_id: str, runpod_job_id: str) -> None:
-    job = session.execute(
-        select(AnalysisJob).where(
-            AnalysisJob.game_id == game_id,
-            AnalysisJob.engine == "lc0",
-            AnalysisJob.runpod_job_id == runpod_job_id,
-        )
-    ).scalar_one_or_none()
-
-    if job:
-        job.status = "completed"
-        job.completed_at = datetime.now(timezone.utc)
-        if job.submitted_at:
-            elapsed = job.completed_at - job.submitted_at.replace(tzinfo=timezone.utc)
-            job.duration_seconds = elapsed.total_seconds()
+    Returns:
+        Dict matching Lc0CompleteSerializer's expected fields.
+    """
+    return {
+        'engine_nodes': result.engine_nodes,
+        'network_name': result.network_name,
+        'white_win_prob': result.white_stats.avg_win_prob,
+        'white_draw_prob': result.white_stats.avg_draw_prob,
+        'white_loss_prob': result.white_stats.avg_loss_prob,
+        'black_win_prob': result.black_stats.avg_win_prob,
+        'black_draw_prob': result.black_stats.avg_draw_prob,
+        'black_loss_prob': result.black_stats.avg_loss_prob,
+        'white_blunders': result.white_stats.blunders,
+        'white_mistakes': result.white_stats.mistakes,
+        'white_inaccuracies': result.white_stats.inaccuracies,
+        'black_blunders': result.black_stats.blunders,
+        'black_mistakes': result.black_stats.mistakes,
+        'black_inaccuracies': result.black_stats.inaccuracies,
+        'moves': [
+            {
+                'ply': mr.ply,
+                'san': mr.san,
+                'fen': mr.fen,
+                'wdl_win': mr.wdl_win,
+                'wdl_draw': mr.wdl_draw,
+                'wdl_loss': mr.wdl_loss,
+                'cp_equiv': mr.cp_equiv,
+                'best_move': mr.best_move,
+                'arrow_uci': mr.arrow_uci,
+                'arrow_uci_2': mr.arrow_uci_2,
+                'arrow_uci_3': mr.arrow_uci_3,
+                'arrow_score_1': mr.arrow_score_1,
+                'arrow_score_2': mr.arrow_score_2,
+                'arrow_score_3': mr.arrow_score_3,
+                'move_win_delta': mr.move_win_delta,
+                'classification': mr.classification.capitalize(),
+                'pv_san_1': json.dumps(mr.pv_san_1) if mr.pv_san_1 else None,
+                'pv_san_2': json.dumps(mr.pv_san_2) if mr.pv_san_2 else None,
+                'pv_san_3': json.dumps(mr.pv_san_3) if mr.pv_san_3 else None,
+            }
+            for mr in result.moves
+        ],
+    }
 
 
 def handler(job: dict) -> dict:
+    """RunPod job handler — called once per job by the RunPod SDK.
+
+    Expects job["input"] to contain:
+        job_id (int): Django AnalysisJob.id — set by the dispatcher at submission.
+        pgn (str): PGN text to analyze.
+        nodes (int, optional): Node budget (default LC0_NODES).
+        weights_path (str, optional): Path to network weights (default LC0_NETWORK).
+
+    Returns:
+        Dict with job_id and status ('ok' or 'error').
+    """
     job_input = job["input"]
-    game_id: str = job_input["game_id"]
+    job_id: int = int(job_input["job_id"])
     pgn_string: str = job_input["pgn"]
     nodes: int = int(job_input.get("nodes", LC0_NODES))
     weights_path: str = str(job_input.get("weights_path", LC0_NETWORK))
-    runpod_job_id: str = job.get("id", "")
-    started_at = datetime.now(timezone.utc)
-    started_clock = time.perf_counter()
 
     log.info(
-        "Starting Lc0 analysis: game_id=%s nodes=%d syzygy=%s",
-        game_id,
-        nodes,
-        LC0_SYZYGY_PATH,
+        "Starting Lc0 analysis: job_id=%d nodes=%d syzygy=%s",
+        job_id, nodes, LC0_SYZYGY_PATH,
     )
 
     try:
@@ -216,68 +159,20 @@ def handler(job: dict) -> dict:
             backend=LC0_BACKEND,
         )
     except Exception as exc:
-        log.error("Analysis failed for game_id=%s: %s", game_id, exc, exc_info=True)
-        duration_seconds = time.perf_counter() - started_clock
-        with _SessionLocal() as session:
-            _write_system_event(
-                session,
-                status="failed",
-                started_at=started_at,
-                duration_seconds=duration_seconds,
-                game_id=game_id,
-                runpod_job_id=runpod_job_id,
-                error_message=str(exc),
-            )
-            session.commit()
-        return {"game_id": game_id, "status": "error", "error": str(exc)}
+        log.error("Analysis failed for job_id=%d: %s", job_id, exc, exc_info=True)
+        _client.fail(job_id=job_id, worker_id=_WORKER_ID, error=str(exc))
+        return {"job_id": job_id, "status": "error", "error": str(exc)}
 
-    try:
-        with _SessionLocal() as session:
-            _save_analysis(session, game_id, result)
-            _mark_job_completed(session, game_id, runpod_job_id)
-            duration_seconds = time.perf_counter() - started_clock
-            _write_system_event(
-                session,
-                status="completed",
-                started_at=started_at,
-                duration_seconds=duration_seconds,
-                game_id=game_id,
-                runpod_job_id=runpod_job_id,
-                details={
-                    "moves_analysed": len(result.moves),
-                    "white_win_prob": result.white_stats.avg_win_prob,
-                    "black_win_prob": result.black_stats.avg_win_prob,
-                },
-            )
-            session.commit()
-    except sqlalchemy.exc.OperationalError:
-        raise
-    except Exception as exc:
-        log.error("DB write failed for game_id=%s: %s", game_id, exc, exc_info=True)
-        duration_seconds = time.perf_counter() - started_clock
-        with _SessionLocal() as session:
-            _write_system_event(
-                session,
-                status="failed",
-                started_at=started_at,
-                duration_seconds=duration_seconds,
-                game_id=game_id,
-                runpod_job_id=runpod_job_id,
-                error_message=str(exc),
-            )
-            session.commit()
-        return {"game_id": game_id, "status": "error", "error": str(exc)}
+    payload = _build_complete_payload(result)
+    _client.complete_lc0(job_id=job_id, worker_id=_WORKER_ID, payload=payload)
 
     log.info(
-        "Completed Lc0 analysis: game_id=%s moves=%d W-win=%.1f B-win=%.1f",
-        game_id,
-        len(result.moves),
-        result.white_stats.avg_win_prob,
-        result.black_stats.avg_win_prob,
+        "Completed Lc0 analysis: job_id=%d moves=%d W-win=%.1f B-win=%.1f",
+        job_id, len(result.moves),
+        result.white_stats.avg_win_prob, result.black_stats.avg_win_prob,
     )
-
     return {
-        "game_id": game_id,
+        "job_id": job_id,
         "moves_analysed": len(result.moves),
         "white_win_prob": result.white_stats.avg_win_prob,
         "black_win_prob": result.black_stats.avg_win_prob,

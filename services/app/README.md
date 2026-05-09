@@ -95,9 +95,10 @@ The complete endpoint docs (including full request/response examples) are in:
 Summary:
 
 - `GET /api/v1/health/` (public)
-- `POST /api/v1/jobs/checkout/`
+- `POST /api/v1/jobs/checkout/` (optional `dispatch_mode`: `pull` or `runpod`)
 - `POST /api/v1/jobs/{job_id}/complete/`
 - `POST /api/v1/jobs/{job_id}/fail/`
+- `POST /api/v1/jobs/{job_id}/submit/` (dispatcher records RunPod job ID)
 - `GET /api/v1/jobs/status/`
 - `POST /api/v1/heartbeat/`
 

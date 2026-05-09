@@ -6,21 +6,33 @@ This is now the canonical Lc0 RunPod worker repo for Wood League Chess.
 
 ## What it does
 
-- Receives jobs with `game_id` and `pgn`
+- Receives jobs with `job_id` and `pgn` (sent by the RunPod dispatcher)
 - Runs Lc0 analysis
-- Writes `lc0_game_analysis` and `lc0_move_analysis` directly to PostgreSQL
-- Marks matching `analysis_jobs` row as `completed`
+- Reports results to the Django API via `POST /api/v1/jobs/{id}/complete/`
+- No direct database access — all persistence goes through the HTTP API
+
+**RunPod job input payload** (set by the dispatcher):
+
+```json
+{
+  "job_id": 456,
+  "pgn": "1. d4 d5 ...",
+  "nodes": 25000,
+  "weights_path": "/path/to/network.pb.gz"
+}
+```
 
 ## Environment variables
 
 Required:
-- `DATABASE_URL` (`postgres://...` or `postgresql://...`; worker forces psycopg v3)
+- `WORKER_API_URL` — base URL of the Django app, e.g. `https://app.example.com`
+- `WORKER_API_KEY` — raw worker API key (`X-Api-Key`)
 
 Optional:
 - `LC0_PATH` (default: `/usr/local/bin/lc0`)
-- `LC0_NODES` (default: `25000`)
-- `LC0_NETWORK` (default: `/usr/local/share/lc0-network.pb.gz`)
-- `LC0_BACKEND` (default: `cudnn-fp16`; built binary supports `cuda` and `cudnn-fp16` backends)
+- `LC0_NODES` (default: `25000` — overridden per-job by payload)
+- `LC0_NETWORK` (default: empty — overridden per-job by payload)
+- `LC0_BACKEND` (default: `cudnn-fp16`; built binary supports `cuda` and `cudnn-fp16`)
 - `LC0_SYZYGY_PATH` (default: `/runpod-volume/syzygy`, directory containing `.rtbw` and `.rtbz`)
 
 ## Build and run locally
@@ -30,7 +42,8 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -e .
 
-export DATABASE_URL="postgresql://user:pass@host/db"
+export WORKER_API_URL="https://app.example.com"
+export WORKER_API_KEY="your-worker-api-key"
 export LC0_PATH="/usr/local/bin/lc0"
 python handler.py
 ```

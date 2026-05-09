@@ -190,6 +190,8 @@ class AnalysisJob(models.Model):
         (STATUS_COMPLETED, "Completed"),
         (STATUS_FAILED, "Failed"),
     ]
+    DISPATCH_PULL = 'pull'
+    DISPATCH_RUNPOD = 'runpod'
 
     game = models.ForeignKey(
         "games.Game", on_delete=models.CASCADE, related_name="analysis_jobs"
@@ -199,6 +201,13 @@ class AnalysisJob(models.Model):
     )
     priority = models.IntegerField(default=0)
     engine = models.CharField(max_length=16, default="stockfish", db_index=True)
+    dispatch_mode = models.CharField(
+        max_length=16,
+        default='pull',
+        db_index=True,
+        choices=[('pull', 'Pull'), ('runpod', 'RunPod')],
+        help_text='pull = claimed via API by local workers; runpod = submitted by dispatcher',
+    )
     depth = models.IntegerField(default=20)
     created_at = models.DateTimeField(auto_now_add=True)
     started_at = models.DateTimeField(null=True, blank=True)
@@ -223,7 +232,7 @@ class AnalysisJob(models.Model):
         db_table = "analysis_jobs"
         ordering = ["-created_at"]
         indexes = [
-            models.Index(fields=["status", "engine"]),
+            models.Index(fields=["status", "engine", "dispatch_mode"]),
             models.Index(fields=["status", "priority"]),
         ]
         verbose_name = "Analysis Job"
@@ -231,7 +240,7 @@ class AnalysisJob(models.Model):
 
     def __str__(self):
         """Return a human-readable identifier for this analysis job."""
-        return f"{self.engine} job [{self.status}] for {self.game_id}"
+        return f"{self.engine}/{self.dispatch_mode} job [{self.status}] for {self.game_id}"
 
 
 class WorkerHeartbeat(models.Model):

@@ -1,39 +1,22 @@
 """
 Title: handler.py — RunPod serverless Stockfish analysis handler
 Description:
-    RunPod serverless worker handler that receives PGN strings and game IDs,
-    runs Stockfish analysis via stockfish_pipeline.services, and persists
-    results to PostgreSQL using the same schema as the Railway worker.
-    Handles both transient DB failures (retried by RunPod) and permanent
-    errors (returned without retry).
+    RunPod serverless worker that receives job_id + PGN strings, runs Stockfish
+    analysis, and reports results to the Django API via WorkerClient.
+    No direct database access — all persistence goes through the HTTP API.
 
 Changelog:
-    2026-05-05 (#1): Add pv_san_1/2/3 persistence in _save_analysis()
+    2026-05-08 (#1): Replace SQLAlchemy with WorkerClient HTTP API
 """
-
 from __future__ import annotations
 
-import json
 import logging
 import os
-import time
-from datetime import datetime, timezone
 
 import runpod
-import sqlalchemy.exc
-from sqlalchemy import create_engine, select
-from sqlalchemy.orm import sessionmaker
 
-# Analysis logic from the copied / pip-installed pipeline package
 from stockfish_pipeline.services.stockfish_service import analyze_pgn
-from wood_league_shared.storage.models import (
-    AnalysisJob,
-    Game,
-    GameAnalysis,
-    GameParticipant,
-    MoveAnalysis,
-    SystemEvent,
-)
+from wood_league_shared.worker_client import WorkerClient
 
 logging.basicConfig(
     level=logging.INFO,
@@ -42,198 +25,80 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Configuration — set these as environment variables in the RunPod endpoint
-# ---------------------------------------------------------------------------
 STOCKFISH_PATH: str = os.environ.get("STOCKFISH_PATH", "/usr/games/stockfish")
 ANALYSIS_DEPTH: int = int(os.environ.get("ANALYSIS_DEPTH", "20"))
 ANALYSIS_THREADS: int = int(os.environ.get("ANALYSIS_THREADS", "8"))
 ANALYSIS_HASH_MB: int = int(os.environ.get("ANALYSIS_HASH_MB", "2048"))
 SYZYGY_PATH: str = os.environ.get("SYZYGY_PATH", "/runpod-volume/syzygy")
-DATABASE_URL: str = os.environ["DATABASE_URL"]  # Required — raises KeyError if missing
+WORKER_API_URL: str = os.environ["WORKER_API_URL"]
+WORKER_API_KEY: str = os.environ["WORKER_API_KEY"]
+_WORKER_ID: str = "runpod-stockfish"
 
-# ---------------------------------------------------------------------------
-# DB setup — module-level so the connection pool is reused across warm calls
-# ---------------------------------------------------------------------------
-_engine = create_engine(DATABASE_URL, pool_pre_ping=True)
-_SessionLocal = sessionmaker(bind=_engine, autoflush=False, autocommit=False)
+# Module-level client — reused across warm RunPod calls for connection pooling
+_client = WorkerClient(base_url=WORKER_API_URL, api_key=WORKER_API_KEY)
 
 
-def _write_system_event(
-    session,
-    *,
-    status: str,
-    started_at: datetime,
-    duration_seconds: float,
-    game_id: str,
-    runpod_job_id: str,
-    details: dict | None = None,
-    error_message: str | None = None,
-) -> None:
-    """Add a SystemEvent audit row to the session (does not commit).
+def _build_complete_payload(result) -> dict:
+    """Build the StockfishCompleteSerializer payload dict from a GameResult.
 
-    Parameters:
-        session: active SQLAlchemy session to add the row to.
-        status: outcome string, typically 'completed' or 'failed'.
-        started_at: UTC datetime when the handler began processing.
-        duration_seconds: wall-clock seconds from start to now.
-        game_id: chess.com game ID being analyzed.
-        runpod_job_id: RunPod job ID for cross-referencing logs.
-        details: optional dict of extra metadata merged into the JSON details column.
-        error_message: exception message to store on failure, or None on success.
+    Args:
+        result: GameResult returned by analyze_pgn().
 
-    Side effects:
-        Adds a SystemEvent to session; caller must commit.
+    Returns:
+        Dict matching StockfishCompleteSerializer's expected fields.
     """
-    event = SystemEvent(
-        event_type="stockfish",
-        status=status,
-        started_at=started_at,
-        completed_at=datetime.now(timezone.utc),
-        duration_seconds=duration_seconds,
-        details=json.dumps(
+    return {
+        'engine_depth': result.engine_depth,
+        'white_accuracy': result.white_stats.accuracy,
+        'black_accuracy': result.black_stats.accuracy,
+        'white_acpl': result.white_stats.acpl,
+        'black_acpl': result.black_stats.acpl,
+        'white_blunders': result.white_stats.blunders,
+        'white_mistakes': result.white_stats.mistakes,
+        'white_inaccuracies': result.white_stats.inaccuracies,
+        'black_blunders': result.black_stats.blunders,
+        'black_mistakes': result.black_stats.mistakes,
+        'black_inaccuracies': result.black_stats.inaccuracies,
+        'moves': [
             {
-                "game_id": game_id,
-                "runpod_job_id": runpod_job_id,
-                **(details or {}),
+                'ply': mr.ply,
+                'san': mr.san,
+                'fen': mr.fen,
+                'cp_eval': int(mr.cp_eval),
+                'cpl': int(mr.cpl),
+                'best_move': mr.best_move,
+                'classification': mr.classification.capitalize(),
             }
-        ),
-        error_message=error_message,
-    )
-    session.add(event)
-
-
-def _save_analysis(session, game_id: str, result) -> None:
-    """
-    Persist GameAnalysis + MoveAnalysis rows and update GameParticipant stats.
-
-    Mirrors _save_analysis() in analysis_worker.py so the output schema is
-    identical whether analysis ran locally or on RunPod.
-    """
-    ga = session.execute(
-        select(GameAnalysis).where(GameAnalysis.game_id == game_id)
-    ).scalar_one_or_none()
-
-    if ga is None:
-        ga = GameAnalysis(game_id=game_id)
-        session.add(ga)
-        session.flush()  # populate ga.id before inserting child rows
-
-    ga.analyzed_at = result.analyzed_at
-    ga.engine_depth = result.engine_depth
-    ga.white_accuracy = result.white_stats.accuracy
-    ga.black_accuracy = result.black_stats.accuracy
-    ga.white_acpl = result.white_stats.acpl
-    ga.black_acpl = result.black_stats.acpl
-    ga.white_blunders = result.white_stats.blunders
-    ga.white_mistakes = result.white_stats.mistakes
-    ga.white_inaccuracies = result.white_stats.inaccuracies
-    ga.black_blunders = result.black_stats.blunders
-    ga.black_mistakes = result.black_stats.mistakes
-    ga.black_inaccuracies = result.black_stats.inaccuracies
-    if result.moves:
-        ga.summary_cp = result.moves[-1].cp_eval
-
-    # Idempotent — delete any existing move rows before re-inserting
-    for old in list(ga.moves):
-        session.delete(old)
-    session.flush()
-
-    for mr in result.moves:
-        session.add(
-            MoveAnalysis(
-                analysis_id=ga.id,
-                ply=mr.ply,
-                san=mr.san,
-                fen=mr.fen,
-                cp_eval=mr.cp_eval,
-                best_move=mr.best_move,
-                arrow_uci=mr.arrow_uci,
-                arrow_uci_2=mr.arrow_uci_2,
-                arrow_uci_3=mr.arrow_uci_3,
-                arrow_score_1=mr.arrow_score_1,
-                arrow_score_2=mr.arrow_score_2,
-                arrow_score_3=mr.arrow_score_3,
-                cpl=mr.cpl,
-                classification=mr.classification,
-                pv_san_1=json.dumps(mr.pv_san_1) if mr.pv_san_1 else None,
-                pv_san_2=json.dumps(mr.pv_san_2) if mr.pv_san_2 else None,
-                pv_san_3=json.dumps(mr.pv_san_3) if mr.pv_san_3 else None,
-            )
-        )
-
-    # Update per-participant stats (quality score, ACPL, counts)
-    game = session.get(Game, game_id)
-    if game:
-        for participant in game.participants:
-            color = participant.color.lower()
-            if color == "white":
-                stats = result.white_stats
-            elif color == "black":
-                stats = result.black_stats
-            else:
-                continue
-            participant.quality_score = stats.accuracy
-            participant.acpl = stats.acpl
-            participant.blunder_count = stats.blunders
-            participant.mistake_count = stats.mistakes
-            participant.inaccuracy_count = stats.inaccuracies
-
-
-def _mark_job_completed(session, game_id: str, runpod_job_id: str) -> None:
-    """Mark the matching AnalysisJob row as completed and record its duration.
-
-    Parameters:
-        session: active SQLAlchemy session.
-        game_id: chess.com game ID to look up the job.
-        runpod_job_id: RunPod job ID — used with game_id to uniquely identify the row.
-
-    Side effects:
-        Sets status='completed', completed_at, and duration_seconds (from submitted_at).
-        No-ops silently if no matching job row is found.
-    """
-    job = session.execute(
-        select(AnalysisJob).where(
-            AnalysisJob.game_id == game_id,
-            AnalysisJob.runpod_job_id == runpod_job_id,
-        )
-    ).scalar_one_or_none()
-
-    if job:
-        job.status = "completed"
-        job.completed_at = datetime.now(timezone.utc)
-        if job.submitted_at:
-            elapsed = job.completed_at - job.submitted_at.replace(tzinfo=timezone.utc)
-            job.duration_seconds = elapsed.total_seconds()
+            for mr in result.moves
+        ],
+    }
 
 
 def handler(job: dict) -> dict:
-    """
-    RunPod job handler — called once per job by the RunPod SDK.
-    All exceptions from the analysis itself are caught and returned as errors
-    so RunPod does not retry on bad data.  Transient DB failures are re-raised
-    so RunPod's retry policy applies.
+    """RunPod job handler — called once per job by the RunPod SDK.
+
+    Expects job["input"] to contain:
+        job_id (int): Django AnalysisJob.id — set by the dispatcher at submission.
+        pgn (str): PGN text to analyze.
+        depth (int, optional): Analysis depth (default ANALYSIS_DEPTH).
+        threads (int, optional): Engine threads (default ANALYSIS_THREADS).
+        hash_mb (int, optional): Hash table size in MB (default ANALYSIS_HASH_MB).
+
+    Returns:
+        Dict with job_id and status ('ok' or 'error').
     """
     job_input = job["input"]
-    game_id: str = job_input["game_id"]
+    job_id: int = int(job_input["job_id"])
     pgn_string: str = job_input["pgn"]
     depth: int = int(job_input.get("depth", ANALYSIS_DEPTH))
     threads: int = int(job_input.get("threads", ANALYSIS_THREADS))
     hash_mb: int = int(job_input.get("hash_mb", ANALYSIS_HASH_MB))
-    runpod_job_id: str = job.get("id", "")
-    started_at = datetime.now(timezone.utc)
-    started_clock = time.perf_counter()
 
     log.info(
-        "Starting analysis: game_id=%s depth=%d threads=%d hash_mb=%d syzygy=%s",
-        game_id,
-        depth,
-        threads,
-        hash_mb,
-        SYZYGY_PATH,
+        "Starting analysis: job_id=%d depth=%d threads=%d hash_mb=%d syzygy=%s",
+        job_id, depth, threads, hash_mb, SYZYGY_PATH,
     )
 
-    # --- Run analysis (permanent errors caught here) ---
     try:
         result = analyze_pgn(
             pgn_text=pgn_string,
@@ -244,69 +109,20 @@ def handler(job: dict) -> dict:
             syzygy_path=SYZYGY_PATH,
         )
     except Exception as exc:
-        log.error("Analysis failed for game_id=%s: %s", game_id, exc, exc_info=True)
-        duration_seconds = time.perf_counter() - started_clock
-        with _SessionLocal() as session:
-            _write_system_event(
-                session,
-                status="failed",
-                started_at=started_at,
-                duration_seconds=duration_seconds,
-                game_id=game_id,
-                runpod_job_id=runpod_job_id,
-                error_message=str(exc),
-            )
-            session.commit()
-        return {"game_id": game_id, "status": "error", "error": str(exc)}
+        log.error("Analysis failed for job_id=%d: %s", job_id, exc, exc_info=True)
+        _client.fail(job_id=job_id, worker_id=_WORKER_ID, error=str(exc))
+        return {"job_id": job_id, "status": "error", "error": str(exc)}
 
-    # --- Write to DB (transient errors re-raised for RunPod retry) ---
-    try:
-        with _SessionLocal() as session:
-            _save_analysis(session, game_id, result)
-            _mark_job_completed(session, game_id, runpod_job_id)
-            duration_seconds = time.perf_counter() - started_clock
-            _write_system_event(
-                session,
-                status="completed",
-                started_at=started_at,
-                duration_seconds=duration_seconds,
-                game_id=game_id,
-                runpod_job_id=runpod_job_id,
-                details={
-                    "moves_analyzed": len(result.moves),
-                    "accuracy_white": result.white_stats.accuracy,
-                    "accuracy_black": result.black_stats.accuracy,
-                },
-            )
-            session.commit()
-    except sqlalchemy.exc.OperationalError:
-        raise  # Transient — let RunPod retry
-    except Exception as exc:
-        log.error("DB write failed for game_id=%s: %s", game_id, exc, exc_info=True)
-        duration_seconds = time.perf_counter() - started_clock
-        with _SessionLocal() as session:
-            _write_system_event(
-                session,
-                status="failed",
-                started_at=started_at,
-                duration_seconds=duration_seconds,
-                game_id=game_id,
-                runpod_job_id=runpod_job_id,
-                error_message=str(exc),
-            )
-            session.commit()
-        return {"game_id": game_id, "status": "error", "error": str(exc)}
+    payload = _build_complete_payload(result)
+    _client.complete_stockfish(job_id=job_id, worker_id=_WORKER_ID, payload=payload)
 
     log.info(
-        "Completed: game_id=%s moves=%d acc_w=%.1f acc_b=%.1f",
-        game_id,
-        len(result.moves),
-        result.white_stats.accuracy,
-        result.black_stats.accuracy,
+        "Completed: job_id=%d moves=%d W=%.1f%% B=%.1f%%",
+        job_id, len(result.moves),
+        result.white_stats.accuracy, result.black_stats.accuracy,
     )
-
     return {
-        "game_id": game_id,
+        "job_id": job_id,
         "moves_analyzed": len(result.moves),
         "accuracy_white": result.white_stats.accuracy,
         "accuracy_black": result.black_stats.accuracy,
@@ -314,5 +130,4 @@ def handler(job: dict) -> dict:
     }
 
 
-# Entry point — RunPod SDK reads test_input.json locally or accepts queue jobs
 runpod.serverless.start({"handler": handler})

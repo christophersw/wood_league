@@ -7,6 +7,7 @@ Description:
 
 Changelog:
     2026-05-08: Added file header to meet documentation standards
+    2026-05-08: Added JobSubmitSerializer; extended Lc0MoveSerializer with arrow/pv fields
 """
 from rest_framework import serializers
 
@@ -18,6 +19,9 @@ CLASSIFICATION_CHOICES = [
 ]
 
 
+DISPATCH_CHOICES = ['pull', 'runpod']
+
+
 class CheckoutRequestSerializer(serializers.Serializer):
     """Inbound: request to check out a batch of analysis jobs."""
 
@@ -25,6 +29,7 @@ class CheckoutRequestSerializer(serializers.Serializer):
     batch_size = serializers.IntegerField(min_value=1, max_value=10, default=1)
     worker_id = serializers.CharField(max_length=64)
     game_id = serializers.CharField(max_length=64, required=False)
+    dispatch_mode = serializers.ChoiceField(choices=DISPATCH_CHOICES, default='pull', required=False)
 
 
 class JobSerializer(serializers.Serializer):
@@ -81,9 +86,17 @@ class Lc0MoveSerializer(serializers.Serializer):
     wdl_loss = serializers.IntegerField(min_value=0, max_value=1000)
     cp_equiv = serializers.IntegerField(required=False, allow_null=True)
     best_move = serializers.CharField(max_length=10)
-    arrow_uci = serializers.CharField(max_length=10, required=False, default='')
+    arrow_uci = serializers.CharField(max_length=8, required=False, default='')
     move_win_delta = serializers.FloatField()
     classification = serializers.ChoiceField(choices=CLASSIFICATION_CHOICES)
+    arrow_uci_2 = serializers.CharField(max_length=8, required=False, default='')
+    arrow_uci_3 = serializers.CharField(max_length=8, required=False, default='')
+    arrow_score_1 = serializers.FloatField(required=False, allow_null=True, default=None)
+    arrow_score_2 = serializers.FloatField(required=False, allow_null=True, default=None)
+    arrow_score_3 = serializers.FloatField(required=False, allow_null=True, default=None)
+    pv_san_1 = serializers.CharField(required=False, allow_null=True, default=None)
+    pv_san_2 = serializers.CharField(required=False, allow_null=True, default=None)
+    pv_san_3 = serializers.CharField(required=False, allow_null=True, default=None)
 
 
 class Lc0CompleteSerializer(serializers.Serializer):
@@ -120,3 +133,9 @@ class HeartbeatSerializer(serializers.Serializer):
     worker_id = serializers.CharField(max_length=64)
     engine = serializers.ChoiceField(choices=ENGINE_CHOICES)
     status_message = serializers.CharField(max_length=256, required=False, default='')
+
+
+class JobSubmitSerializer(serializers.Serializer):
+    """Request to record a RunPod job submission."""
+
+    runpod_job_id = serializers.CharField(max_length=128)

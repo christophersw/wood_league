@@ -4,19 +4,30 @@ RunPod Serverless CPU worker for Stockfish game analysis.
 
 ## What it does
 
-Receives a job with a `game_id` and PGN string, runs Stockfish analysis using
-the `wood_league_stockfish` pipeline logic, and writes results directly to the
-shared PostgreSQL database. Scales to zero when idle ($0 cost).
+Receives a job payload with a `job_id` and PGN string, runs Stockfish analysis,
+and reports results to the Django API via `POST /api/v1/jobs/{id}/complete/`.
+No direct database access — all persistence goes through the HTTP API.
+Scales to zero when idle ($0 cost).
+
+**RunPod job input payload** (set by the dispatcher):
+
+```json
+{
+  "job_id": 123,
+  "pgn": "1. e4 e5 ...",
+  "depth": 20,
+  "threads": 8,
+  "hash_mb": 2048
+}
+```
 
 ## Local testing
 
 ```bash
-# Copy the stockfish_pipeline package from wood_league_stockfish
-cp -r ../wood_league_stockfish/stockfish_pipeline .
-
 pip install -r requirements.txt
 
-export DATABASE_URL="postgresql://user:pass@host/db"
+export WORKER_API_URL="https://app.example.com"
+export WORKER_API_KEY="your-worker-api-key"
 export STOCKFISH_PATH="/usr/local/bin/stockfish"
 export SYZYGY_PATH="/runpod-volume/syzygy"
 
@@ -79,11 +90,12 @@ Both workflows can also be run manually from the Actions tab via `workflow_dispa
 
 ## Environment variables (set in RunPod dashboard)
 
-| Variable | Description |
-|---|---|
-| `DATABASE_URL` | PostgreSQL connection string |
-| `STOCKFISH_PATH` | `/usr/games/stockfish` (default) |
-| `ANALYSIS_DEPTH` | `20` (default) |
-| `ANALYSIS_THREADS` | `8` (default) |
-| `ANALYSIS_HASH_MB` | `2048` (default) |
-| `SYZYGY_PATH` | `/runpod-volume/syzygy` (default; folder containing `.rtbw` and `.rtbz` files) |
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `WORKER_API_URL` | Yes | — | Base URL of the Django app, e.g. `https://app.example.com` |
+| `WORKER_API_KEY` | Yes | — | Raw worker API key (`X-Api-Key`) |
+| `STOCKFISH_PATH` | No | `/usr/games/stockfish` | Path to Stockfish binary |
+| `ANALYSIS_DEPTH` | No | `20` | Default analysis depth (overridden per-job by payload) |
+| `ANALYSIS_THREADS` | No | `8` | Default thread count |
+| `ANALYSIS_HASH_MB` | No | `2048` | Default hash table size in MB |
+| `SYZYGY_PATH` | No | `/runpod-volume/syzygy` | Folder containing `.rtbw` and `.rtbz` files |

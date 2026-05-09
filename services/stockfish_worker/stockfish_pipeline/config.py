@@ -18,7 +18,8 @@ class Settings(BaseSettings):
     """
 
     app_name: str = "Stockfish Pipeline"
-    database_url: str = ""
+    worker_api_url: str = ""
+    worker_api_key: str = ""
     chess_com_usernames: str = ""
     chess_com_user_agent: str = "wood-league-stockfish/0.1"
     ingest_month_limit: int = 24
