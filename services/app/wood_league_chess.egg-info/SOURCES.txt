@@ -18,13 +18,14 @@ analysis/apps.py
 analysis/forms.py
 analysis/models.py
 analysis/partial_urls.py
-analysis/services.py
+analysis/services_queries.py
 analysis/tests.py
 analysis/urls.py
 analysis/views.py
 analysis/migrations/0001_initial.py
 analysis/migrations/0002_add_pv_san_columns.py
 analysis/migrations/0003_analysisjob_claimed_at_and_more.py
+analysis/migrations/0004_add_dispatch_mode.py
 analysis/migrations/__init__.py
 analysis/services/__init__.py
 analysis/services/jobs.py
