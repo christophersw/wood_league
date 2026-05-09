@@ -198,6 +198,38 @@ class JobCheckoutTests(TestCase):
         self.assertEqual(response.status_code, 409)
         self.assertIn('already claimed', response.json()['error'])
 
+    def test_checkout_ignores_runpod_jobs(self):
+        """Checkout does not return runpod-dispatch jobs to pull workers."""
+        AnalysisJob.objects.create(
+            game=self.game,
+            engine='stockfish',
+            status=AnalysisJob.STATUS_PENDING,
+            dispatch_mode='runpod',
+        )
+        response = self.client.post('/api/v1/jobs/checkout/', {
+            'engine': 'stockfish',
+            'batch_size': 1,
+            'worker_id': 'my-worker',
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.json()['jobs']), 0)
+
+    def test_checkout_returns_pull_jobs(self):
+        """Checkout returns pull-dispatch jobs to pull workers."""
+        job = AnalysisJob.objects.create(
+            game=self.game,
+            engine='stockfish',
+            status=AnalysisJob.STATUS_PENDING,
+            dispatch_mode='pull',
+        )
+        response = self.client.post('/api/v1/jobs/checkout/', {
+            'engine': 'stockfish',
+            'batch_size': 1,
+            'worker_id': 'my-worker',
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['jobs'][0]['id'], job.id)
+
 
 class JobCompleteTests(TestCase):
     """Test POST /api/v1/jobs/<id>/complete/"""

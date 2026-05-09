@@ -56,6 +56,7 @@ def recover_stale_jobs(engine: str) -> int:
     cutoff = timezone.now() - _stale_timeout()
     return AnalysisJob.objects.filter(
         engine=engine,
+        dispatch_mode='pull',
         status=AnalysisJob.STATUS_RUNNING,
         started_at__lt=cutoff,
     ).update(
@@ -89,7 +90,7 @@ def claim_jobs(
             jobs_for_game = (
                 AnalysisJob.objects
                 .select_for_update(skip_locked=True)
-                .filter(engine=engine, game_id=game_id)
+                .filter(engine=engine, dispatch_mode='pull', game_id=game_id)
             )
 
             if (
@@ -112,7 +113,7 @@ def claim_jobs(
             jobs = list(
                 AnalysisJob.objects
                 .select_for_update(skip_locked=True)
-                .filter(engine=engine, status=AnalysisJob.STATUS_PENDING)
+                .filter(engine=engine, dispatch_mode='pull', status=AnalysisJob.STATUS_PENDING)
                 .order_by('-priority', 'created_at')
                 [:batch_size]
             )
