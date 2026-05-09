@@ -190,6 +190,8 @@ class AnalysisJob(models.Model):
         (STATUS_COMPLETED, "Completed"),
         (STATUS_FAILED, "Failed"),
     ]
+    DISPATCH_PULL = 'pull'
+    DISPATCH_RUNPOD = 'runpod'
 
     game = models.ForeignKey(
         "games.Game", on_delete=models.CASCADE, related_name="analysis_jobs"
