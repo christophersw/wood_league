@@ -39,7 +39,10 @@ class WorkerClient:
             api_key: Raw API key sent in the X-Api-Key header
         """
         self._base = base_url.rstrip('/')
-        self._headers = {'X-Api-Key': api_key, 'Content-Type': 'application/json'}
+        self._http = httpx.Client(
+            headers={'X-Api-Key': api_key, 'Content-Type': 'application/json'},
+            timeout=30,
+        )
 
     def _post(self, path: str, payload: dict) -> dict:
         """POST to the API with retry on 5xx. Raises WorkerClientError on failure.
@@ -58,7 +61,7 @@ class WorkerClient:
         last_exc: Exception | None = None
         for attempt, backoff in enumerate(_RETRY_BACKOFF, start=1):
             try:
-                resp = httpx.post(url, json=payload, headers=self._headers, timeout=30)
+                resp = self._http.post(url, json=payload)
             except httpx.RequestError as exc:
                 last_exc = exc
                 log.warning('Request error (attempt %d): %s', attempt, exc)
@@ -100,7 +103,7 @@ class WorkerClient:
             'worker_id': worker_id,
             'batch_size': batch_size,
         }
-        if game_id:
+        if game_id is not None:
             payload['game_id'] = game_id
         data = self._post('/api/v1/jobs/checkout/', payload)
         return [

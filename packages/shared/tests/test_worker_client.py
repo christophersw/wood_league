@@ -41,11 +41,20 @@ class TestWorkerClientCheckout:
         assert jobs == []
 
     def test_checkout_raises_on_5xx(self, respx_mock):
-        respx_mock.post('http://api.test/api/v1/jobs/checkout/').mock(
+        route = respx_mock.post('http://api.test/api/v1/jobs/checkout/').mock(
             return_value=httpx.Response(500, text='error')
         )
         with pytest.raises(WorkerClientError):
             self.client.checkout(engine='stockfish', worker_id='w1')
+        assert route.call_count == 3
+
+    def test_checkout_retries_on_network_error(self, respx_mock):
+        route = respx_mock.post('http://api.test/api/v1/jobs/checkout/').mock(
+            side_effect=httpx.ConnectError('connection refused')
+        )
+        with pytest.raises(WorkerClientError):
+            self.client.checkout(engine='stockfish', worker_id='w1')
+        assert route.call_count == 3
 
     def test_checkout_raises_on_4xx(self, respx_mock):
         respx_mock.post('http://api.test/api/v1/jobs/checkout/').mock(
