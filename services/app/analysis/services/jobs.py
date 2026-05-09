@@ -7,6 +7,7 @@ Description:
 
 Changelog:
     2026-05-08: Added file header to meet documentation standards
+    2026-05-08: Added submit_job() for RunPod dispatcher integration
 """
 from datetime import timedelta
 
@@ -259,6 +260,14 @@ def complete_lc0_job(
                 cp_equiv=m.get('cp_equiv'),
                 best_move=m['best_move'],
                 arrow_uci=m.get('arrow_uci', ''),
+                arrow_uci_2=m.get('arrow_uci_2', ''),
+                arrow_uci_3=m.get('arrow_uci_3', ''),
+                arrow_score_1=m.get('arrow_score_1'),
+                arrow_score_2=m.get('arrow_score_2'),
+                arrow_score_3=m.get('arrow_score_3'),
+                pv_san_1=m.get('pv_san_1'),
+                pv_san_2=m.get('pv_san_2'),
+                pv_san_3=m.get('pv_san_3'),
                 move_win_delta=m['move_win_delta'],
                 classification=m['classification'],
             )
@@ -309,3 +318,33 @@ def fail_job(
 
         job.save()
         return outcome
+
+
+# ── Submit a RunPod job ──────────────────────────────────────────────────
+
+
+def submit_job(*, job_id: int, runpod_job_id: str) -> None:
+    """Record a RunPod submission: set status=submitted and store runpod_job_id.
+
+    Atomically transitions the job from pending → submitted and records the
+    external RunPod job identifier for tracking purposes.
+
+    Parameters:
+        job_id: Primary key of the AnalysisJob to submit.
+        runpod_job_id: The RunPod job identifier returned by the dispatch API.
+
+    Returns:
+        None
+
+    Raises:
+        AnalysisJob.DoesNotExist: If the job is not found or not in pending state.
+    """
+    with transaction.atomic():
+        job = AnalysisJob.objects.select_for_update().get(
+            id=job_id,
+            status=AnalysisJob.STATUS_PENDING,
+        )
+        job.status = AnalysisJob.STATUS_SUBMITTED
+        job.runpod_job_id = runpod_job_id
+        job.submitted_at = timezone.now()
+        job.save(update_fields=['status', 'runpod_job_id', 'submitted_at'])

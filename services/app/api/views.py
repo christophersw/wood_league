@@ -8,6 +8,7 @@ Description:
 
 Changelog:
     2026-05-08: Added file header to meet documentation standards
+    2026-05-08: Added JobSubmitView for RunPod dispatcher integration
 """
 from django.db.models import Count
 from django.utils import timezone
@@ -144,6 +145,38 @@ class JobFailView(APIView):
 
         _touch_key(request)
         return Response({'status': outcome})
+
+
+class JobSubmitView(APIView):
+    """Record that a RunPod job has been submitted."""
+
+    permission_classes: list[type] = [HasWorkerAPIKey]
+
+    def post(self, request, job_id):
+        """Process RunPod job submission record.
+
+        Parameters:
+            request: DRF request with runpod_job_id in body.
+            job_id: Primary key of the AnalysisJob to mark submitted.
+
+        Returns:
+            Response with status='submitted' on success, or 404 if the job
+            is not found or not in pending state.
+        """
+        ser = sz.JobSubmitSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        try:
+            job_service.submit_job(
+                job_id=job_id,
+                runpod_job_id=ser.validated_data['runpod_job_id'],
+            )
+        except AnalysisJob.DoesNotExist:
+            return Response(
+                {'error': 'Job not found or not in pending state'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        _touch_key(request)
+        return Response({'status': 'submitted'})
 
 
 class HeartbeatView(APIView):

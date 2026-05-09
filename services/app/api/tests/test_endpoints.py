@@ -1,10 +1,11 @@
 """
 Title: test_endpoints.py — API endpoint tests
 Description:
-    Tests for checkout, complete, fail, and heartbeat endpoints.
+    Tests for checkout, complete, fail, heartbeat, and submit endpoints.
 
 Changelog:
     2026-05-06 (#15): Created endpoint integration tests
+    2026-05-08: Added JobSubmitTests for POST /api/v1/jobs/<id>/submit/
 """
 from django.test import TestCase
 from django.utils import timezone
@@ -408,6 +409,68 @@ class HeartbeatTests(TestCase):
         
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()['status'], 'ok')
+
+
+class JobSubmitTests(TestCase):
+    """Test POST /api/v1/jobs/<id>/submit/"""
+
+    def setUp(self):
+        """Create test data."""
+        self.client = APIClient()
+        self.user = User.objects.create_user(email='submit@test.local', password='pass')
+        self.api_key, self.raw_key = WorkerAPIKey.objects.create_key(
+            name='dispatcher', worker_name='dispatcher', created_by=self.user
+        )
+        self.client.credentials(HTTP_X_API_KEY=self.raw_key)
+        self.game = Game.objects.create(
+            id='submit-game',
+            white_username='A',
+            black_username='B',
+            played_at=timezone.now(),
+            time_control='rapid',
+            pgn='1. e4 e5',
+        )
+
+    def test_submit_transitions_pending_to_submitted(self):
+        """Submit endpoint sets status=submitted and records runpod_job_id."""
+        job = AnalysisJob.objects.create(
+            game=self.game,
+            engine='lc0',
+            status=AnalysisJob.STATUS_PENDING,
+            dispatch_mode='runpod',
+        )
+        response = self.client.post(f'/api/v1/jobs/{job.id}/submit/', {
+            'runpod_job_id': 'rp-abc123',
+        })
+        self.assertEqual(response.status_code, 200)
+        job.refresh_from_db()
+        self.assertEqual(job.status, AnalysisJob.STATUS_SUBMITTED)
+        self.assertEqual(job.runpod_job_id, 'rp-abc123')
+
+    def test_submit_rejects_non_pending_job(self):
+        """Submit returns 404 if job is not pending."""
+        job = AnalysisJob.objects.create(
+            game=self.game,
+            engine='lc0',
+            status=AnalysisJob.STATUS_RUNNING,
+            dispatch_mode='runpod',
+        )
+        response = self.client.post(f'/api/v1/jobs/{job.id}/submit/', {
+            'runpod_job_id': 'rp-abc123',
+        })
+        self.assertEqual(response.status_code, 404)
+
+    def test_submit_requires_auth(self):
+        """Submit endpoint requires API key."""
+        job = AnalysisJob.objects.create(
+            game=self.game, engine='lc0',
+            status=AnalysisJob.STATUS_PENDING, dispatch_mode='runpod',
+        )
+        self.client.credentials()
+        response = self.client.post(f'/api/v1/jobs/{job.id}/submit/', {
+            'runpod_job_id': 'rp-abc123',
+        })
+        self.assertIn(response.status_code, [401, 403])
 
 
 class QueueStatusTests(TestCase):
