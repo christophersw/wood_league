@@ -1,41 +1,40 @@
 """
 Title: analysis_worker.py — Stockfish analysis job worker
 Description:
-    Claims pending AnalysisJob rows from the database and runs Stockfish
-    analysis on each game's PGN. Persists GameAnalysis and MoveAnalysis
-    results, updates GameParticipant statistics, and manages worker heartbeats.
+    Pulls pending Stockfish analysis jobs from the Django API via WorkerClient
+    and runs Stockfish analysis on each game's PGN. All job claiming, result
+    submission, and failure reporting go through HTTP — no direct DB access.
 
 Changelog:
-    2026-05-05 (#1): Add pv_san_1/2/3 persistence in _save_analysis()
+    2026-05-08 (#1): Rewrite to use WorkerClient instead of SQLAlchemy
 """
 from __future__ import annotations
 
-import json
 import logging
 import os
 import platform
 import socket
 import sys
 import time
-from dataclasses import dataclass
-from datetime import datetime, timezone
-
-from sqlalchemy import select, and_, func
-from tqdm import tqdm
-
-_IS_TTY = sys.stdout.isatty()
 
 from stockfish_pipeline.services.stockfish_service import analyze_pgn
-from wood_league_shared.storage.database import ENGINE, get_session, init_db
-from wood_league_shared.storage.models import AnalysisJob, Game, GameAnalysis, MoveAnalysis, WorkerHeartbeat
+from wood_league_shared.worker_client import WorkerClient
 
 log = logging.getLogger(__name__)
 
 _WORKER_ID = socket.gethostname()
+_IS_TTY = sys.stdout.isatty()
 
 
 def _collect_worker_info(stockfish_path: str) -> dict:
-    """Collect CPU model, core count, total RAM, and Stockfish binary path."""
+    """Collect CPU model, core count, total RAM, and Stockfish binary path.
+
+    Args:
+        stockfish_path: Resolved path to the Stockfish binary.
+
+    Returns:
+        Dict with keys: cpu_model, cpu_cores, memory_mb, stockfish_binary.
+    """
     cpu_model: str | None = None
     cpu_cores: int | None = None
     memory_mb: int | None = None
@@ -77,262 +76,113 @@ def _collect_worker_info(stockfish_path: str) -> dict:
     }
 
 
-@dataclass
-class _ClaimedJob:
-    id: int
-    game_id: str
-    depth: int
+def _build_complete_payload(result) -> dict:
+    """Build the StockfishCompleteSerializer payload dict from a GameResult.
 
-
-def _claim_job(depth: int) -> _ClaimedJob | None:
-    """
-    Atomically claim one pending job and return its key fields as a plain dataclass.
-    Uses SELECT FOR UPDATE SKIP LOCKED on PostgreSQL; plain SELECT on SQLite.
-    """
-    is_pg = ENGINE.dialect.name == "postgresql"
-
-    stmt = (
-        select(AnalysisJob)
-        .where(
-            and_(
-                AnalysisJob.status == "pending",
-                AnalysisJob.depth <= depth,
-            )
-        )
-        .order_by(AnalysisJob.priority.desc(), AnalysisJob.created_at)
-        .limit(1)
-    )
-    if is_pg:
-        stmt = stmt.with_for_update(skip_locked=True)
-
-    with get_session() as session:
-        job = session.execute(stmt).scalar_one_or_none()
-        if job is None:
-            return None
-        job.status = "running"
-        job.started_at = datetime.now(timezone.utc)
-        job.worker_id = _WORKER_ID
-        session.commit()
-        # Copy scalar fields before session closes to avoid DetachedInstanceError
-        return _ClaimedJob(id=job.id, game_id=job.game_id, depth=job.depth)
-
-
-def _load_pgn(game_id: str) -> str:
-    """Fetch the PGN text for a game from the database.
-
-    Parameters:
-        game_id: primary key of the Game row.
-
-    Returns:
-        PGN string, or empty string if the game row is missing or has no PGN.
-    """
-    with get_session() as session:
-        game = session.get(Game, game_id)
-        return game.pgn if game and game.pgn else ""
-
-
-def _save_analysis(job: _ClaimedJob, result) -> None:
-    """Persist GameAnalysis and MoveAnalysis rows, then update GameParticipant stats.
-
-    Idempotent: deletes any existing MoveAnalysis rows for the game before re-inserting,
-    so re-running a job produces clean results rather than duplicate rows.
-
-    Parameters:
-        job: the claimed job providing game_id for lookups.
+    Args:
         result: GameResult returned by analyze_pgn().
 
-    Side effects:
-        Writes/updates game_analysis, move_analysis, and game_participants rows.
-        Commits the session on success.
+    Returns:
+        Dict matching StockfishCompleteSerializer's expected fields.
     """
-    with get_session() as session:
-        ga = session.execute(
-            select(GameAnalysis).where(GameAnalysis.game_id == job.game_id)
-        ).scalar_one_or_none()
-
-        if ga is None:
-            ga = GameAnalysis(game_id=job.game_id)
-            session.add(ga)
-            session.flush()
-
-        ga.analyzed_at = result.analyzed_at
-        ga.engine_depth = result.engine_depth
-        ga.white_accuracy = result.white_stats.accuracy
-        ga.black_accuracy = result.black_stats.accuracy
-        ga.white_acpl = result.white_stats.acpl
-        ga.black_acpl = result.black_stats.acpl
-        ga.white_blunders = result.white_stats.blunders
-        ga.white_mistakes = result.white_stats.mistakes
-        ga.white_inaccuracies = result.white_stats.inaccuracies
-        ga.black_blunders = result.black_stats.blunders
-        ga.black_mistakes = result.black_stats.mistakes
-        ga.black_inaccuracies = result.black_stats.inaccuracies
-        if result.moves:
-            ga.summary_cp = result.moves[-1].cp_eval
-
-        for old in list(ga.moves):
-            session.delete(old)
-        session.flush()
-
-        for mr in result.moves:
-            session.add(MoveAnalysis(
-                analysis_id=ga.id,
-                ply=mr.ply,
-                san=mr.san,
-                fen=mr.fen,
-                cp_eval=mr.cp_eval,
-                best_move=mr.best_move,
-                arrow_uci=mr.arrow_uci,
-                arrow_uci_2=mr.arrow_uci_2,
-                arrow_uci_3=mr.arrow_uci_3,
-                arrow_score_1=mr.arrow_score_1,
-                arrow_score_2=mr.arrow_score_2,
-                arrow_score_3=mr.arrow_score_3,
-                cpl=mr.cpl,
-                classification=mr.classification,
-                pv_san_1=json.dumps(mr.pv_san_1) if mr.pv_san_1 else None,
-                pv_san_2=json.dumps(mr.pv_san_2) if mr.pv_san_2 else None,
-                pv_san_3=json.dumps(mr.pv_san_3) if mr.pv_san_3 else None,
-            ))
-
-        game = session.get(Game, job.game_id)
-        if game:
-            for participant in game.participants:
-                color = participant.color.lower()
-                stats = result.white_stats if color == "white" else (
-                    result.black_stats if color == "black" else None
-                )
-                if stats is None:
-                    continue
-                participant.quality_score = stats.accuracy
-                participant.acpl = stats.acpl
-                participant.blunder_count = stats.blunders
-                participant.mistake_count = stats.mistakes
-                participant.inaccuracy_count = stats.inaccuracies
-
-        session.commit()
+    return {
+        'engine_depth': result.engine_depth,
+        'white_accuracy': result.white_stats.accuracy,
+        'black_accuracy': result.black_stats.accuracy,
+        'white_acpl': result.white_stats.acpl,
+        'black_acpl': result.black_stats.acpl,
+        'white_blunders': result.white_stats.blunders,
+        'white_mistakes': result.white_stats.mistakes,
+        'white_inaccuracies': result.white_stats.inaccuracies,
+        'black_blunders': result.black_stats.blunders,
+        'black_mistakes': result.black_stats.mistakes,
+        'black_inaccuracies': result.black_stats.inaccuracies,
+        'moves': [
+            {
+                'ply': mr.ply,
+                'san': mr.san,
+                'fen': mr.fen,
+                'cp_eval': int(mr.cp_eval),
+                'cpl': int(mr.cpl),
+                'best_move': mr.best_move,
+                'classification': mr.classification.capitalize(),
+            }
+            for mr in result.moves
+        ],
+    }
 
 
-def _mark_completed(job_id: int) -> None:
-    """Mark an AnalysisJob as completed and record its wall-clock duration.
-
-    Parameters:
-        job_id: primary key of the AnalysisJob to update.
-
-    Side effects:
-        Sets status='completed', completed_at, and duration_seconds on the row.
-    """
-    with get_session() as session:
-        job = session.get(AnalysisJob, job_id)
-        if job:
-            job.status = "completed"
-            job.completed_at = datetime.now(timezone.utc)
-            if job.started_at:
-                elapsed = job.completed_at - job.started_at.replace(tzinfo=timezone.utc)
-                job.duration_seconds = elapsed.total_seconds()
-            session.commit()
-
-
-def _heartbeat(
-    status: str,
-    current_game_id: str | None = None,
-    jobs_completed: int = 0,
-    jobs_failed: int = 0,
-    worker_info: dict | None = None,
+def _run_one_job(
+    client: WorkerClient,
+    job,
+    stockfish_path: str,
+    depth: int,
+    threads: int,
+    hash_mb: int,
 ) -> None:
-    """Upsert a heartbeat row for this worker so the status page can detect crashes."""
-    try:
-        with get_session() as session:
-            row = session.get(WorkerHeartbeat, _WORKER_ID)
-            if row is None:
-                row = WorkerHeartbeat(
-                    worker_id=_WORKER_ID,
-                    started_at=datetime.now(timezone.utc),
-                )
-                session.add(row)
-            row.last_seen = datetime.now(timezone.utc)
-            row.status = status
-            row.current_game_id = current_game_id
-            row.jobs_completed = jobs_completed
-            row.jobs_failed = jobs_failed
-            if worker_info:
-                row.cpu_model = worker_info.get("cpu_model")
-                row.cpu_cores = worker_info.get("cpu_cores")
-                row.memory_mb = worker_info.get("memory_mb")
-                row.stockfish_binary = worker_info.get("stockfish_binary")
-            session.commit()
-    except Exception:
-        log.warning("Failed to write heartbeat", exc_info=True)
+    """Analyze a single job and report completion via the API.
 
+    Args:
+        client: Authenticated WorkerClient instance.
+        job: Job dataclass from checkout().
+        stockfish_path: Resolved path to the Stockfish binary.
+        depth: Stockfish analysis depth.
+        threads: Stockfish thread count.
+        hash_mb: Stockfish hash table size in MB.
 
-def _mark_failed(job_id: int, error: str) -> None:
-    """Mark an AnalysisJob as failed and increment its retry counter.
-
-    Parameters:
-        job_id: primary key of the AnalysisJob to update.
-        error: exception message to store for debugging.
-
-    Side effects:
-        Sets status='failed', error_message, and increments retry_count on the row.
+    Raises:
+        ValueError: If the job has no PGN.
+        Any exception from analyze_pgn or complete_stockfish is propagated.
     """
-    with get_session() as session:
-        job = session.get(AnalysisJob, job_id)
-        if job:
-            job.status = "failed"
-            job.error_message = error
-            job.retry_count = (job.retry_count or 0) + 1
-            session.commit()
+    if not job.pgn:
+        raise ValueError("Job has no PGN")
 
-
-_STALE_MINUTES = 10
-
-
-def _recover_stale_jobs() -> int:
-    """Reset jobs stuck in 'running' for longer than _STALE_MINUTES back to 'pending'."""
-    from sqlalchemy import update, func
-    from wood_league_shared.storage.database import ENGINE
-
-    is_pg = ENGINE.dialect.name == "postgresql"
-    with get_session() as session:
-        if is_pg:
-            cutoff_expr = func.now() - func.cast(f"{_STALE_MINUTES} minutes", type_=None)
-            # Use text for the interval cast which varies by dialect
-            from sqlalchemy import text as sa_text
-            result = session.execute(sa_text(
-                "UPDATE analysis_jobs SET status='pending', worker_id=NULL, started_at=NULL "
-                f"WHERE status='running' AND started_at < NOW() - INTERVAL '{_STALE_MINUTES} minutes'"
-            ))
-        else:
-            # SQLite: use datetime arithmetic
-            from sqlalchemy import text as sa_text
-            result = session.execute(sa_text(
-                "UPDATE analysis_jobs SET status='pending', worker_id=NULL, started_at=NULL "
-                f"WHERE status='running' AND started_at < datetime('now', '-{_STALE_MINUTES} minutes')"
-            ))
-        session.commit()
-        return result.rowcount
+    result = analyze_pgn(
+        job.pgn,
+        stockfish_path=stockfish_path,
+        depth=depth,
+        threads=threads,
+        hash_mb=hash_mb,
+    )
+    payload = _build_complete_payload(result)
+    client.complete_stockfish(job_id=job.id, worker_id=_WORKER_ID, payload=payload)
+    log.info(
+        "Completed job %d  game=%s  W=%.1f%%  B=%.1f%%",
+        job.id, job.game_id,
+        result.white_stats.accuracy, result.black_stats.accuracy,
+    )
 
 
 def run_worker(
     stockfish_path: str,
+    *,
+    api_url: str,
+    api_key: str,
     depth: int = 20,
     threads: int = 1,
     hash_mb: int = 256,
     poll_interval: float = 5.0,
     limit: int | None = None,
 ) -> None:
+    """Main worker loop. Polls the Django API for Stockfish jobs and processes them.
+
+    Args:
+        stockfish_path: Resolved path to the Stockfish binary.
+        api_url: Base URL of the Django API, e.g. 'https://app.example.com'.
+        api_key: Raw API key for X-Api-Key authentication.
+        depth: Stockfish analysis depth (default 20).
+        threads: Stockfish thread count per game (default 1).
+        hash_mb: Stockfish hash table size in MB (default 256).
+        poll_interval: Seconds to wait between polls when the queue is empty.
+            Set to 0 to exit immediately when the queue is empty.
+        limit: Stop after processing this many games (None = unlimited).
     """
-    Main worker loop. Continuously claims and processes jobs until no more remain.
-    Set poll_interval=0 to exit immediately when the queue is empty.
-    Set limit to stop after processing that many games.
-    """
-    init_db()
-    recovered = _recover_stale_jobs()
-    if recovered:
-        log.info("Recovered %d stale job(s) back to pending.", recovered)
+    client = WorkerClient(base_url=api_url, api_key=api_key)
     worker_info = _collect_worker_info(stockfish_path)
+
     log.info(
-        "Worker starting. stockfish=%s depth=%d threads=%d hash=%dMB cpu=%s cores=%s ram=%sMB limit=%s",
+        "Worker starting. stockfish=%s depth=%d threads=%d hash=%dMB "
+        "cpu=%s cores=%s ram=%sMB limit=%s",
         stockfish_path, depth, threads, hash_mb,
         worker_info.get("cpu_model", "unknown"),
         worker_info.get("cpu_cores"),
@@ -340,106 +190,42 @@ def run_worker(
         limit or "∞",
     )
 
-    # Count pending jobs for the progress bar total
-    with get_session() as session:
-        total = session.execute(
-            select(func.count()).where(AnalysisJob.status == "pending")
-        ).scalar_one()
-    if limit is not None:
-        total = min(total, limit)
-
     processed = 0
     failed = 0
-    _LOG_INTERVAL = 10   # emit a summary log every N completed jobs when not in TTY
-    bar = tqdm(total=total, unit="game", desc="Analyzing", dynamic_ncols=True) if _IS_TTY else None
 
-    _heartbeat("starting", jobs_completed=0, jobs_failed=0, worker_info=worker_info)
+    client.heartbeat(worker_id=_WORKER_ID, engine='stockfish', status_message='starting')
 
     try:
-        while True:
-            if limit is not None and processed >= limit:
-                log.info("Reached limit of %d games — exiting.", limit)
-                break
+        while limit is None or processed < limit:
+            jobs = client.checkout(engine='stockfish', worker_id=_WORKER_ID)
 
-            job = _claim_job(depth)
-
-            if job is None:
-                _heartbeat("idle", jobs_completed=processed, jobs_failed=failed)
+            if not jobs:
+                client.heartbeat(worker_id=_WORKER_ID, engine='stockfish', status_message='idle')
                 if poll_interval <= 0:
                     break
                 time.sleep(poll_interval)
                 continue
 
-            _heartbeat("analyzing", current_game_id=job.game_id,
-                       jobs_completed=processed, jobs_failed=failed)
-
-            if bar:
-                bar.set_postfix_str(f"game {job.game_id[:16]}")
-            move_bar = (
-                tqdm(total=None, unit="move", desc="  Move", leave=False, dynamic_ncols=True, position=1)
-                if _IS_TTY else None
+            job = jobs[0]
+            client.heartbeat(
+                worker_id=_WORKER_ID,
+                engine='stockfish',
+                status_message=f'analyzing {job.game_id}',
             )
             try:
-                pgn_text = _load_pgn(job.game_id)
-                if not pgn_text:
-                    raise ValueError("No PGN for game")
-
-                def on_move(ply: int, total: int, san: str) -> None:
-                    """Update the inner tqdm progress bar after each move is analyzed.
-
-                    Parameters:
-                        ply: 1-based move number just completed.
-                        total: total moves in the game (denominator for the bar).
-                        san: SAN string of the move just analyzed, shown as postfix.
-                    """
-                    if move_bar is None:
-                        return
-                    if move_bar.total != total:
-                        move_bar.total = total
-                        move_bar.refresh()
-                    move_bar.n = ply
-                    move_bar.set_postfix_str(san)
-                    move_bar.refresh()
-
-                result = analyze_pgn(pgn_text, stockfish_path=stockfish_path,
-                                     depth=depth, threads=threads, hash_mb=hash_mb, move_callback=on_move)
-                _save_analysis(job, result)
-                _mark_completed(job.id)
+                _run_one_job(client, job, stockfish_path, depth, threads, hash_mb)
                 processed += 1
-
-                if bar:
-                    bar.update(1)
-                    bar.set_postfix_str(
-                        f"W {result.white_stats.accuracy:.0f}%  B {result.black_stats.accuracy:.0f}%"
-                    )
-                else:
-                    log.info(
-                        "Completed job %d (%d/%s)  game=%s  W=%.1f%%  B=%.1f%%",
-                        job.id, processed, limit or "∞", job.game_id,
-                        result.white_stats.accuracy, result.black_stats.accuracy,
-                    )
-                    if processed % _LOG_INTERVAL == 0:
-                        with get_session() as session:
-                            remaining = session.execute(
-                                select(func.count()).where(AnalysisJob.status == "pending")
-                            ).scalar_one()
-                        log.info("Progress: %d completed, %d failed, %d still pending.",
-                                 processed, failed, remaining)
-
             except Exception as exc:
                 failed += 1
                 log.exception("Job %d FAILED (game=%s): %s", job.id, job.game_id, exc)
-                _mark_failed(job.id, str(exc))
-                _heartbeat("error", current_game_id=job.game_id,
-                           jobs_completed=processed, jobs_failed=failed)
-                if bar:
-                    bar.update(1)
-            finally:
-                if move_bar:
-                    move_bar.close()
+                client.fail(job_id=job.id, worker_id=_WORKER_ID, error=str(exc))
+                client.heartbeat(
+                    worker_id=_WORKER_ID,
+                    engine='stockfish',
+                    status_message=f'error on {job.game_id}',
+                )
+
     finally:
-        if bar:
-            bar.close()
-        _heartbeat("stopped", jobs_completed=processed, jobs_failed=failed)
+        client.heartbeat(worker_id=_WORKER_ID, engine='stockfish', status_message='stopped')
 
     log.info("Done. Processed %d game(s), %d failed.", processed, failed)
