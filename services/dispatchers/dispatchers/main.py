@@ -1,3 +1,17 @@
+"""
+Title: main.py — Unified Wood League dispatcher
+Description:
+    Periodically ingests Chess.com games (via ChessComSyncService + SQLAlchemy),
+    enqueues new jobs as dispatch_mode='runpod', and submits pending RunPod jobs
+    to RunPod by claiming them through the Django API (WorkerClient).
+
+    The ingest path (Chess.com sync, job creation) retains its SQLAlchemy
+    connection because the Django app cannot expose an ingest-write API today.
+    The dispatch path (claiming, submitting, recording) uses WorkerClient only.
+
+Changelog:
+    2026-05-08 (#1): Migrate job dispatch from SQLAlchemy to WorkerClient HTTP API
+"""
 from __future__ import annotations
 
 import json
@@ -11,7 +25,8 @@ from sqlalchemy import and_, select
 
 from wood_league_shared.storage.database import get_session, init_db
 from wood_league_shared.ingest.sync_service import ChessComSyncService
-from wood_league_shared.storage.models import AnalysisJob, Game, SystemEvent
+from wood_league_shared.storage.models import AnalysisJob, SystemEvent
+from wood_league_shared.worker_client import WorkerClient
 
 logging.basicConfig(
     level=logging.INFO,
@@ -19,6 +34,8 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 log = logging.getLogger("dispatchers")
+
+_DISPATCHER_WORKER_ID = "runpod-dispatcher"
 
 
 def _log_system_event(
@@ -29,9 +46,9 @@ def _log_system_event(
     duration_seconds: float | None = None,
 ) -> None:
     """Log a system event to the database.
-    
+
     Args:
-        event_type: Type of event (e.g., "ingest", "stockfish", "lc0")
+        event_type: Type of event (e.g., "ingest", "stockfish_dispatch")
         status: Event status ("started", "completed", "failed")
         details: Optional dict with event-specific metadata
         error_message: Optional error message if status is "failed"
@@ -50,11 +67,22 @@ def _log_system_event(
                 event.completed_at = datetime.now(timezone.utc)
             session.add(event)
             session.commit()
-    except Exception as e:
-        log.error("Failed to log system event: %s", e)
+    except Exception as exc:
+        log.error("Failed to log system event: %s", exc)
 
 
 def _required_env(name: str) -> str:
+    """Return the named environment variable, raising RuntimeError if unset.
+
+    Args:
+        name: Environment variable name.
+
+    Returns:
+        Non-empty string value of the variable.
+
+    Raises:
+        RuntimeError: If the variable is missing or empty.
+    """
     value = os.environ.get(name, "").strip()
     if not value:
         raise RuntimeError(f"Missing required env var: {name}")
@@ -62,6 +90,14 @@ def _required_env(name: str) -> str:
 
 
 def _endpoint_ids() -> tuple[str, str]:
+    """Resolve the Stockfish and Lc0 RunPod endpoint IDs from environment.
+
+    Returns:
+        Tuple of (stockfish_endpoint_id, lc0_endpoint_id).
+
+    Raises:
+        RuntimeError: If either endpoint ID is not configured.
+    """
     stockfish_endpoint = os.environ.get("RUNPOD_STOCKFISH_ENDPOINT_ID", "").strip()
     if not stockfish_endpoint:
         stockfish_endpoint = os.environ.get("RUNPOD_ENDPOINT_ID", "").strip()
@@ -77,6 +113,15 @@ def _endpoint_ids() -> tuple[str, str]:
 
 
 def _parse_bool(value: str | None, default: bool = False) -> bool:
+    """Parse a boolean from a string environment variable.
+
+    Args:
+        value: Raw string value (or None).
+        default: Return value when the input is None or unrecognized.
+
+    Returns:
+        Parsed boolean.
+    """
     if value is None:
         return default
     normalized = value.strip().lower()
@@ -88,19 +133,92 @@ def _parse_bool(value: str | None, default: bool = False) -> bool:
 
 
 def _parse_usernames(raw: str) -> list[str]:
+    """Parse a comma-separated list of Chess.com usernames.
+
+    Args:
+        raw: Comma-separated string of usernames.
+
+    Returns:
+        List of lowercase username strings.
+    """
     if not raw.strip():
         return []
     return [u.strip().lower() for u in raw.split(",") if u.strip()]
 
 
-def _load_pgn(game_id: str) -> str:
-    with get_session() as session:
-        game = session.get(Game, game_id)
-        return game.pgn if game and game.pgn else ""
+def _build_runpod_payload(
+    job,
+    engine: str,
+    stockfish_threads: int,
+    stockfish_hash_mb: int,
+    lc0_nodes: int,
+    lc0_network: str,
+) -> dict:
+    """Build the RunPod job payload for a claimed analysis job.
+
+    Args:
+        job: Job dataclass from WorkerClient.checkout().
+        engine: 'stockfish' or 'lc0'
+        stockfish_threads: Thread count for Stockfish jobs.
+        stockfish_hash_mb: Hash table size for Stockfish jobs.
+        lc0_nodes: Default node budget for lc0 jobs.
+        lc0_network: Optional weights path for lc0 jobs.
+
+    Returns:
+        Dict to pass to endpoint.run().
+    """
+    if engine == "stockfish":
+        return {
+            "job_id": job.id,
+            "pgn": job.pgn,
+            "depth": job.depth,
+            "threads": stockfish_threads,
+            "hash_mb": stockfish_hash_mb,
+        }
+    payload: dict = {
+        "job_id": job.id,
+        "pgn": job.pgn,
+        "nodes": job.nodes if job.nodes else lc0_nodes,
+    }
+    if lc0_network:
+        payload["weights_path"] = lc0_network
+    return payload
+
+
+def _submit_one_job(*, client: WorkerClient, job, engine: str, endpoint, **kwargs) -> bool:
+    """Attempt to submit a single claimed job to RunPod and record the result.
+
+    Args:
+        client: Authenticated WorkerClient instance.
+        job: Job dataclass from checkout().
+        engine: 'stockfish' or 'lc0'
+        endpoint: RunPod Endpoint for the engine.
+        **kwargs: Forwarded to _build_runpod_payload.
+
+    Returns:
+        True if submitted successfully, False on error.
+    """
+    if not job.pgn:
+        log.warning("%s job_id=%d game_id=%s has no PGN — skipping", engine, job.id, job.game_id)
+        client.fail(job_id=job.id, worker_id=_DISPATCHER_WORKER_ID, error="No PGN")
+        return False
+    try:
+        payload = _build_runpod_payload(job, engine, **kwargs)
+        run_request = endpoint.run(payload)
+        client.submit_runpod(job_id=job.id, runpod_job_id=run_request.job_id)
+        log.info(
+            "Submitted %s job_id=%d game_id=%s -> runpod_job_id=%s",
+            engine, job.id, job.game_id, run_request.job_id,
+        )
+        return True
+    except Exception:
+        log.exception("Failed submitting %s job_id=%d game_id=%s", engine, job.id, job.game_id)
+        return False
 
 
 def _submit_engine_jobs(
     *,
+    client: WorkerClient,
     engine: str,
     endpoint,
     limit: int | None = None,
@@ -109,104 +227,64 @@ def _submit_engine_jobs(
     lc0_nodes: int = 25000,
     lc0_network: str = "",
 ) -> int:
-    stmt = (
-        select(AnalysisJob)
-        .where(
-            and_(
-                AnalysisJob.status == "pending",
-                AnalysisJob.engine == engine,
-            )
-        )
-        .order_by(AnalysisJob.priority.desc(), AnalysisJob.created_at)
-    )
-    if limit:
-        stmt = stmt.limit(limit)
+    """Claim pending runpod jobs from the API and submit them to RunPod.
 
+    Claims batches of jobs from the Django API, submits each to RunPod, then
+    records the RunPod job ID via the submit endpoint.
+
+    Args:
+        client: Authenticated WorkerClient instance.
+        engine: 'stockfish' or 'lc0'
+        endpoint: RunPod Endpoint object for the given engine.
+        limit: Maximum jobs to submit this sweep (None = all pending).
+        stockfish_threads: Threads for Stockfish RunPod payload.
+        stockfish_hash_mb: Hash MB for Stockfish RunPod payload.
+        lc0_nodes: Default node budget for lc0 jobs.
+        lc0_network: Optional weights path for lc0 jobs.
+
+    Returns:
+        Number of jobs successfully submitted to RunPod this sweep.
+    """
     submitted = 0
-    with get_session() as session:
-        jobs = session.execute(stmt).scalars().all()
+    payload_kwargs = dict(
+        stockfish_threads=stockfish_threads,
+        stockfish_hash_mb=stockfish_hash_mb,
+        lc0_nodes=lc0_nodes,
+        lc0_network=lc0_network,
+    )
+
+    while True:
+        jobs = client.checkout(
+            engine=engine,
+            worker_id=_DISPATCHER_WORKER_ID,
+            batch_size=10,
+            dispatch_mode='runpod',
+        )
+        if not jobs:
+            break
 
         for job in jobs:
-            pgn = _load_pgn(job.game_id)
-            if not pgn:
-                log.warning("%s game_id=%s has no PGN - skipping", engine, job.game_id)
-                continue
-
-            try:
-                if engine == "stockfish":
-                    payload = {
-                        "game_id": job.game_id,
-                        "pgn": pgn,
-                        "depth": int(job.depth or 20),
-                        "threads": stockfish_threads,
-                        "hash_mb": stockfish_hash_mb,
-                    }
-                else:
-                    payload = {
-                        "game_id": job.game_id,
-                        "pgn": pgn,
-                        "nodes": int(job.depth or lc0_nodes),
-                    }
-                    if lc0_network:
-                        payload["weights_path"] = lc0_network
-
-                run_request = endpoint.run(payload)
-                job.runpod_job_id = run_request.job_id
-                job.submitted_at = datetime.now(timezone.utc)
-                job.status = "submitted"
+            if _submit_one_job(client=client, job=job, engine=engine, endpoint=endpoint, **payload_kwargs):
                 submitted += 1
-                log.info(
-                    "Submitted %s game_id=%s -> runpod_job_id=%s",
-                    engine,
-                    job.game_id,
-                    run_request.job_id,
-                )
-            except Exception:
-                log.exception("Failed submitting %s game_id=%s", engine, job.game_id)
 
-        session.commit()
+        if limit is not None and submitted >= limit:
+            break
 
     return submitted
 
 
-def _enqueue_new_game_jobs(
-    *,
-    game_ids: list[str],
-    queue_stockfish: bool,
-    queue_lc0: bool,
-    stockfish_depth: int,
-    lc0_nodes: int,
-) -> tuple[int, int]:
-    if not game_ids or (not queue_stockfish and not queue_lc0):
-        return 0, 0
-
-    enqueued_sf = 0
-    enqueued_lc0 = 0
-
-    with get_session() as session:
-        for game_id in game_ids:
-            if queue_stockfish and _enqueue_job_if_needed(
-                session=session,
-                game_id=game_id,
-                engine="stockfish",
-                depth=stockfish_depth,
-            ):
-                enqueued_sf += 1
-
-            if queue_lc0 and _enqueue_job_if_needed(
-                session=session,
-                game_id=game_id,
-                engine="lc0",
-                depth=lc0_nodes,
-            ):
-                enqueued_lc0 += 1
-
-        session.commit()
-
-    return enqueued_sf, enqueued_lc0
-
-
 def _enqueue_job_if_needed(*, session, game_id: str, engine: str, depth: int) -> bool:
+    """Create a runpod-mode AnalysisJob for a game if one does not already exist.
+
+    Args:
+        session: Active SQLAlchemy session.
+        game_id: Game to enqueue.
+        engine: 'stockfish' or 'lc0'
+        depth: Analysis depth (Stockfish) or node count (lc0).
+
+    Returns:
+        True if a new job was added to the session, False if skipped.
+    """
     existing_active = session.execute(
         select(AnalysisJob).where(
             and_(
@@ -239,9 +317,59 @@ def _enqueue_job_if_needed(*, session, game_id: str, engine: str, depth: int) ->
             depth=depth,
             status="pending",
             priority=10,
+            dispatch_mode="runpod",
         )
     )
     return True
+
+
+def _enqueue_new_game_jobs(
+    *,
+    game_ids: list[str],
+    queue_stockfish: bool,
+    queue_lc0: bool,
+    stockfish_depth: int,
+    lc0_nodes: int,
+) -> tuple[int, int]:
+    """Enqueue analysis jobs for a list of newly-ingested game IDs.
+
+    Args:
+        game_ids: Game IDs that were inserted by the ingest sweep.
+        queue_stockfish: Whether to create Stockfish jobs.
+        queue_lc0: Whether to create lc0 jobs.
+        stockfish_depth: Depth to use for Stockfish jobs.
+        lc0_nodes: Node budget for lc0 jobs.
+
+    Returns:
+        Tuple of (stockfish_enqueued, lc0_enqueued) counts.
+    """
+    if not game_ids or (not queue_stockfish and not queue_lc0):
+        return 0, 0
+
+    enqueued_sf = 0
+    enqueued_lc0 = 0
+
+    with get_session() as session:
+        for game_id in game_ids:
+            if queue_stockfish and _enqueue_job_if_needed(
+                session=session,
+                game_id=game_id,
+                engine="stockfish",
+                depth=stockfish_depth,
+            ):
+                enqueued_sf += 1
+
+            if queue_lc0 and _enqueue_job_if_needed(
+                session=session,
+                game_id=game_id,
+                engine="lc0",
+                depth=lc0_nodes,
+            ):
+                enqueued_lc0 += 1
+
+        session.commit()
+
+    return enqueued_sf, enqueued_lc0
 
 
 def _run_ingest_sweep(
@@ -254,6 +382,20 @@ def _run_ingest_sweep(
     stockfish_depth: int,
     lc0_nodes: int,
 ) -> tuple[int, int, int, int, int]:
+    """Sync Chess.com archives and enqueue jobs for newly ingested games.
+
+    Args:
+        usernames: List of Chess.com usernames to sync.
+        ingest_month_limit: Number of months of history to fetch.
+        chess_com_user_agent: User-Agent header for Chess.com requests.
+        queue_stockfish_after_ingest: Create Stockfish jobs for new games.
+        queue_lc0_after_ingest: Create lc0 jobs for new games.
+        stockfish_depth: Depth for Stockfish jobs.
+        lc0_nodes: Node budget for lc0 jobs.
+
+    Returns:
+        Tuple of (inserted, updated, archives_scanned, sf_enqueued, lc0_enqueued).
+    """
     if not usernames:
         return 0, 0, 0, 0, 0
 
@@ -266,9 +408,9 @@ def _run_ingest_sweep(
     inserted = sum(r.inserted for r in results)
     updated = sum(r.updated for r in results)
     archives = sum(r.archives_scanned for r in results)
-    inserted_game_ids: list[str] = []
-    for result in results:
-        inserted_game_ids.extend(result.inserted_game_ids)
+    inserted_game_ids: list[str] = [
+        gid for r in results for gid in r.inserted_game_ids
+    ]
 
     enqueued_sf, enqueued_lc0 = _enqueue_new_game_jobs(
         game_ids=inserted_game_ids,
@@ -282,11 +424,15 @@ def _run_ingest_sweep(
 
 
 def main() -> None:
+    """Start the dispatcher loop: periodically ingest and submit jobs to RunPod."""
     runpod.api_key = _required_env("RUNPOD_API_KEY")
+    worker_api_url = _required_env("WORKER_API_URL")
+    worker_api_key = _required_env("WORKER_API_KEY")
     stockfish_endpoint_id, lc0_endpoint_id = _endpoint_ids()
 
     stockfish_endpoint = runpod.Endpoint(stockfish_endpoint_id)
     lc0_endpoint = runpod.Endpoint(lc0_endpoint_id)
+    client = WorkerClient(base_url=worker_api_url, api_key=worker_api_key)
 
     sf_poll_interval = int(os.environ.get("SF_POLL_INTERVAL", "60"))
     lc0_poll_interval = int(os.environ.get("LC0_POLL_INTERVAL", "60"))
@@ -316,9 +462,8 @@ def main() -> None:
     init_db()
 
     log.info(
-        "Dispatchers started: stockfish_endpoint=%s lc0_endpoint=%s",
-        stockfish_endpoint_id,
-        lc0_endpoint_id,
+        "Dispatchers started: stockfish_endpoint=%s lc0_endpoint=%s api=%s",
+        stockfish_endpoint_id, lc0_endpoint_id, worker_api_url,
     )
     if chess_usernames:
         log.info(
@@ -365,21 +510,12 @@ def main() -> None:
                     duration_seconds=duration,
                 )
                 log.info(
-                    "Ingest sweep complete: archives=%d inserted=%d updated=%d enqueued_stockfish=%d enqueued_lc0=%d",
-                    archives,
-                    inserted,
-                    updated,
-                    enqueued_sf,
-                    enqueued_lc0,
+                    "Ingest sweep: archives=%d inserted=%d updated=%d sf=%d lc0=%d",
+                    archives, inserted, updated, enqueued_sf, enqueued_lc0,
                 )
-            except Exception as e:
+            except Exception as exc:
                 duration = time.time() - ingest_start_time
-                _log_system_event(
-                    "ingest",
-                    "failed",
-                    error_message=str(e),
-                    duration_seconds=duration,
-                )
+                _log_system_event("ingest", "failed", error_message=str(exc), duration_seconds=duration)
                 log.exception("Chess.com ingest sweep failed")
             last_ingest = now
 
@@ -388,6 +524,7 @@ def main() -> None:
             _log_system_event("stockfish_dispatch", "started")
             try:
                 n = _submit_engine_jobs(
+                    client=client,
                     engine="stockfish",
                     endpoint=stockfish_endpoint,
                     stockfish_threads=stockfish_threads,
@@ -396,21 +533,11 @@ def main() -> None:
                     lc0_network=lc0_network,
                 )
                 duration = time.time() - sf_start_time
-                _log_system_event(
-                    "stockfish_dispatch",
-                    "completed",
-                    details={"submitted": n},
-                    duration_seconds=duration,
-                )
-                log.info("Stockfish sweep complete: submitted=%d", n)
-            except Exception as e:
+                _log_system_event("stockfish_dispatch", "completed", details={"submitted": n}, duration_seconds=duration)
+                log.info("Stockfish sweep: submitted=%d", n)
+            except Exception as exc:
                 duration = time.time() - sf_start_time
-                _log_system_event(
-                    "stockfish_dispatch",
-                    "failed",
-                    error_message=str(e),
-                    duration_seconds=duration,
-                )
+                _log_system_event("stockfish_dispatch", "failed", error_message=str(exc), duration_seconds=duration)
                 log.exception("Stockfish submission sweep failed")
             last_sf = now
 
@@ -419,6 +546,7 @@ def main() -> None:
             _log_system_event("lc0_dispatch", "started")
             try:
                 n = _submit_engine_jobs(
+                    client=client,
                     engine="lc0",
                     endpoint=lc0_endpoint,
                     stockfish_threads=stockfish_threads,
@@ -427,21 +555,11 @@ def main() -> None:
                     lc0_network=lc0_network,
                 )
                 duration = time.time() - lc0_start_time
-                _log_system_event(
-                    "lc0_dispatch",
-                    "completed",
-                    details={"submitted": n},
-                    duration_seconds=duration,
-                )
-                log.info("Lc0 sweep complete: submitted=%d", n)
-            except Exception as e:
+                _log_system_event("lc0_dispatch", "completed", details={"submitted": n}, duration_seconds=duration)
+                log.info("Lc0 sweep: submitted=%d", n)
+            except Exception as exc:
                 duration = time.time() - lc0_start_time
-                _log_system_event(
-                    "lc0_dispatch",
-                    "failed",
-                    error_message=str(e),
-                    duration_seconds=duration,
-                )
+                _log_system_event("lc0_dispatch", "failed", error_message=str(exc), duration_seconds=duration)
                 log.exception("Lc0 submission sweep failed")
             last_lc0 = now
 

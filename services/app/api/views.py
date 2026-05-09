@@ -62,6 +62,7 @@ class JobCheckoutView(APIView):
                 worker_id=d['worker_id'],
                 key_prefix=_key_prefix(request),
                 game_id=d.get('game_id'),
+                dispatch_mode=d.get('dispatch_mode', 'pull'),
             )
         except job_service.JobCheckoutDenied as exc:
             return Response({'error': str(exc)}, status=status.HTTP_409_CONFLICT)

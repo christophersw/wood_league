@@ -79,19 +79,29 @@ def claim_jobs(
     worker_id: str,
     key_prefix: str | None = None,
     game_id: str | None = None,
+    dispatch_mode: str = AnalysisJob.DISPATCH_PULL,
 ) -> list[AnalysisJob]:
     """Atomically claim up to batch_size pending jobs using SELECT FOR UPDATE SKIP LOCKED.
 
-    Runs stale recovery first. Returns the claimed AnalysisJob instances with their
-    related Game.
+    Runs stale recovery first (pull-mode only). Returns the claimed AnalysisJob
+    instances with their related Game.
+
+    Args:
+        engine: 'stockfish' or 'lc0'
+        batch_size: Maximum number of jobs to claim.
+        worker_id: Identifier for the claiming worker (stored for tracing).
+        key_prefix: API key prefix stored for audit (None for non-API callers).
+        game_id: Claim only this specific game's job (optional).
+        dispatch_mode: 'pull' for local workers; 'runpod' for the dispatcher.
     """
     with transaction.atomic():
-        recover_stale_jobs(engine)
+        if dispatch_mode == AnalysisJob.DISPATCH_PULL:
+            recover_stale_jobs(engine)
         if game_id:
             jobs_for_game = (
                 AnalysisJob.objects
                 .select_for_update(skip_locked=True)
-                .filter(engine=engine, dispatch_mode=AnalysisJob.DISPATCH_PULL, game_id=game_id)
+                .filter(engine=engine, dispatch_mode=dispatch_mode, game_id=game_id)
             )
 
             if (
@@ -114,7 +124,7 @@ def claim_jobs(
             jobs = list(
                 AnalysisJob.objects
                 .select_for_update(skip_locked=True)
-                .filter(engine=engine, dispatch_mode=AnalysisJob.DISPATCH_PULL, status=AnalysisJob.STATUS_PENDING)
+                .filter(engine=engine, dispatch_mode=dispatch_mode, status=AnalysisJob.STATUS_PENDING)
                 .order_by('-priority', 'created_at')
                 [:batch_size]
             )
