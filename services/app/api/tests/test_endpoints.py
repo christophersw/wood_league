@@ -472,6 +472,19 @@ class JobSubmitTests(TestCase):
         })
         self.assertIn(response.status_code, [401, 403])
 
+    def test_submit_rejects_pull_mode_job(self):
+        """Submit returns 404 for pull-mode jobs (wrong dispatch path)."""
+        job = AnalysisJob.objects.create(
+            game=self.game,
+            engine='stockfish',
+            status=AnalysisJob.STATUS_PENDING,
+            dispatch_mode='pull',
+        )
+        response = self.client.post(f'/api/v1/jobs/{job.id}/submit/', {
+            'runpod_job_id': 'rp-xyz789',
+        })
+        self.assertEqual(response.status_code, 404)
+
 
 class QueueStatusTests(TestCase):
     """Test GET /api/v1/jobs/status/"""

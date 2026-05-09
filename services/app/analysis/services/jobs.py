@@ -343,6 +343,7 @@ def submit_job(*, job_id: int, runpod_job_id: str) -> None:
         job = AnalysisJob.objects.select_for_update().get(
             id=job_id,
             status=AnalysisJob.STATUS_PENDING,
+            dispatch_mode=AnalysisJob.DISPATCH_RUNPOD,
         )
         job.status = AnalysisJob.STATUS_SUBMITTED
         job.runpod_job_id = runpod_job_id
