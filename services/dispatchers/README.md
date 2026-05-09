@@ -9,19 +9,24 @@ This is now the canonical Railway dispatcher repo for Wood League Chess.
 
 ## What it does
 
-- Polls `analysis_jobs` where `status='pending'`
+**Dispatch loop** (no direct DB access):
+- Claims pending `dispatch_mode='runpod'` jobs from the Django API (`POST /api/v1/jobs/checkout/`)
 - Submits `engine='stockfish'` jobs to the Stockfish RunPod endpoint
 - Submits `engine='lc0'` jobs to the Lc0 RunPod endpoint
-- Marks jobs as `submitted` and stores `runpod_job_id`
-- Periodically syncs new games from Chess.com when usernames are configured
-- Optionally enqueues newly ingested games immediately for Stockfish and/or Lc0
+- Records the RunPod job ID via `POST /api/v1/jobs/{id}/submit/`
 
-RunPod workers are responsible for analysis + writing final results + marking jobs completed.
+RunPod workers call `POST /api/v1/jobs/{id}/complete/` when done — the dispatcher does not write analysis results.
+
+**Ingest loop** (direct DB access via SQLAlchemy, unchanged):
+- Periodically syncs new games from Chess.com when usernames are configured
+- Enqueues newly ingested games as `dispatch_mode='runpod'` jobs
 
 ## Environment variables
 
 Required:
-- `DATABASE_URL`
+- `DATABASE_URL` — used by the ingest loop (Chess.com sync + job creation)
+- `WORKER_API_URL` — base URL of the Django app, e.g. `https://app.example.com`
+- `WORKER_API_KEY` — raw worker API key (`X-Api-Key`)
 - `RUNPOD_API_KEY`
 - `RUNPOD_STOCKFISH_ENDPOINT_ID`
 - `RUNPOD_LC0_ENDPOINT_ID`
