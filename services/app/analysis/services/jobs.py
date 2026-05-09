@@ -226,7 +226,7 @@ def complete_lc0_job(
             filters['claimed_by_key_prefix'] = key_prefix
         job = AnalysisJob.objects.select_for_update().get(**filters)
 
-        Lc0GameAnalysis.objects.update_or_create(
+        lga, _ = Lc0GameAnalysis.objects.update_or_create(
             game=job.game,
             defaults=dict(
                 white_win_prob=payload['white_win_prob'],
@@ -247,10 +247,10 @@ def complete_lc0_job(
             ),
         )
 
-        Lc0MoveAnalysis.objects.filter(game=job.game).delete()
+        Lc0MoveAnalysis.objects.filter(analysis=lga).delete()
         Lc0MoveAnalysis.objects.bulk_create([
             Lc0MoveAnalysis(
-                game=job.game,
+                analysis=lga,
                 ply=m['ply'],
                 san=m['san'],
                 fen=m['fen'],
