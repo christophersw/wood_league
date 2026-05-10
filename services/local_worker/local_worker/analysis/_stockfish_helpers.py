@@ -64,7 +64,7 @@ def second_best_gap(
 
 def total_cpl(
     info_before: list,
-    info_after: dict,
+    info_after: chess.engine.InfoDict,
     eval_before_white: int,
     eval_after_white: int,
     mover: chess.Color,

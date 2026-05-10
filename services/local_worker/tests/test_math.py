@@ -202,7 +202,6 @@ class TestGameAccuracyWindowed:
     def test_weight_clamp_ceiling_explosive_swing(self):
         """Single large Win% swing → window stddev > 12 → weight clamped to 12."""
         # alternating 0 / 100 — stddev of any 2-element window = 50 → clamped to 12
-        num_plies = 6
         all_wp = [0.0, 100.0, 0.0, 100.0, 0.0, 100.0, 0.0]
         weights = compute_ply_weights(all_wp)
         assert any(w == pytest.approx(12.0) for w in weights)
