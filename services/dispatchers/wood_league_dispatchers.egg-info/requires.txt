@@ -1,5 +1,0 @@
-wood-league-shared @ git+https://github.com/christophersw/wood_league.git#subdirectory=packages/shared
-runpod>=1.7.0
-
-[dev]
-pytest>=8.2.0

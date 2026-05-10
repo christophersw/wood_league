@@ -10,7 +10,6 @@ resolution-markers = [
 [manifest]
 members = [
     "wood-league-chess",
-    "wood-league-dispatchers",
     "wood-league-lc0-runpod",
     "wood-league-shared",
     "wood-league-stockfish-worker",
@@ -2221,28 +2220,6 @@ requires-dist = [
     { name = "whitenoise" },
     { name = "wood-league-shared", editable = "packages/shared" },
 ]
-
-[[package]]
-name = "wood-league-dispatchers"
-version = "0.1.0"
-source = { editable = "services/dispatchers" }
-dependencies = [
-    { name = "runpod" },
-    { name = "wood-league-shared" },
-]
-
-[package.optional-dependencies]
-dev = [
-    { name = "pytest" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.2.0" },
-    { name = "runpod", specifier = ">=1.7.0" },
-    { name = "wood-league-shared", editable = "packages/shared" },
-]
-provides-extras = ["dev"]
 
 [[package]]
 name = "wood-league-lc0-runpod"

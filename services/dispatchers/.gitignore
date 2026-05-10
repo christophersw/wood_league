@@ -1,5 +1,0 @@
-.env
-
-# Snyk scan artifacts
-.snyk-venv/
-.snyk-requirements.txt
