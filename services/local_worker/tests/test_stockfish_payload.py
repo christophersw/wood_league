@@ -7,7 +7,6 @@ Description:
 Changelog:
     2026-05-09: Initial creation
 """
-import pytest
 from local_worker.analysis.models import StockfishMoveResult, StockfishGameResult
 from local_worker.analysis.stockfish import build_stockfish_payload
 
