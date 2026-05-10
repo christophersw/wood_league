@@ -5,6 +5,7 @@ members = [
     "services/dispatchers",
     "services/stockfish_worker",
     "services/lc0_worker",
+    "services/local_worker",
 ]
 
 [dependency-groups]

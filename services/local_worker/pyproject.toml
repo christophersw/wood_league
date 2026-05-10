@@ -14,7 +14,7 @@ dependencies = [
     "python-chess>=1.11",
     "httpx>=0.27",
     "platformdirs>=4",
-    "wood-league-shared @ file://../../packages/shared",
+    "wood-league-shared",
 ]
 
 [project.scripts]
@@ -23,15 +23,15 @@ wood-league-worker = "local_worker.cli:app"
 [project.optional-dependencies]
 dev = ["pytest>=8", "pytest-cov", "ruff", "mypy"]
 
+[tool.uv.sources]
+wood-league-shared = { workspace = true }
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
 [tool.ruff]
 target-version = "py311"
 line-length = 100
-
-[tool.hatch.metadata]
-allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["local_worker"]
