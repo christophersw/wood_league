@@ -2,8 +2,8 @@
 Title: main.py — Unified Wood League dispatcher
 Description:
     Periodically ingests Chess.com games (via ChessComSyncService + SQLAlchemy),
-    enqueues new jobs as dispatch_mode='runpod', and submits pending RunPod jobs
-    to RunPod by claiming them through the Django API (WorkerClient).
+    enqueues new jobs, and submits pending RunPod jobs to RunPod by claiming them
+    through the Django API (WorkerClient).
 
     The ingest path (Chess.com sync, job creation) retains its SQLAlchemy
     connection because the Django app cannot expose an ingest-write API today.
@@ -11,6 +11,7 @@ Description:
 
 Changelog:
     2026-05-08 (#1): Migrate job dispatch from SQLAlchemy to WorkerClient HTTP API
+    2026-05-10: Removed dispatch_mode references from checkout() call and AnalysisJob creation
 """
 from __future__ import annotations
 
@@ -258,7 +259,6 @@ def _submit_engine_jobs(
             engine=engine,
             worker_id=_DISPATCHER_WORKER_ID,
             batch_size=10,
-            dispatch_mode='runpod',
         )
         if not jobs:
             break
@@ -317,7 +317,6 @@ def _enqueue_job_if_needed(*, session, game_id: str, engine: str, depth: int) ->
             depth=depth,
             status="pending",
             priority=10,
-            dispatch_mode="runpod",
         )
     )
     return True
