@@ -17,6 +17,11 @@ an admin selects pending jobs and explicitly submits them to RunPod. Local
 workers continue to claim jobs over the existing HTTP `WorkerClient` API,
 unchanged.
 
+The existing `/analysis/` page is reworked into a true overview (two engine
+summary cards + worker status panel), and the per-engine `/queue/<engine>/`
+pages become the authoritative detail view (pending + active + recent for
+that engine).
+
 The `AnalysisJob.dispatch_mode` column is removed: a pending job is simply
 pending, and either a local worker claims it or an admin promotes it to RunPod.
 First mover wins. This structurally eliminates the bug class behind issue #12
@@ -146,19 +151,47 @@ Dedup filter: `engine + game_id + status in (pending, running, submitted)`,
 or `status='completed' AND depth >= requested_depth`. No `dispatch_mode`
 clause — that's the structural fix for #12.
 
+### `services/app/analysis/views/status.py` (rework existing)
+
+`GET /analysis/` becomes a high-level overview. Replaces today's combined
+overview + 100-row jobs table. Admin-only.
+
+Layout:
+
+- **Two engine summary cards** (Stockfish, Lc0). Each card is a link to
+  `/queue/<engine>/` and shows:
+  - pending count, running count, submitted count, completed-today count
+  - RunPod endpoint health badge (existing `services.runpod_health`)
+- **Worker status panel** — local-worker heartbeats (last seen, currently
+  claimed job). Existing `services.worker_heartbeats` content; keep as-is.
+- HTMX auto-refresh every 30s on the cards + worker panel.
+- The 100-row recent-jobs table is **removed from this page** — it moves
+  to the per-engine queue detail page (Recent section, scoped to one
+  engine).
+
 ### `services/app/analysis/views/queue.py` (new)
 
-Two list views:
+Two detail views, one per engine:
 
-- `GET /admin/queue/stockfish/` → `StockfishQueueView`
-- `GET /admin/queue/lc0/` → `Lc0QueueView`
+- `GET /queue/stockfish/` → `StockfishQueueView`
+- `GET /queue/lc0/` → `Lc0QueueView`
 
-Each:
-- Lists `AnalysisJob.objects.filter(engine=…, status='pending')`.
-- Shows columns: checkbox, game (player names + date + result), depth/nodes,
-  created_at, last_error (red badge if present).
-- Filter form (HTMX-driven): player, date range, opening ECO.
-- Bulk action: `POST /admin/queue/<engine>/submit/` with `job_ids=[…]`.
+Each is admin-only and renders three stacked sections on one page:
+
+1. **Pending** — bulk-submit UI.
+   - Lists `AnalysisJob.objects.filter(engine=…, status='pending')`.
+   - Columns: checkbox, game (player names + date + result), depth/nodes,
+     created_at, last_error (red badge if present).
+   - Filter form (HTMX-driven): player, date range, opening ECO.
+   - Bulk action: `POST /queue/<engine>/submit/` with `job_ids=[…]`.
+2. **Active** — read-only, auto-refresh every 30s.
+   - Lists `AnalysisJob.objects.filter(engine=…, status__in=['running',
+     'submitted'])`.
+   - Columns: status, game, worker_id (for `running`) or runpod_job_id
+     (for `submitted`), started_at, elapsed.
+3. **Recent** — read-only, last 50 completed/failed for this engine.
+   - Columns: status, game, depth/nodes, duration, completed_at, error.
+   - Filter: status (completed/failed/all), date range.
 
 ### `POST /admin/queue/<engine>/submit/` (new)
 
@@ -250,6 +283,10 @@ Keep:
 
 - `sync_games` end-to-end with mocked Chess.com archive: inserts games,
   respects `SiteSettings` toggles, emits `SystemEvent`.
+- `/analysis/` overview: cards show correct counts per engine; cards
+  link to `/queue/<engine>/`; worker panel renders heartbeats.
+- `/queue/<engine>/` detail: Pending/Active/Recent sections render
+  correct subsets of jobs; filters narrow results as expected.
 - Bulk submit view: select 3 jobs, mock `endpoint.run`, assert all 3
   transition to `submitted` and HTMX response is correct.
 - Race: two simultaneous bulk submits on the same job — one succeeds, one
