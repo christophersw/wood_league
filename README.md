@@ -1,3 +1,5 @@
+![Wood League Chess Logo](wood_league_chess_logo.svg)
+
 # Wood League Chess
 Wood League Chess is a chess analysis website built for chess clubs. It was bourn out of out chess club's (the Wood League Creatures) desire to have more, different, and unique visualizations and analysis of our play. 
 
