@@ -27,6 +27,11 @@ ALLOWED_HOSTS = list(_allowed_hosts)
 if "healthcheck.railway.app" not in ALLOWED_HOSTS:
     ALLOWED_HOSTS.append("healthcheck.railway.app")
 
+# Django's test client uses 'testserver' as the default Host header.
+# Real HTTP requests never set this value, so it's safe in all environments.
+if "testserver" not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append("testserver")
+
 # CSRF protection for reverse proxy (Railway)
 _csrf_origins = config("CSRF_TRUSTED_ORIGINS", default="")
 CSRF_TRUSTED_ORIGINS = [origin for origin in _csrf_origins.split(",") if origin.strip()]
