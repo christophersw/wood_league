@@ -9,7 +9,7 @@ Description:
 
 Changelog:
     2026-05-09: Initial creation
-    2026-05-10: Added BT4 network and Syzygy download helpers in setup
+    2026-05-10: Added BT4 network and Syzygy download helpers in setup; fix Syzygy URL (3-4-5-wdl subdir)
 """
 from __future__ import annotations
 
@@ -146,12 +146,12 @@ _BT4_URL = (
 )
 _BT4_FILENAME = "BT4-1024x15x32h-swa-6147500-policytune-332.pb.gz"
 
-_SYZYGY_BASE_URL = "https://tablebase.lichess.ovh/tables/standard/"
+_SYZYGY_BASE_URL = "https://tablebase.lichess.ovh/tables/standard/3-4-5-wdl/"
 _SYZYGY_345_FILES = [
     "KBBvK.rtbw", "KBNvK.rtbw", "KBPvK.rtbw", "KBvK.rtbw", "KBvKB.rtbw",
     "KBvKN.rtbw", "KBvKP.rtbw", "KNNvK.rtbw", "KNPvK.rtbw", "KNvK.rtbw",
     "KNvKN.rtbw", "KNvKP.rtbw", "KPPvK.rtbw", "KPvK.rtbw", "KPvKP.rtbw",
-    "KQBvK.rtbw", "KQKvK.rtbw", "KQNvK.rtbw", "KQPvK.rtbw", "KQQvK.rtbw",
+    "KQBvK.rtbw", "KQNvK.rtbw", "KQPvK.rtbw", "KQQvK.rtbw",
     "KQRvK.rtbw", "KQvK.rtbw", "KQvKB.rtbw", "KQvKN.rtbw", "KQvKP.rtbw",
     "KQvKQ.rtbw", "KQvKR.rtbw", "KRBvK.rtbw", "KRNvK.rtbw", "KRPvK.rtbw",
     "KRRvK.rtbw", "KRvK.rtbw", "KRvKB.rtbw", "KRvKN.rtbw", "KRvKP.rtbw",
