@@ -16,8 +16,8 @@ from decouple import Csv, config
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = config("SECRET_KEY", default="django-insecure-change-me-in-production")
-DEBUG = config("DEBUG", default=True, cast=bool)
+SECRET_KEY = config("SECRET_KEY")
+DEBUG = config("DEBUG", default=False, cast=bool)
 
 # ALLOWED_HOSTS - Handle Railway health checks
 _allowed_hosts = config("ALLOWED_HOSTS", default="localhost,127.0.0.1", cast=Csv())
@@ -193,3 +193,31 @@ DEFAULT_HISTORY_DAYS = config("DEFAULT_HISTORY_DAYS", default=90, cast=int)
 # Engine analysis settings
 ANALYSIS_DEPTH = config("ANALYSIS_DEPTH", default=20, cast=int)
 LC0_NODES = config("LC0_NODES", default=25000, cast=int)
+
+ADMINS = [("Chris", config("DJANGO_ADMIN_EMAIL", default=""))]
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {
+        "console": {"class": "logging.StreamHandler"},
+        "mail_admins": {"class": "django.utils.log.AdminEmailHandler"},
+    },
+    "root": {"handlers": ["console"], "level": "WARNING"},
+    "loggers": {
+        "django": {
+            "handlers": ["console", "mail_admins"],
+            "level": "ERROR",
+            "propagate": False,
+        },
+    },
+}
+
+if not DEBUG:
+    CSRF_COOKIE_SECURE = True
+    SESSION_COOKIE_SECURE = True
+    SECURE_SSL_REDIRECT = True
+    SECURE_HSTS_SECONDS = 31536000
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
