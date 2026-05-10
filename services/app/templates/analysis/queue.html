@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block title %}{{ engine|title }} Queue — Wood League Chess{% endblock %}
+
+{% block content %}
+<div class="page-hero">
+  <div>
+    <h1>{{ engine|title }} Queue</h1>
+    <p class="page-hero-sub">Per-engine analysis queue and dispatch controls.</p>
+  </div>
+</div>
+
+<div class="pg-section">
+  <div class="pg-head">
+    <span class="pg-title">Pending ({{ pending|length }})</span>
+    <span class="pg-caption">Select rows and submit to RunPod, or wait for a local worker to claim.</span>
+  </div>
+  {% include "analysis/_queue_pending.html" %}
+</div>
+
+<div class="pg-section">
+  <div class="pg-head">
+    <span class="pg-title">Active ({{ active|length }})</span>
+    <span class="pg-caption">Running + submitted</span>
+  </div>
+  {% include "analysis/_queue_active.html" %}
+</div>
+
+<div class="pg-section">
+  <div class="pg-head">
+    <span class="pg-title">Recent</span>
+    <span class="pg-caption">Last 50 completed or failed</span>
+  </div>
+  {% include "analysis/_queue_recent.html" %}
+</div>
+{% endblock %}

@@ -1,0 +1,34 @@
+{% if pending %}
+<form id="bulk-submit-form" method="post" action="/admin/queue/{{ engine }}/submit/">
+  {% csrf_token %}
+  <table class="wc-table">
+    <thead>
+      <tr>
+        <th><input type="checkbox" id="select-all"></th>
+        <th>Game</th><th>Depth/Nodes</th><th>Created</th><th>Last Error</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for job in pending %}
+      <tr>
+        <td><input type="checkbox" name="job_ids" value="{{ job.id }}"></td>
+        <td class="font-mono text-xs">{{ job.game.id|truncatechars:24 }}</td>
+        <td class="font-mono text-xs">{{ job.depth }}</td>
+        <td class="font-mono text-xs">{{ job.created_at|date:"d M H:i" }}</td>
+        <td class="font-mono text-xs text-crimson">
+          {{ job.last_error|default:""|truncatechars:60 }}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <button type="submit" class="btn-primary mt-2">Submit selected to RunPod</button>
+</form>
+<script>
+document.getElementById('select-all').addEventListener('change', function () {
+  document.querySelectorAll('input[name=job_ids]').forEach(cb => cb.checked = this.checked);
+});
+</script>
+{% else %}
+<p class="font-mono text-sm text-slate">No pending jobs.</p>
+{% endif %}
