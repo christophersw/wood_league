@@ -29,6 +29,7 @@ from local_worker.detector import (
     suggest_stockfish_settings,
 )
 from local_worker.display import worker_display
+from local_worker.logging_setup import configure_logging
 from local_worker.loop import WorkerStats, run_batch
 
 app = typer.Typer(
@@ -37,6 +38,14 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 console = Console()
+
+
+@app.callback()
+def _startup(
+    log_dir: str = typer.Option("", envvar="WLW_LOG_DIR", help="Override log file directory", hidden=True),
+) -> None:
+    """Configure file logging on every invocation."""
+    configure_logging(log_dir)
 
 
 def _prompt_api_credentials(settings: Settings) -> tuple[str, str]:
