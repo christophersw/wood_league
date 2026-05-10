@@ -9,14 +9,21 @@ Description:
     Numeric constants and ordering match the spec exactly. Do not change them
     to match a different implementation.
 
+    Game accuracy uses the Lichess-aligned volatility-windowing scheme from
+    _windowing.py. See that module and analysis-math.md for the full spec.
+
 Changelog:
     2026-05-09: Initial creation
+    2026-05-10: game_accuracy() updated to Lichess game-wide windowing scheme;
+                old per-player fixed-window logic removed. New API uses
+                all_win_pcts + mover_ply_indices instead of per-player win_pcts.
 """
 from __future__ import annotations
 
 import math
-import statistics
 from typing import Optional
+
+from ._accuracy_weight import weighted_mean_accuracy
 
 MATE_SCORE = 10000
 
@@ -39,7 +46,6 @@ _LC0_GREAT_GAP = 6.0
 _LC0_BRILLIANT_WINPCT_CEILING = 70.0
 
 # Game-accuracy aggregation
-_WINDOW_SIZE = 8
 _HARMONIC_EPSILON = 0.001
 
 # Lc0 Q → cp conversion constants (precise values from spec)
@@ -109,71 +115,55 @@ def cpl_from_evals(eval_before_cp: int, eval_after_cp: int, *, mover_is_white: b
     return max(0, before_mover - after_mover)
 
 
-def _windowed_std(values: list[float], center: int, window: int) -> float:
-    """Standard deviation of `values` in a window of size `window` centered on
-    index `center`, truncated at sequence boundaries.
+def game_accuracy(
+    move_accuracies: list[float],
+    *,
+    all_win_pcts: list[float],
+    mover_ply_indices: list[int],
+) -> float:
+    """Game accuracy = (volatility-weighted mean + harmonic mean) / 2.
+
+    Implements the Lichess AccuracyPercent.scala scheme.  Inputs use
+    White-frame, game-wide Win% so that window volatility is computed across
+    the full interleaved move sequence rather than per-player subsequences.
+
+    Win% convention (mirrors Lichess ``allWinPercents``):
+        ``all_win_pcts[0]`` = Win% of the initial position (before any move).
+        ``all_win_pcts[i]`` = Win% after ply ``i`` (1-based ply).
+        Length = num_plies + 1.
+
+    Window-size formula: k = clamp(floor(num_plies / 10), 2, 8).
+    Front-padding: the first k-2 plies receive the same weight as ply k-1
+    (their window starts at index 0 of all_win_pcts, identical to ply k-1's
+    window).
+    Weight clamp: [0.5, 12.0].
+
+    Harmonic mean clamps each accuracy at ε=0.001 to avoid zero-division and
+    to penalise severe blunders.
 
     Args:
-        values: Numeric sequence.
-        center: Center index.
-        window: Window size (e.g., 8).
+        move_accuracies: Per-move accuracy values for this player (0–100 each).
+            Length must equal ``len(mover_ply_indices)``.
+        all_win_pcts: White-frame Win% for the whole game.  Index 0 is the
+            initial position eval; index i is the eval after ply i.
+            Length = num_plies + 1.
+        mover_ply_indices: 0-based indices into ``all_win_pcts`` of the plies
+            played by this player.  White: [1, 3, 5, …]; Black: [2, 4, 6, …].
 
     Returns:
-        Population standard deviation. Returns 0.0 if the window contains
-        fewer than 2 samples.
-    """
-    half = window // 2
-    lo = max(0, center - half)
-    hi = min(len(values), center + half + (window % 2))
-    sample = values[lo:hi]
-    if len(sample) < 2:
-        return 0.0
-    return statistics.pstdev(sample)
-
-
-def game_accuracy(move_accuracies: list[float], *, win_pcts: list[float]) -> float:
-    """Game accuracy = (windowed-stddev weighted mean + harmonic mean) / 2.
-
-    Both inputs must be **per-player** sequences (only the moves made by the
-    player being evaluated, in order). They must be the same length.
-
-    The weighted mean weights each move by the population standard deviation
-    of Win% across a window of size 8 centered on that move (truncated at
-    boundaries) — moves played in volatile positions count more.
-
-    The harmonic mean clamps each accuracy at ε=0.001 to avoid division by
-    zero and to penalize severe blunders.
-
-    Args:
-        move_accuracies: Per-player accuracy values, one per move (0–100 each).
-        win_pcts: Per-player Win% values aligned with move_accuracies — these
-            are the Win% values *before* each of the player's moves, used to
-            compute volatility weights.
-
-    Returns:
-        Game accuracy in [0, 100]. Returns 0.0 if the list is empty.
+        Game accuracy in [0, 100].  Returns 0.0 if ``move_accuracies`` is
+        empty.
 
     Raises:
-        ValueError: If the two input lists differ in length.
+        ValueError: If ``move_accuracies`` and ``mover_ply_indices`` differ in
+            length.
     """
     if not move_accuracies:
         return 0.0
-    if len(move_accuracies) != len(win_pcts):
-        raise ValueError(
-            f"move_accuracies (len={len(move_accuracies)}) and "
-            f"win_pcts (len={len(win_pcts)}) must have equal length"
-        )
     n = len(move_accuracies)
 
     harmonic = n / sum(1.0 / max(a, _HARMONIC_EPSILON) for a in move_accuracies)
-
-    weights = [_windowed_std(win_pcts, i, _WINDOW_SIZE) for i in range(n)]
-    total_weight = sum(weights)
-    if total_weight <= 0.0:
-        # Degenerate case (e.g., constant Win%) — fall back to arithmetic mean
-        weighted_mean = sum(move_accuracies) / n
-    else:
-        weighted_mean = sum(w * a for w, a in zip(weights, move_accuracies)) / total_weight
+    weighted_mean = weighted_mean_accuracy(move_accuracies, all_win_pcts, mover_ply_indices)
 
     return max(0.0, min(100.0, (weighted_mean + harmonic) / 2.0))
 

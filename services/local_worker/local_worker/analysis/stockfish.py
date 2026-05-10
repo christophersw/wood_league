@@ -7,11 +7,16 @@ Description:
       - cp values are stored from White's frame; mover-perspective is derived
         via cpl_from_evals() and pov(mover).
       - Capture/sacrifice detection uses SEE (analysis/see.py).
-      - Game accuracy uses windowed Win%-stddev weighting plus harmonic mean.
+      - Game accuracy uses the Lichess game-wide volatility-windowing scheme:
+        a single interleaved all_win_pcts list (White-frame, length=plies+1)
+        and per-player mover_ply_indices lists are passed to game_accuracy().
       - ACPL is per-player.
 
 Changelog:
     2026-05-09: Initial creation
+    2026-05-10: Updated analyze_pgn() to build game-wide all_win_pcts and
+                per-player mover_ply_indices; game_accuracy() called with
+                new Lichess-aligned API.
 """
 from __future__ import annotations
 
@@ -37,7 +42,7 @@ def _analyze_one_move(
     mover: chess.Color,
     engine: chess.engine.SimpleEngine,
     limit: chess.engine.Limit,
-) -> tuple[StockfishMoveResult, float, float, int]:
+) -> tuple[StockfishMoveResult, float, float, int, float]:
     """Analyse a single move and return results plus per-player accumulator values.
 
     Captures the SAN and SEE result before pushing the move, then analyses
@@ -51,8 +56,10 @@ def _analyze_one_move(
         limit: Engine search limit (depth/time/nodes).
 
     Returns:
-        Tuple of (StockfishMoveResult, move_acc, mover_win_pct_before, cpl).
-        The caller is responsible for appending these to the per-player lists.
+        Tuple of (StockfishMoveResult, move_acc, mover_win_pct_before, cpl,
+        win_pct_after_white).  ``win_pct_after_white`` is Win%(eval_after_white)
+        in White's frame — appended by the caller to the game-wide all_win_pcts
+        list so that volatility is computed across the full interleaved sequence.
     """
     fen_before = board.fen()
     move_san = board.san(move)
@@ -71,6 +78,8 @@ def _analyze_one_move(
     info_after = engine.analyse(board, limit)
     eval_after_white = white_cp(info_after["score"])
     mover_win_pct_after = win_pct(mover_cp(eval_after_white, mover))
+    # White-frame Win% after this ply — used in the game-wide all_win_pcts list.
+    win_pct_after_white = win_pct(eval_after_white)
 
     cpl = total_cpl(info_before, info_after, eval_before_white, eval_after_white, mover)
     move_acc = move_accuracy(mover_win_pct_before, mover_win_pct_after)
@@ -90,7 +99,7 @@ def _analyze_one_move(
         best_move=best_move_san,
         classification=classification,
     )
-    return move_result, move_acc, mover_win_pct_before, cpl
+    return move_result, move_acc, mover_win_pct_before, cpl, win_pct_after_white
 
 
 def analyze_pgn(
@@ -135,11 +144,18 @@ def analyze_pgn(
         move_results: list[StockfishMoveResult] = []
 
         white_accs: list[float] = []
-        white_winpcts_before: list[float] = []
+        white_ply_indices: list[int] = []
         white_cpls: list[int] = []
         black_accs: list[float] = []
-        black_winpcts_before: list[float] = []
+        black_ply_indices: list[int] = []
         black_cpls: list[int] = []
+
+        # Game-wide White-frame Win% sequence — index 0 = initial position eval.
+        # After each ply i the White-frame Win% is appended at index i.
+        # Length = num_plies + 1 (mirrors Lichess allWinPercents).
+        initial_info = engine.analyse(board, chess.engine.Limit(depth=depth))
+        initial_eval_white = white_cp(initial_info["score"])
+        all_win_pcts_game: list[float] = [win_pct(initial_eval_white)]
 
         cls_counts: dict = {
             chess.WHITE: {"Blunder": 0, "Mistake": 0, "Inaccuracy": 0},
@@ -149,19 +165,22 @@ def analyze_pgn(
 
         for ply_index, move in enumerate(moves_list, start=1):
             mover = board.turn
-            move_result, move_acc, mover_win_pct_before, cpl = _analyze_one_move(
-                board, move, mover, engine, limit
+            move_result, move_acc, mover_win_pct_before, cpl, wp_after_white = (
+                _analyze_one_move(board, move, mover, engine, limit)
             )
             move_result.ply = ply_index
             move_results.append(move_result)
 
+            # Append White-frame Win% after this ply to the game-wide list.
+            all_win_pcts_game.append(wp_after_white)
+
             if mover == chess.WHITE:
                 white_accs.append(move_acc)
-                white_winpcts_before.append(mover_win_pct_before)
+                white_ply_indices.append(ply_index)
                 white_cpls.append(cpl)
             else:
                 black_accs.append(move_acc)
-                black_winpcts_before.append(mover_win_pct_before)
+                black_ply_indices.append(ply_index)
                 black_cpls.append(cpl)
 
             if move_result.classification in cls_counts[mover]:
@@ -176,8 +195,16 @@ def analyze_pgn(
 
         return StockfishGameResult(
             engine_depth=depth,
-            white_accuracy=game_accuracy(white_accs, win_pcts=white_winpcts_before),
-            black_accuracy=game_accuracy(black_accs, win_pcts=black_winpcts_before),
+            white_accuracy=game_accuracy(
+                white_accs,
+                all_win_pcts=all_win_pcts_game,
+                mover_ply_indices=white_ply_indices,
+            ),
+            black_accuracy=game_accuracy(
+                black_accs,
+                all_win_pcts=all_win_pcts_game,
+                mover_ply_indices=black_ply_indices,
+            ),
             white_acpl=_avg(white_cpls),
             black_acpl=_avg(black_cpls),
             white_blunders=cls_counts[chess.WHITE]["Blunder"],
