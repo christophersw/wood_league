@@ -19,5 +19,7 @@ builder = "RAILPACK"
 [deploy]
 # One-shot command — exits when the sweep is done.
 startCommand = "python manage.py sync_games"
-# Retry on transient failure but don't loop indefinitely.
+# One-shot semantics: do NOT auto-restart if the run fails. The cron
+# scheduler will fire the next invocation on its normal cadence; an
+# in-process retry would just delay observability of transient failures.
 restartPolicyType = "NEVER"

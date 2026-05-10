@@ -52,6 +52,13 @@ def enqueue_analysis_job(
     Returns:
         The newly created AnalysisJob with STATUS_PENDING, or None if an
         active or sufficiently-deep completed job already exists.
+
+    Note: This function is NOT race-safe on its own — concurrent calls for the
+        same (game, engine) pair could pass the dedup check and insert duplicates.
+        Callers must serialize (e.g. the sync_games command holds a Postgres
+        advisory lock around its sweep). Adding a partial unique index on
+        (game, engine) WHERE status IN ('pending','running','submitted') would
+        make this safe without external coordination — tracked as future work.
     """
     with transaction.atomic():
         if AnalysisJob.objects.filter(

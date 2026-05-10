@@ -1,5 +1,8 @@
 {% if pending %}
-<form id="bulk-submit-form" method="post" action="/admin/queue/{{ engine }}/submit/">
+<form id="bulk-submit-form"
+      hx-post="/admin/queue/{{ engine }}/submit/"
+      hx-target="#bulk-submit-form"
+      hx-swap="outerHTML">
   {% csrf_token %}
   <table class="wc-table">
     <thead>
@@ -25,8 +28,14 @@
   <button type="submit" class="btn-primary mt-2">Submit selected to RunPod</button>
 </form>
 <script>
-document.getElementById('select-all').addEventListener('change', function () {
-  document.querySelectorAll('input[name=job_ids]').forEach(cb => cb.checked = this.checked);
+document.addEventListener('change', function (e) {
+  if (e.target && e.target.id === 'select-all') {
+    var form = e.target.closest('form');
+    if (!form) return;
+    form.querySelectorAll('input[name=job_ids]').forEach(function (cb) {
+      cb.checked = e.target.checked;
+    });
+  }
 });
 </script>
 {% else %}

@@ -144,40 +144,36 @@ def queue_submit(request: HttpRequest, engine: str) -> HttpResponse:
     errors: list[dict] = []
 
     for jid in job_ids:
-        try:
-            with transaction.atomic():
-                job = (
-                    AnalysisJob.objects
-                    .select_for_update(skip_locked=True)
-                    .filter(id=jid, engine=engine, status=AnalysisJob.STATUS_PENDING)
-                    .select_related("game")
-                    .first()
-                )
-                if job is None:
-                    skipped += 1
-                    continue
-                try:
-                    runpod_id = submit_job_to_runpod(job)
-                except Exception as exc:  # noqa: BLE001 — record any failure for retry
-                    job.last_error = str(exc)[:1000]
-                    job.last_error_at = timezone.now()
-                    job.save(update_fields=["last_error", "last_error_at"])
-                    failed += 1
-                    errors.append({"id": jid, "error": str(exc)[:200]})
-                    continue
-                job.status = AnalysisJob.STATUS_SUBMITTED
-                job.runpod_job_id = runpod_id
-                job.submitted_at = timezone.now()
-                job.last_error = None
-                job.last_error_at = None
-                job.save(update_fields=[
-                    "status", "runpod_job_id", "submitted_at",
-                    "last_error", "last_error_at",
-                ])
-                submitted += 1
-        except Exception as exc:  # noqa: BLE001 — defensive outer guard
-            failed += 1
-            errors.append({"id": jid, "error": str(exc)[:200]})
+        with transaction.atomic():
+            job = (
+                AnalysisJob.objects
+                .select_for_update(skip_locked=True)
+                .filter(id=jid, engine=engine, status=AnalysisJob.STATUS_PENDING)
+                .select_related("game")
+                .first()
+            )
+            if job is None:
+                skipped += 1
+                continue
+            try:
+                runpod_id = submit_job_to_runpod(job)
+            except Exception as exc:  # noqa: BLE001 — record any failure for retry
+                job.last_error = str(exc)[:1000]
+                job.last_error_at = timezone.now()
+                job.save(update_fields=["last_error", "last_error_at"])
+                failed += 1
+                errors.append({"id": jid, "error": str(exc)[:200]})
+                continue
+            job.status = AnalysisJob.STATUS_SUBMITTED
+            job.runpod_job_id = runpod_id
+            job.submitted_at = timezone.now()
+            job.last_error = None
+            job.last_error_at = None
+            job.save(update_fields=[
+                "status", "runpod_job_id", "submitted_at",
+                "last_error", "last_error_at",
+            ])
+            submitted += 1
 
     context = {
         "engine": engine,
