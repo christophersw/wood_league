@@ -7,7 +7,7 @@ Changelog:
 """
 import uuid
 
-from django.test import TestCase, Client
+from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
