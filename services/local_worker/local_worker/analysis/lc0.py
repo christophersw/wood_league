@@ -26,20 +26,35 @@ from .see import see_capture_or_sacrifice
 log = logging.getLogger(__name__)
 
 
-def _wdl_to_white(wdl: chess.engine.Wdl, turn: chess.Color) -> tuple[int, int, int]:
-    """Convert engine WDL (from current player's perspective) to White's perspective.
+
+
+def _parse_network_name(engine_id_name: str, weights_path: str) -> str:
+    """Extract network name from Lc0 engine ID or weights file.
 
     Args:
-        wdl: WDL from python-chess (current player's perspective, 0-1000 each).
-        turn: The colour to move when the engine was called.
+        engine_id_name: Engine identification name (e.g., "Lc0 v0.30.0" or "Lc0 v0.30 (BT4)").
+        weights_path: Path to the weights file, or empty string.
 
     Returns:
-        (win, draw, loss) from White's perspective as integers 0-1000.
+        Network name string, or empty string if none found.
     """
-    wins, draws, losses = wdl.wins, wdl.draws, wdl.losses
-    if turn == chess.WHITE:
-        return wins, draws, losses
-    return losses, draws, wins
+    network_name = ""
+    try:
+        # lc0 reports "Lc0 vX.Y.Z" or "Lc0 vX.Y.Z (network: <hash>)" or "Lc0 vX.Y (BT4)"
+        if engine_id_name.startswith("Lc0"):
+            # Try to extract a network hint from the id name in parentheses
+            if "(" in engine_id_name and ")" in engine_id_name:
+                network_name = engine_id_name.split("(", 1)[1].rstrip(")")
+        else:
+            network_name = engine_id_name
+
+        # Fallback to weights file basename if no network name extracted
+        if not network_name and weights_path:
+            from pathlib import Path
+            network_name = Path(weights_path).stem
+    except Exception:
+        pass
+    return network_name
 
 
 def _mover_win_pct_from_wdl(wdl: chess.engine.Wdl) -> float:
@@ -210,8 +225,9 @@ def _analyze_one_move(
     board.push(move)
 
     info_after = engine.analyse(board, limit)
-    wdl_after = info_after["score"].pov(mover).wdl()
-    mover_win_pct_after = _mover_win_pct_from_wdl(wdl_after)
+    score_after = info_after["score"]
+    wdl_after_mover = score_after.pov(mover).wdl()
+    mover_win_pct_after = _mover_win_pct_from_wdl(wdl_after_mover)
 
     delta_win_pct = max(0.0, mover_win_pct_before - mover_win_pct_after)
     classification = classify_lc0_move(
@@ -221,9 +237,10 @@ def _analyze_one_move(
         is_capture_or_sacrifice=is_cap_or_sac,
     )
 
-    # WDL stored from White's perspective; board.turn is now the opponent
-    wdl_white = _wdl_to_white(wdl_after, board.turn)
-    cp_eq = cp_equiv_from_q((wdl_after.wins - wdl_after.losses) / 1000.0)
+    # WDL stored from White's perspective
+    wdl_after_white = score_after.pov(chess.WHITE).wdl()
+    wdl_white = (wdl_after_white.wins, wdl_after_white.draws, wdl_after_white.losses)
+    cp_eq = cp_equiv_from_q((wdl_after_mover.wins - wdl_after_mover.losses) / 1000.0)
 
     result = _build_move_result(
         ply_index=ply_index,
@@ -282,7 +299,8 @@ def analyze_pgn(
         engine.configure(opts)
 
         try:
-            network_name = engine.id.get("name", "")
+            engine_id_name = engine.id.get("name", "")
+            network_name = _parse_network_name(engine_id_name, weights_path)
         except Exception:
             pass
 
