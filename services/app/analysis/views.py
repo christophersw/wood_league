@@ -5,7 +5,13 @@ Description:
     by engine and status, RunPod worker health checks, and worker heartbeat
     tracking. Restricted to admin users.
 
+    The /analysis/ route now renders an overview page with per-engine summary
+    cards linking to the per-engine queue detail pages. The old combined
+    queue+recent-jobs view has been replaced (Task C1, scrap-dispatchers plan).
+
 Changelog:
+    2026-05-10: Task C1 — refactor status() to overview cards; drop recent_jobs;
+        rename queue_partial to overview_partial serving _overview_cards.html.
     2026-05-08: Added file header to meet documentation standards
 """
 from __future__ import annotations
@@ -21,12 +27,29 @@ _admin_required = user_passes_test(lambda u: u.role == "admin")
 
 
 def _admin_login_required(view):
-    """Decorator to require both login and admin role."""
+    """Decorate a view to require both login and admin role.
+
+    Args:
+        view: The view function to protect.
+
+    Returns:
+        Callable: The wrapped view enforcing login + admin checks.
+    """
     return login_required(_admin_required(view))
 
 
 def _engine_metric(rows: list[dict], engine: str, status: str) -> int:
-    """Extract job count for a specific engine and status from aggregated data."""
+    """Extract the job count for a specific engine and status from aggregated data.
+
+    Args:
+        rows: List of dicts with keys ``engine``, ``status``, and ``count``
+              as returned by ``services.queue_by_engine()``.
+        engine: Engine name to filter on (e.g. ``"stockfish"``).
+        status: Job status to filter on (e.g. ``"pending"``).
+
+    Returns:
+        int: The count for the given engine+status combination, or 0 if absent.
+    """
     for r in rows:
         if r["engine"] == engine and r["status"] == status:
             return r["count"]
@@ -34,29 +57,30 @@ def _engine_metric(rows: list[dict], engine: str, status: str) -> int:
 
 
 def _queue_context() -> dict:
-    """Build context data for analysis queue status display including worker health."""
-    totals = services.queue_totals()
+    """Build context for the analysis overview: per-engine summary + workers.
+
+    Fetches live queue counts and RunPod health for each engine, then
+    assembles the ``engine_rows`` list consumed by ``_overview_cards.html``.
+    Does NOT include recent_jobs — that table lives on the per-engine queue page.
+
+    Returns:
+        dict: Keys are ``engine_rows`` (list of per-engine dicts) and
+              ``workers`` (list of worker-heartbeat dicts).
+    """
     by_engine = services.queue_by_engine()
-    total = sum(totals.values())
-    completed = totals.get("completed", 0)
-
-    statuses = ["pending", "submitted", "running", "completed", "failed"]
     engines = ["stockfish", "lc0"]
+    statuses = ["pending", "submitted", "running", "completed"]
 
-    engine_rows = []
+    rows: list[dict] = []
     for eng in engines:
         health, error = services.runpod_health(eng)
         row: dict = {"name": eng, "runpod": health, "runpod_error": error}
         for s in statuses:
             row[s] = _engine_metric(by_engine, eng, s)
-        engine_rows.append(row)
+        rows.append(row)
 
     return {
-        "totals": totals,
-        "total": total,
-        "completed": completed,
-        "progress_pct": round(completed / total * 100, 1) if total else 0,
-        "engine_rows": engine_rows,
+        "engine_rows": rows,
         "workers": services.worker_heartbeats(),
     }
 
@@ -64,16 +88,29 @@ def _queue_context() -> dict:
 @_admin_login_required
 @require_GET
 def status(request: HttpRequest) -> HttpResponse:
-    """Render the analysis status dashboard with queue and worker metrics."""
-    jobs = services.recent_jobs(100)
-    return render(request, "analysis/status.html", {
-        "jobs": jobs,
-        **_queue_context(),
-    })
+    """Render the analysis overview: engine summary cards + worker status.
+
+    Args:
+        request: The incoming HTTP GET request.
+
+    Returns:
+        HttpResponse: Rendered ``analysis/status.html`` with overview context.
+    """
+    return render(request, "analysis/status.html", _queue_context())
 
 
 @_admin_login_required
 @require_GET
-def queue_partial(request: HttpRequest) -> HttpResponse:
-    """Render an HTMX partial showing the current analysis queue snapshot."""
-    return render(request, "analysis/_queue_partial.html", _queue_context())
+def overview_partial(request: HttpRequest) -> HttpResponse:
+    """Render the HTMX overview-cards partial for auto-refresh polling.
+
+    This endpoint is polled every 30 s by the ``#engine-cards`` container
+    on the overview page. It returns only the cards fragment, not the full page.
+
+    Args:
+        request: The incoming HTTP GET request.
+
+    Returns:
+        HttpResponse: Rendered ``analysis/_overview_cards.html`` fragment.
+    """
+    return render(request, "analysis/_overview_cards.html", _queue_context())
