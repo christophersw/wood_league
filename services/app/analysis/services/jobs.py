@@ -8,6 +8,7 @@ Description:
 Changelog:
     2026-05-08: Added file header to meet documentation standards
     2026-05-08: Added submit_job() for RunPod dispatcher integration
+    2026-05-10: Removed dispatch_mode from claim_jobs, recover_stale_jobs, and submit_job
 """
 from datetime import timedelta
 
@@ -57,7 +58,6 @@ def recover_stale_jobs(engine: str) -> int:
     cutoff = timezone.now() - _stale_timeout()
     return AnalysisJob.objects.filter(
         engine=engine,
-        dispatch_mode=AnalysisJob.DISPATCH_PULL,
         status=AnalysisJob.STATUS_RUNNING,
         started_at__lt=cutoff,
     ).update(
@@ -79,11 +79,10 @@ def claim_jobs(
     worker_id: str,
     key_prefix: str | None = None,
     game_id: str | None = None,
-    dispatch_mode: str = AnalysisJob.DISPATCH_PULL,
 ) -> list[AnalysisJob]:
     """Atomically claim up to batch_size pending jobs using SELECT FOR UPDATE SKIP LOCKED.
 
-    Runs stale recovery first (pull-mode only). Returns the claimed AnalysisJob
+    Runs stale recovery before each checkout. Returns the claimed AnalysisJob
     instances with their related Game.
 
     Args:
@@ -92,16 +91,14 @@ def claim_jobs(
         worker_id: Identifier for the claiming worker (stored for tracing).
         key_prefix: API key prefix stored for audit (None for non-API callers).
         game_id: Claim only this specific game's job (optional).
-        dispatch_mode: 'pull' for local workers; 'runpod' for the dispatcher.
     """
     with transaction.atomic():
-        if dispatch_mode == AnalysisJob.DISPATCH_PULL:
-            recover_stale_jobs(engine)
+        recover_stale_jobs(engine)
         if game_id:
             jobs_for_game = (
                 AnalysisJob.objects
                 .select_for_update(skip_locked=True)
-                .filter(engine=engine, dispatch_mode=dispatch_mode, game_id=game_id)
+                .filter(engine=engine, game_id=game_id)
             )
 
             if (
@@ -124,7 +121,7 @@ def claim_jobs(
             jobs = list(
                 AnalysisJob.objects
                 .select_for_update(skip_locked=True)
-                .filter(engine=engine, dispatch_mode=dispatch_mode, status=AnalysisJob.STATUS_PENDING)
+                .filter(engine=engine, status=AnalysisJob.STATUS_PENDING)
                 .order_by('-priority', 'created_at')
                 [:batch_size]
             )
@@ -353,7 +350,6 @@ def submit_job(*, job_id: int, runpod_job_id: str) -> None:
         job = AnalysisJob.objects.select_for_update().get(
             id=job_id,
             status=AnalysisJob.STATUS_PENDING,
-            dispatch_mode=AnalysisJob.DISPATCH_RUNPOD,
         )
         job.status = AnalysisJob.STATUS_SUBMITTED
         job.runpod_job_id = runpod_job_id

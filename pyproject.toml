@@ -2,7 +2,6 @@
 members = [
     "packages/shared",
     "services/app",
-    "services/dispatchers",
     "services/stockfish_worker",
     "services/lc0_worker",
     "services/local_worker",

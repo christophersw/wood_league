@@ -6,6 +6,7 @@ Description:
 Changelog:
     2026-05-06 (#15): Created endpoint integration tests
     2026-05-08: Added JobSubmitTests for POST /api/v1/jobs/<id>/submit/
+    2026-05-10: Removed dispatch_mode kwargs from AnalysisJob.objects.create calls; removed tests for dispatch_mode-specific routing
 """
 from django.test import TestCase
 from django.utils import timezone
@@ -199,29 +200,12 @@ class JobCheckoutTests(TestCase):
         self.assertEqual(response.status_code, 409)
         self.assertIn('already claimed', response.json()['error'])
 
-    def test_checkout_ignores_runpod_jobs(self):
-        """Checkout does not return runpod-dispatch jobs to pull workers."""
-        AnalysisJob.objects.create(
-            game=self.game,
-            engine='stockfish',
-            status=AnalysisJob.STATUS_PENDING,
-            dispatch_mode='runpod',
-        )
-        response = self.client.post('/api/v1/jobs/checkout/', {
-            'engine': 'stockfish',
-            'batch_size': 1,
-            'worker_id': 'my-worker',
-        })
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.json()['jobs']), 0)
-
-    def test_checkout_returns_pull_jobs(self):
-        """Checkout returns pull-dispatch jobs to pull workers."""
+    def test_checkout_returns_pending_job_by_engine(self):
+        """Checkout returns any pending job for the requested engine."""
         job = AnalysisJob.objects.create(
             game=self.game,
             engine='stockfish',
             status=AnalysisJob.STATUS_PENDING,
-            dispatch_mode='pull',
         )
         response = self.client.post('/api/v1/jobs/checkout/', {
             'engine': 'stockfish',
@@ -437,7 +421,6 @@ class JobSubmitTests(TestCase):
             game=self.game,
             engine='lc0',
             status=AnalysisJob.STATUS_PENDING,
-            dispatch_mode='runpod',
         )
         response = self.client.post(f'/api/v1/jobs/{job.id}/submit/', {
             'runpod_job_id': 'rp-abc123',
@@ -453,7 +436,6 @@ class JobSubmitTests(TestCase):
             game=self.game,
             engine='lc0',
             status=AnalysisJob.STATUS_RUNNING,
-            dispatch_mode='runpod',
         )
         response = self.client.post(f'/api/v1/jobs/{job.id}/submit/', {
             'runpod_job_id': 'rp-abc123',
@@ -464,27 +446,13 @@ class JobSubmitTests(TestCase):
         """Submit endpoint requires API key."""
         job = AnalysisJob.objects.create(
             game=self.game, engine='lc0',
-            status=AnalysisJob.STATUS_PENDING, dispatch_mode='runpod',
+            status=AnalysisJob.STATUS_PENDING,
         )
         self.client.credentials()
         response = self.client.post(f'/api/v1/jobs/{job.id}/submit/', {
             'runpod_job_id': 'rp-abc123',
         })
         self.assertIn(response.status_code, [401, 403])
-
-    def test_submit_rejects_pull_mode_job(self):
-        """Submit returns 404 for pull-mode jobs (wrong dispatch path)."""
-        job = AnalysisJob.objects.create(
-            game=self.game,
-            engine='stockfish',
-            status=AnalysisJob.STATUS_PENDING,
-            dispatch_mode='pull',
-        )
-        response = self.client.post(f'/api/v1/jobs/{job.id}/submit/', {
-            'runpod_job_id': 'rp-xyz789',
-        })
-        self.assertEqual(response.status_code, 404)
-
 
 class QueueStatusTests(TestCase):
     """Test GET /api/v1/jobs/status/"""

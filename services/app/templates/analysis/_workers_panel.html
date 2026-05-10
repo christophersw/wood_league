@@ -1,0 +1,43 @@
+{# _workers_panel.html — Local worker heartbeat table.                          #}
+{# Context key: workers (list of worker-heartbeat dicts with keys:             #}
+{#   worker_id, status, last_seen, current_game_id, jobs_completed,            #}
+{#   jobs_failed, cpu_model, cpu_cores)                                        #}
+
+{% if workers %}
+<div class="overflow-x-auto">
+  <table class="wc-table">
+    <thead>
+      <tr>
+        <th>Worker</th>
+        <th>Status</th>
+        <th>Last Seen</th>
+        <th>Current Game</th>
+        <th>Done</th>
+        <th>Failed</th>
+        <th>CPU</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for w in workers %}
+      <tr>
+        <td class="font-mono text-xs">{{ w.worker_id|truncatechars:20 }}</td>
+        <td>
+          <span class="font-mono text-xs {% if w.status == 'running' %}text-forest{% else %}text-slate{% endif %}">
+            {{ w.status }}
+          </span>
+        </td>
+        <td class="font-mono text-xs text-peat">{{ w.last_seen|date:"d M H:i" }}</td>
+        <td class="font-mono text-xs">{{ w.current_game_id|default:"—"|truncatechars:16 }}</td>
+        <td class="font-mono text-xs text-moss">{{ w.jobs_completed }}</td>
+        <td class="font-mono text-xs {% if w.jobs_failed %}text-crimson{% else %}text-slate{% endif %}">
+          {{ w.jobs_failed }}
+        </td>
+        <td class="font-mono text-xs text-slate">{{ w.cpu_model|default:"—"|truncatechars:24 }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="font-mono text-sm text-slate">No active local workers.</p>
+{% endif %}

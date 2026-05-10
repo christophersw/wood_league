@@ -6,6 +6,7 @@ Description:
 
 Changelog:
     2026-05-08: Added file header to meet documentation standards
+    2026-05-10: Add created_at field for post-sync auto-enqueue (Task D1).
 """
 
 from django.db import models
@@ -29,6 +30,7 @@ class Game(models.Model):
     opening_name = models.CharField(max_length=120, default="")
     lichess_opening = models.CharField(max_length=200, null=True, blank=True)
     pgn = models.TextField(default="")
+    created_at = models.DateTimeField(auto_now_add=True, null=True, db_index=True)
 
     class Meta:
         db_table = "games"

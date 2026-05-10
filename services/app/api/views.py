@@ -9,6 +9,7 @@ Description:
 Changelog:
     2026-05-08: Added file header to meet documentation standards
     2026-05-08: Added JobSubmitView for RunPod dispatcher integration
+    2026-05-10: Removed dispatch_mode kwarg from claim_jobs call in JobCheckoutView
 """
 from django.db.models import Count
 from django.utils import timezone
@@ -62,7 +63,6 @@ class JobCheckoutView(APIView):
                 worker_id=d['worker_id'],
                 key_prefix=_key_prefix(request),
                 game_id=d.get('game_id'),
-                dispatch_mode=d.get('dispatch_mode', 'pull'),
             )
         except job_service.JobCheckoutDenied as exc:
             return Response({'error': str(exc)}, status=status.HTTP_409_CONFLICT)

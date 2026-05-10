@@ -7,6 +7,7 @@ Description:
 
 Changelog:
     2026-05-08: Created
+    2026-05-10: Removed dispatch_mode parameter from checkout()
 """
 from __future__ import annotations
 
@@ -86,7 +87,6 @@ class WorkerClient:
         worker_id: str,
         batch_size: int = 1,
         game_id: str | None = None,
-        dispatch_mode: str = 'pull',
     ) -> list[Job]:
         """Claim up to batch_size pending analysis jobs for the given engine.
 
@@ -95,7 +95,6 @@ class WorkerClient:
             worker_id: Unique worker identifier (hostname recommended)
             batch_size: Number of jobs to claim (default 1)
             game_id: Optional specific game to claim
-            dispatch_mode: 'pull' for local workers; 'runpod' for the dispatcher
 
         Returns:
             List of Job dataclasses (empty if queue is empty)
@@ -104,7 +103,6 @@ class WorkerClient:
             'engine': engine,
             'worker_id': worker_id,
             'batch_size': batch_size,
-            'dispatch_mode': dispatch_mode,
         }
         if game_id is not None:
             payload['game_id'] = game_id

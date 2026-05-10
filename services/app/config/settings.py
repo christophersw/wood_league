@@ -27,6 +27,11 @@ ALLOWED_HOSTS = list(_allowed_hosts)
 if "healthcheck.railway.app" not in ALLOWED_HOSTS:
     ALLOWED_HOSTS.append("healthcheck.railway.app")
 
+# Django's test client uses 'testserver' as the default Host header.
+# Real HTTP requests never set this value, so it's safe in all environments.
+if "testserver" not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append("testserver")
+
 # CSRF protection for reverse proxy (Railway)
 _csrf_origins = config("CSRF_TRUSTED_ORIGINS", default="")
 CSRF_TRUSTED_ORIGINS = [origin for origin in _csrf_origins.split(",") if origin.strip()]
@@ -49,6 +54,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "django_tailwind_cli",
     "django_htmx",
+    "core",
     "accounts",
     "players",
     "games",
@@ -193,6 +199,17 @@ DEFAULT_HISTORY_DAYS = config("DEFAULT_HISTORY_DAYS", default=90, cast=int)
 # Engine analysis settings
 ANALYSIS_DEPTH = config("ANALYSIS_DEPTH", default=20, cast=int)
 LC0_NODES = config("LC0_NODES", default=25000, cast=int)
+LC0_NETWORK = os.environ.get("LC0_NETWORK", "")
+
+# RunPod serverless dispatch settings
+RUNPOD_API_KEY = os.environ.get("RUNPOD_API_KEY", "")
+RUNPOD_STOCKFISH_ENDPOINT_ID = (
+    os.environ.get("RUNPOD_STOCKFISH_ENDPOINT_ID", "")
+    or os.environ.get("RUNPOD_ENDPOINT_ID", "")
+)
+RUNPOD_LC0_ENDPOINT_ID = os.environ.get("RUNPOD_LC0_ENDPOINT_ID", "")
+ANALYSIS_THREADS = int(os.environ.get("ANALYSIS_THREADS", "8"))
+ANALYSIS_HASH_MB = int(os.environ.get("ANALYSIS_HASH_MB", "2048"))
 
 ADMINS = [("Chris", config("DJANGO_ADMIN_EMAIL", default=""))]
 

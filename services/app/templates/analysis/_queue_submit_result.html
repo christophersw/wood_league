@@ -1,0 +1,12 @@
+{# analysis/_queue_submit_result.html — Bulk submit result partial for HTMX #}
+<div id="bulk-submit-form">
+  <p class="font-mono text-sm">
+    Submitted {{ submitted }} · Skipped {{ skipped }} · Failed {{ failed }}
+  </p>
+  {% if errors %}
+  <ul class="font-mono text-xs text-crimson">
+    {% for e in errors %}<li>job {{ e.id }}: {{ e.error }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+  {% include "analysis/_queue_pending.html" %}
+</div>

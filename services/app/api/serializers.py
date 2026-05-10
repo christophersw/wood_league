@@ -8,6 +8,7 @@ Description:
 Changelog:
     2026-05-08: Added file header to meet documentation standards
     2026-05-08: Added JobSubmitSerializer; extended Lc0MoveSerializer with arrow/pv fields
+    2026-05-10: Removed DISPATCH_CHOICES and dispatch_mode field from CheckoutRequestSerializer
 """
 from rest_framework import serializers
 
@@ -19,9 +20,6 @@ CLASSIFICATION_CHOICES = [
 ]
 
 
-DISPATCH_CHOICES = ['pull', 'runpod']
-
-
 class CheckoutRequestSerializer(serializers.Serializer):
     """Inbound: request to check out a batch of analysis jobs."""
 
@@ -29,7 +27,6 @@ class CheckoutRequestSerializer(serializers.Serializer):
     batch_size = serializers.IntegerField(min_value=1, max_value=10, default=1)
     worker_id = serializers.CharField(max_length=64)
     game_id = serializers.CharField(max_length=64, required=False)
-    dispatch_mode = serializers.ChoiceField(choices=DISPATCH_CHOICES, default='pull', required=False)
 
 
 class JobSerializer(serializers.Serializer):
