@@ -23,30 +23,12 @@ import chess
 import chess.engine
 import chess.pgn
 
-from .math import (
-    MATE_SCORE,
-    classify_stockfish_move,
-    cpl_from_evals,
-    game_accuracy,
-    move_accuracy,
-    win_pct,
-)
+from ._stockfish_helpers import mover_cp, second_best_gap, total_cpl, white_cp
+from .math import classify_stockfish_move, game_accuracy, move_accuracy, win_pct
 from .models import StockfishGameResult, StockfishMoveResult
 from .see import see_capture_or_sacrifice
 
 log = logging.getLogger(__name__)
-
-
-def _white_cp(score: chess.engine.PovScore) -> int:
-    """Return the cp evaluation from White's perspective, mate flattened to ±MATE_SCORE.
-
-    Args:
-        score: PovScore from engine analysis.
-
-    Returns:
-        cp value in [-MATE_SCORE, MATE_SCORE].
-    """
-    return score.pov(chess.WHITE).score(mate_score=MATE_SCORE)
 
 
 def _analyze_one_move(
@@ -77,35 +59,24 @@ def _analyze_one_move(
     is_cap_or_sac = see_capture_or_sacrifice(board, move)
 
     info_before = engine.analyse(board, limit, multipv=2)
-    eval_before_white = _white_cp(info_before[0]["score"])
-    mover_eval_before = eval_before_white if mover == chess.WHITE else -eval_before_white
+    eval_before_white = white_cp(info_before[0]["score"])
+    mover_eval_before = mover_cp(eval_before_white, mover)
     mover_win_pct_before = win_pct(mover_eval_before)
-
-    second_best_gap: Optional[int] = None
-    if len(info_before) >= 2:
-        eval_second_white = _white_cp(info_before[1]["score"])
-        mover_eval_second = eval_second_white if mover == chess.WHITE else -eval_second_white
-        second_best_gap = mover_eval_before - mover_eval_second
+    gap = second_best_gap(info_before, mover_eval_before, mover)
 
     best_pv = info_before[0].get("pv") or []
     best_move_san = board.san(best_pv[0]) if best_pv else ""
 
     board.push(move)
-
     info_after = engine.analyse(board, limit)
-    eval_after_white = _white_cp(info_after["score"])
-    mover_eval_after = eval_after_white if mover == chess.WHITE else -eval_after_white
-    mover_win_pct_after = win_pct(mover_eval_after)
+    eval_after_white = white_cp(info_after["score"])
+    mover_win_pct_after = win_pct(mover_cp(eval_after_white, mover))
 
-    cpl = cpl_from_evals(
-        eval_before_white,
-        eval_after_white,
-        mover_is_white=(mover == chess.WHITE),
-    )
+    cpl = total_cpl(info_before, info_after, eval_before_white, eval_after_white, mover)
     move_acc = move_accuracy(mover_win_pct_before, mover_win_pct_after)
     classification = classify_stockfish_move(
         cpl=cpl,
-        second_best_gap=second_best_gap,
+        second_best_gap=gap,
         mover_win_pct=mover_win_pct_before,
         is_capture_or_sacrifice=is_cap_or_sac,
     )

@@ -13,9 +13,35 @@ Stockfish returns centipawn (`cp`) evaluations from White's perspective.
 
 Mate scores are normalized with `score(mate_score=10000)`: all forced-mate positions are
 assigned a flat value of ±10000 cp regardless of the number of moves to mate (mate in 1
-and mate in 10 are both treated as 10000 cp). This means a move that allows mate in 3
-instead of delivering mate in 1 will show CPL = 0; the classification heuristics (see
-below) are responsible for distinguishing such cases.
+and mate in 10 are both treated as 10000 cp). To preserve the quality difference
+between "mate in 1 played" and "mate in 1 turned into mate in 10 played" — both of
+which would otherwise show CPL = 0 — an additive **mate-distance penalty** is applied
+on top of the regular CPL (see below).
+
+#### Mate-distance heuristic
+
+The engine reports forced mates as a signed ply count. Let
+
+- $M_b$ = mover-frame mate plies before the move (positive = mover delivers mate;
+  $\text{None}$ if no forced mate).
+- $M_a$ = mover-frame mate plies after the move.
+
+Then the additive penalty $\Delta_{\text{mate}}$ is:
+
+| Case | Penalty |
+|------|---------|
+| $M_b \le 0$ or $M_b = \text{None}$ (mover had no mate) | $0$ |
+| $M_b > 0$ and ($M_a \le 0$ or $M_a = \text{None}$) — mover lost the mate | $500$ cp (Blunder tier) |
+| $M_b > 0$ and $M_a > 0$ — mover still has mate but possibly took longer | $50 \cdot \max(0,\; M_a - (M_b - 1))$ cp |
+
+A correctly-played mate satisfies $M_a = M_b - 1$ and the penalty is $0$.
+A 1-ply detour adds 50 cp (Inaccuracy), 2 plies adds 100 cp (Mistake), 6+ plies
+adds 300+ cp (Blunder). The mover-frame is preserved from White's perspective for
+White moves and negated for Black moves before evaluating $M_b$ and $M_a$.
+
+The total CPL fed into classification is
+
+$$\text{CPL}_{\text{total}} = \max\big(0,\; \text{eval}_{\text{mover,before}} - \text{eval}_{\text{mover,after}}\big) + \Delta_{\text{mate}}.$$
 
 ### Per-move centipawn loss (CPL)
 
@@ -63,10 +89,20 @@ $$
 $$
 
 - **Weighted mean** uses volatility-based weights derived from a sliding window over
-  Win% values. For each move $i$, the weight $w_i$ is the standard deviation of Win%
-  across a window of $k$ surrounding moves (window size $k$ is fixed at 8, centered on
-  the move where possible and truncated at game boundaries). Higher volatility — i.e.,
-  sharper swings in the position — gives a move more influence on the weighted mean.
+  the **interleaved (game-wide) Win% sequence** — the Win% from White's frame after
+  every ply, both colours interleaved in move order. This matches Lichess's
+  `AccuracyPercent.scala`. For a game with $n$ plies the window size is
+
+  $$k = \mathrm{clamp}\!\left(\left\lfloor\frac{n}{10}\right\rfloor,\; 2,\; 8\right).$$
+
+  For each ply $i$ the raw weight is the population standard deviation of Win%
+  across the $k$-ply window beginning at that ply (Lichess uses
+  `allWinPercents.sliding(windowSize)` over the interleaved sequence). The first
+  $k-2$ plies are front-padded by repeating the leading window so that early moves
+  receive a stable volatility estimate. Each weight is then clamped to
+  $[0.5,\; 12]$ — a floor so quiet positions still contribute and a ceiling so a
+  single explosive swing cannot dominate the weighted mean. The per-player weighted
+  mean averages each player's accuracies under their own moves' weights.
 - **Harmonic mean** penalizes severe mistakes.
 
 $$
@@ -93,6 +129,34 @@ A move is considered a **capture or sacrifice** if it results in a net material 
 the mover according to static exchange evaluation (SEE): i.e., the mover gives up a
 piece or pawn and the resulting exchange is evaluated as losing material for them. Pure
 captures that win or break even on material do not qualify.
+
+#### SEE edge-case contract
+
+The SEE pass used by the classification heuristics handles the following cases:
+
+- **En passant.** The captured pawn is removed from the square one rank behind the
+  destination from the mover's perspective (rank 5 when White captures, rank 4 when
+  Black captures). The destination square value is set to a pawn (100 cp).
+- **Promotion on the initial capture.** When the captured-piece move is itself a
+  promoting capture, the swap-list seed gain is the captured piece's value plus the
+  promotion bonus `(promo_value − pawn_value)`, and the piece sitting on the target
+  square for any subsequent recapture is the promoted piece. A promotion to queen on
+  capture of an undefended rook therefore scores `500 + (900 − 100) = 1300` cp.
+- **Promotion during the exchange.** A pawn that arrives on its eighth rank as part
+  of a recapture sequence is treated as a queen for value-on-target purposes
+  (Stockfish convention).
+- **Absolute pins.** Any attacker that is absolutely pinned to its own king is
+  excluded from the swap list, **unless** the destination square lies on the pin ray
+  (i.e., capturing on the target does not break the pin). Pin rays are determined
+  with `python-chess`'s `Board.pin(color, square)`.
+
+The SEE iteration mutates a working occupancy bitboard to reveal x-ray attackers and
+removes both the original mover and any recapturing piece from that occupancy. The
+swap list is reduced by the standard minimax: `gain[i-1] = -max(-gain[i-1], gain[i])`.
+The capture-or-sacrifice predicate is `SEE < 0` (strictly negative).
+
+The SEE pass is undefined for positions in which the side to move is in check; the
+classification layer is responsible for short-circuiting those cases.
 
 | Classification | Criteria |
 |---|---|
