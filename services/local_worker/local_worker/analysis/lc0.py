@@ -7,6 +7,8 @@ Description:
 
 Changelog:
     2026-05-09: Initial creation
+    2026-05-10: Fixed analyze_pgn() to only set Backend/WeightsFile/SyzygyPath
+                when non-empty; empty opts dict skips configure() entirely.
 """
 from __future__ import annotations
 
@@ -291,12 +293,15 @@ def analyze_pgn(
 
     engine = chess.engine.SimpleEngine.popen_uci(lc0_path)
     try:
-        opts: dict[str, str] = {"Backend": backend}
+        opts: dict[str, str] = {}
+        if backend:
+            opts["Backend"] = backend
         if weights_path:
             opts["WeightsFile"] = weights_path
         if syzygy_path:
             opts["SyzygyPath"] = syzygy_path
-        engine.configure(opts)
+        if opts:
+            engine.configure(opts)
 
         try:
             engine_id_name = engine.id.get("name", "")

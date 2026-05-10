@@ -17,6 +17,8 @@ Changelog:
     2026-05-10: Updated analyze_pgn() to build game-wide all_win_pcts and
                 per-player mover_ply_indices; game_accuracy() called with
                 new Lichess-aligned API.
+    2026-05-10: Removed MultiPV from engine.configure() — python-chess treats
+                it as a managed option; it is passed directly to analyse().
 """
 from __future__ import annotations
 
@@ -135,7 +137,9 @@ def analyze_pgn(
 
     engine = chess.engine.SimpleEngine.popen_uci(stockfish_path)
     try:
-        opts: dict = {"Threads": threads, "Hash": hash_mb, "MultiPV": 2}
+        # MultiPV is passed directly to each analyse() call — do not set it
+        # here as python-chess treats it as a managed option and will raise.
+        opts: dict = {"Threads": threads, "Hash": hash_mb}
         if syzygy_path:
             opts["SyzygyPath"] = syzygy_path
         engine.configure(opts)
