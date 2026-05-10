@@ -214,6 +214,11 @@ class AnalysisJob(models.Model):
     completed_at = models.DateTimeField(null=True, blank=True)
     worker_id = models.CharField(max_length=64, null=True, blank=True)
     error_message = models.TextField(null=True, blank=True)
+    last_error = models.TextField(
+        null=True, blank=True,
+        help_text="Most recent RunPod submission error, if any. Job stays pending for retry.",
+    )
+    last_error_at = models.DateTimeField(null=True, blank=True)
     retry_count = models.IntegerField(default=0)
     duration_seconds = models.FloatField(null=True, blank=True)
     runpod_job_id = models.CharField(max_length=64, null=True, blank=True)
