@@ -5,6 +5,7 @@
 # Triggered by PostToolUse Write|Edit hook. Exits 2 to rewake Claude if any check fails.
 # Changelog:
 #   2026-05-08 - Initial creation with full pipeline
+#   2026-05-10 - Fix radon/xenon paths (python@3.9 removed, now use project venv)
 
 set -uo pipefail
 
@@ -14,8 +15,8 @@ PROJECT_DIR=$(cd "$SCRIPT_DIR/../.." && pwd)
 RUFF=/opt/homebrew/bin/ruff
 BANDIT=/Users/christopherwebster/.local/bin/bandit
 SEMGREP=/opt/homebrew/bin/semgrep
-RADON=/opt/homebrew/Cellar/python@3.9/3.9.25/Frameworks/Python.framework/Versions/3.9/bin/radon
-XENON=/opt/homebrew/Cellar/python@3.9/3.9.25/Frameworks/Python.framework/Versions/3.9/bin/xenon
+RADON=$PROJECT_DIR/.venv/bin/radon
+XENON=$PROJECT_DIR/.venv/bin/xenon
 MYPY=$PROJECT_DIR/.venv/bin/mypy
 PYTEST=$PROJECT_DIR/.venv/bin/pytest
 
