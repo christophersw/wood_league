@@ -33,6 +33,7 @@ class Settings:
     worker_id: str = ""
     stockfish_path: str = ""
     lc0_path: str = ""
+    lc0_weights_path: str = ""
     syzygy_path: str = ""
     lc0_backend: str = ""
     default_engines: list[str] = field(default_factory=lambda: ["stockfish"])

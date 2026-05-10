@@ -41,8 +41,8 @@ RUN apt-get update \
 
 COPY --from=builder /usr/local/bin/lc0 /usr/local/bin/lc0
 
-RUN curl --connect-timeout 10 --max-time 60 -fsSL \
-        "https://storage.lczero.org/files/networks-contrib/t1-512x15x8h-distilled-swa-3395000.pb.gz" \
+RUN curl --connect-timeout 10 --max-time 300 -fsSL \
+        "https://storage.lczero.org/files/networks-contrib/BT4-1024x15x32h-swa-6147500-policytune-332.pb.gz" \
         -o /usr/local/share/lc0-network.pb.gz || true
 
 # Copy shared package first for layer caching

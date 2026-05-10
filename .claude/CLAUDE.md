@@ -76,6 +76,18 @@ gh issue close <number>               # close issue
 Branch naming: `issue/<number>-<kebab-case-title>` (e.g. `issue/5-fix-debug-mode`).
 Create issues on `main`, then branch from `main` to work on them.
 
+## PyPI Publishing — wood-league-worker
+
+`services/local_worker` is published to PyPI as `wood-league-worker`. When making any changes to files under `services/local_worker/`, remind the user to bump `version` in `services/local_worker/pyproject.toml` before tagging a release.
+
+Publishing is triggered by pushing a version tag:
+```bash
+git tag worker-v<version>
+git push origin worker-v<version>
+```
+
+The tag version must match `pyproject.toml` exactly (e.g. tag `worker-v0.2.0` → `version = "0.2.0"`).
+
 ## Compact Instructions
 
 When compacting, preserve: current task and goal, vexp `run_pipeline` pivots and impact for files in flight, active issue ID, files being modified, architectural decisions made. Discard: full file contents already read and incorporated, intermediate skeleton outputs, resolved tool errors, verbose exploration steps.

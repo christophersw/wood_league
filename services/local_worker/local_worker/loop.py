@@ -16,7 +16,7 @@ import time
 from dataclasses import dataclass
 from typing import Callable, Optional
 
-from wood_league_shared.worker_client import WorkerClient, WorkerClientError
+from local_worker.worker_client import WorkerClient, WorkerClientError
 from local_worker.analysis.stockfish import analyze_pgn as sf_analyze, build_stockfish_payload
 from local_worker.analysis.lc0 import analyze_pgn as lc0_analyze, build_lc0_payload
 from local_worker.config import Settings
@@ -113,6 +113,7 @@ def run_one_job(
                 pgn_text=job.pgn,
                 lc0_path=settings.lc0_path,
                 nodes=nodes,
+                weights_path=settings.lc0_weights_path,
                 syzygy_path=settings.syzygy_path,
                 backend=settings.lc0_backend or "cpu",
                 progress_callback=progress_callback,

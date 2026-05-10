@@ -2289,7 +2289,6 @@ dependencies = [
     { name = "questionary" },
     { name = "rich" },
     { name = "typer" },
-    { name = "wood-league-shared" },
 ]
 
 [package.optional-dependencies]
@@ -2312,7 +2311,6 @@ requires-dist = [
     { name = "rich", specifier = ">=13" },
     { name = "ruff", marker = "extra == 'dev'" },
     { name = "typer", specifier = ">=0.12" },
-    { name = "wood-league-shared", editable = "packages/shared" },
 ]
 provides-extras = ["dev"]
 
