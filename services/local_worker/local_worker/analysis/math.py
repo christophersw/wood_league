@@ -178,6 +178,41 @@ def game_accuracy(move_accuracies: list[float], *, win_pcts: list[float]) -> flo
     return max(0.0, min(100.0, (weighted_mean + harmonic) / 2.0))
 
 
+def _top_tier(
+    *,
+    second_best_gap: Optional[float],
+    mover_win_pct: float,
+    is_capture_or_sacrifice: bool,
+    brilliant_gap: float,
+    great_gap: float,
+    winpct_ceiling: float,
+) -> str:
+    """Resolve Brilliant / Great / Best for a move in the top quality bucket.
+
+    Args:
+        second_best_gap: Gap between best and second-best move (cp or Win%).
+        mover_win_pct: Win% for the mover before the move.
+        is_capture_or_sacrifice: SEE-based capture/sacrifice flag.
+        brilliant_gap: Threshold gap qualifying for Brilliant.
+        great_gap: Threshold gap qualifying for Great.
+        winpct_ceiling: Mover Win% must be below this for Brilliant.
+
+    Returns:
+        "Brilliant", "Great", or "Best".
+    """
+    if second_best_gap is None:
+        return "Best"
+    if (
+        second_best_gap >= brilliant_gap
+        and mover_win_pct < winpct_ceiling
+        and is_capture_or_sacrifice
+    ):
+        return "Brilliant"
+    if second_best_gap >= great_gap:
+        return "Great"
+    return "Best"
+
+
 def classify_stockfish_move(
     *,
     cpl: int,
@@ -188,8 +223,7 @@ def classify_stockfish_move(
     """Classify a Stockfish move per analysis-math.md (first match wins).
 
     Order: Brilliant → Great → Best → Excellent → Inaccuracy → Mistake → Blunder.
-    `is_capture_or_sacrifice` must be the SEE-based determination (see
-    `analysis/see.py`).
+    `is_capture_or_sacrifice` must be the SEE-based determination.
 
     Args:
         cpl: Centipawn loss (≥0) for this move from the mover's perspective.
@@ -204,16 +238,14 @@ def classify_stockfish_move(
         One of: Brilliant, Great, Best, Excellent, Inaccuracy, Mistake, Blunder.
     """
     if cpl < _SF_EXCELLENT_CPL:
-        if (
-            second_best_gap is not None
-            and second_best_gap >= _SF_BRILLIANT_GAP
-            and mover_win_pct < _SF_BRILLIANT_WINPCT_CEILING
-            and is_capture_or_sacrifice
-        ):
-            return "Brilliant"
-        if second_best_gap is not None and second_best_gap >= _SF_GREAT_GAP:
-            return "Great"
-        return "Best"
+        return _top_tier(
+            second_best_gap=second_best_gap,
+            mover_win_pct=mover_win_pct,
+            is_capture_or_sacrifice=is_capture_or_sacrifice,
+            brilliant_gap=_SF_BRILLIANT_GAP,
+            great_gap=_SF_GREAT_GAP,
+            winpct_ceiling=_SF_BRILLIANT_WINPCT_CEILING,
+        )
     if cpl < _SF_INACCURACY_CPL:
         return "Excellent"
     if cpl < _SF_MISTAKE_CPL:
@@ -245,22 +277,20 @@ def classify_lc0_move(
     Returns:
         One of: Brilliant, Great, Best, Excellent, Inaccuracy, Mistake, Blunder.
     """
-    if delta_win_pct <= _LC0_EXCELLENT_MIN:  # Δ ≤ 1%
-        if (
-            second_best_gap is not None
-            and second_best_gap >= _LC0_BRILLIANT_GAP
-            and mover_win_pct < _LC0_BRILLIANT_WINPCT_CEILING
-            and is_capture_or_sacrifice
-        ):
-            return "Brilliant"
-        if second_best_gap is not None and second_best_gap >= _LC0_GREAT_GAP:
-            return "Great"
-        return "Best"
-    if delta_win_pct < _LC0_INACCURACY_MIN:   # 1% < Δ < 2%
+    if delta_win_pct <= _LC0_EXCELLENT_MIN:
+        return _top_tier(
+            second_best_gap=second_best_gap,
+            mover_win_pct=mover_win_pct,
+            is_capture_or_sacrifice=is_capture_or_sacrifice,
+            brilliant_gap=_LC0_BRILLIANT_GAP,
+            great_gap=_LC0_GREAT_GAP,
+            winpct_ceiling=_LC0_BRILLIANT_WINPCT_CEILING,
+        )
+    if delta_win_pct < _LC0_INACCURACY_MIN:
         return "Excellent"
-    if delta_win_pct < _LC0_MISTAKE_MIN:      # 2% ≤ Δ < 5%
+    if delta_win_pct < _LC0_MISTAKE_MIN:
         return "Inaccuracy"
-    if delta_win_pct < _LC0_BLUNDER_MIN:      # 5% ≤ Δ < 10%
+    if delta_win_pct < _LC0_BLUNDER_MIN:
         return "Mistake"
     return "Blunder"                          # Δ ≥ 10%
 
