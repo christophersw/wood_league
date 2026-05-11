@@ -224,7 +224,14 @@ class ChessComSyncService:
         return value.strip("-")
 
     def _build_slug(self, session, white: str, black: str, played_at: datetime) -> str:
-        """Return a unique slug like 'alice-vs-bob-2026-04-28' (or '-2', '-3' suffix)."""
+        """Return a unique slug like 'alice-vs-bob-2026-04-28' (or '-2', '-3' suffix).
+
+        Note: flushes the session before the LIKE query so pending inserts from
+        the same sync sweep are visible. Without this, three games by the same
+        pair on the same day all receive the base slug and trigger a
+        UniqueViolation on commit.
+        """
+        session.flush()
         date_str = played_at.strftime("%Y-%m-%d")
         base = f"{self._slugify(white)}-vs-{self._slugify(black)}-{date_str}"
 
