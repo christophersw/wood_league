@@ -170,7 +170,7 @@ def complete_stockfish_job(
         job = AnalysisJob.objects.select_for_update().get(**filters)
 
         # Upsert game_analysis
-        GameAnalysis.objects.update_or_create(
+        ga, _ = GameAnalysis.objects.update_or_create(
             game=job.game,
             defaults=dict(
                 white_accuracy=payload['white_accuracy'],
@@ -189,10 +189,10 @@ def complete_stockfish_job(
         )
 
         # Replace move_analysis rows for this game
-        MoveAnalysis.objects.filter(game=job.game).delete()
+        MoveAnalysis.objects.filter(analysis=ga).delete()
         MoveAnalysis.objects.bulk_create([
             MoveAnalysis(
-                game=job.game,
+                analysis=ga,
                 ply=m['ply'],
                 san=m['san'],
                 fen=m['fen'],
