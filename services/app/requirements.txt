@@ -24,6 +24,9 @@ pydantic-settings>=2.8.0
 requests>=2.32.2
 tqdm>=4.66.0
 runpod>=1.7.0
+# Shared opening-book + SQLAlchemy models — imported by app/ingest/sync_service.py
+# and app/services/*.py. Pinned to the same source as pyproject.toml.
+wood-league-shared @ git+https://github.com/christophersw/wood_league.git#subdirectory=packages/shared
 
 # Pinned by Snyk to avoid known vulnerabilities
 pyarrow>=14.0.1
