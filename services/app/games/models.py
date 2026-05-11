@@ -108,9 +108,6 @@ class GameMoveTime(models.Model):
     class Meta:
         db_table = "game_move_times"
         unique_together = [("game", "ply")]
-        indexes = [
-            models.Index(fields=["game", "ply"]),
-        ]
         verbose_name = "Game Move Time"
         verbose_name_plural = "Game Move Times"
 
