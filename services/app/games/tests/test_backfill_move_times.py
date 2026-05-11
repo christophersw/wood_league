@@ -6,7 +6,9 @@ Description:
 
 Changelog:
     2026-05-11: Initial creation (issue #24).
+    2026-05-11: Add test for SystemEvent logging (issue #24).
 """
+import json as _json
 from datetime import datetime, timezone
 from io import StringIO
 
@@ -14,6 +16,7 @@ from django.core.management import call_command
 from django.test import TestCase
 
 from games.models import Game, GameMoveTime
+from ingest.models import SystemEvent
 
 
 _PGN_LIVE = (
@@ -83,3 +86,15 @@ class BackfillMoveTimesTests(TestCase):
         call_command("backfill_move_times", "--limit", "1", stdout=StringIO())
         total = GameMoveTime.objects.filter(game_id__in=["bf-5", "bf-6"]).count()
         assert total == 2  # exactly one game processed (2 plies each)
+
+    def test_writes_system_event_on_completion(self):
+        _make_game("bf-7", time_class="blitz", time_control="180", base_s=180, inc_s=0, pgn=_PGN_LIVE)
+        call_command("backfill_move_times", stdout=StringIO())
+        events = SystemEvent.objects.filter(event_type="backfill_move_times")
+        assert events.count() == 1
+        event = events.first()
+        assert event.status == "completed"
+        assert event.completed_at is not None
+        details = _json.loads(event.details)
+        assert details["games_seen"] >= 1
+        assert details["rows_written"] >= 2

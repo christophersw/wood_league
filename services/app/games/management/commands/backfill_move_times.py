@@ -9,17 +9,65 @@ Description:
 
 Changelog:
     2026-05-11: Initial creation (issue #24).
+    2026-05-11: Add SystemEvent logging + post-write sanity checks (issue #24).
 """
 from __future__ import annotations
 
+import json
+
 from django.core.management.base import BaseCommand
 from django.db import transaction
+from django.db.models import Sum
+from django.utils import timezone
 
 from games.clock_parser import parse_move_times
 from games.models import Game, GameMoveTime
+from ingest.models import SystemEvent
 
 
 _BATCH_SIZE = 500
+
+
+def _run_sanity_checks() -> list[str]:
+    """Verify GameMoveTime invariants post-backfill.
+
+    Two checks per spec:
+      1. Daily games: sum(time_spent_ms) <= (end_time - start_time) * 1000.
+      2. Live games: last clock_after_ms >= 0.
+
+    Returns a list of human-readable violation messages (empty if all-clear).
+    """
+    violations: list[str] = []
+
+    # Check 1: daily games' total think time should not exceed wall-clock.
+    daily_games = Game.objects.filter(
+        time_class="daily",
+        move_times__isnull=False,
+        started_at_utc__isnull=False,
+    ).distinct()
+    for game in daily_games.iterator():
+        total_ms = GameMoveTime.objects.filter(game=game).aggregate(
+            total=Sum("time_spent_ms")
+        )["total"] or 0
+        wall_clock_ms = int((game.played_at - game.started_at_utc).total_seconds() * 1000)
+        if total_ms > wall_clock_ms:
+            violations.append(
+                f"daily game {game.id}: sum(time_spent_ms)={total_ms} > "
+                f"wall_clock_ms={wall_clock_ms}"
+            )
+
+    # Check 2: live games' final clock_after_ms should be >= 0.
+    live_negative = (
+        GameMoveTime.objects.filter(
+            game__time_class__in=["bullet", "blitz", "rapid"],
+            clock_after_ms__lt=0,
+        )
+        .values_list("game_id", "ply", "clock_after_ms")[:50]
+    )
+    for game_id, ply, clk in live_negative:
+        violations.append(f"live game {game_id} ply {ply}: clock_after_ms={clk}")
+
+    return violations
 
 
 class Command(BaseCommand):
@@ -57,9 +105,11 @@ class Command(BaseCommand):
         Side effects:
             Writes or deletes GameMoveTime rows in the database unless --dry-run.
             Outputs progress and summary to stdout.
+            Writes a SystemEvent row at completion.
         """
         dry_run: bool = options["dry_run"]
         limit: int | None = options["limit"]
+        started_at = timezone.now()
 
         qs = Game.objects.filter(pgn__gt="", time_class__isnull=False).order_by("id")
         if limit is not None:
@@ -103,6 +153,13 @@ class Command(BaseCommand):
                 ])
                 rows_written += len(move_times)
 
+        # Run sanity checks (skip if dry-run, since no rows were written).
+        sanity_violations: list[str] = []
+        if not dry_run:
+            sanity_violations = _run_sanity_checks()
+            for line in sanity_violations:
+                self.stdout.write(self.style.WARNING(f"  sanity violation: {line}"))
+
         if dry_run:
             self.stdout.write(
                 self.style.SUCCESS(
@@ -117,3 +174,23 @@ class Command(BaseCommand):
                     f"{failures} parse failures."
                 )
             )
+
+        # Write SystemEvent for audit trail.
+        completed_at = timezone.now()
+        duration_seconds = (completed_at - started_at).total_seconds()
+        details_payload = {
+            "dry_run": dry_run,
+            "games_seen": games_seen,
+            "rows_written": rows_written if not dry_run else 0,
+            "rows_planned": rows_planned if dry_run else 0,
+            "parse_failures": failures,
+            "sanity_violations": sanity_violations if not dry_run else [],
+        }
+        SystemEvent.objects.create(
+            event_type="backfill_move_times",
+            status="completed",
+            started_at=started_at,
+            completed_at=completed_at,
+            duration_seconds=duration_seconds,
+            details=json.dumps(details_payload),
+        )
