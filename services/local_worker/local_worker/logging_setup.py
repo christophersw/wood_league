@@ -38,13 +38,13 @@ def configure_logging(log_dir: str = "") -> Path:
         backupCount=3,
         encoding="utf-8",
     )
-    handler.setLevel(logging.WARNING)
+    handler.setLevel(logging.INFO)
     handler.setFormatter(
         logging.Formatter("%(asctime)s %(levelname)s %(name)s — %(message)s")
     )
 
     root = logging.getLogger()
-    root.setLevel(logging.WARNING)
+    root.setLevel(logging.INFO)
     root.addHandler(handler)
 
     return log_file
