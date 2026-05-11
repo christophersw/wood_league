@@ -1,12 +1,15 @@
 """
 Title: models.py — Database models for chess games and participants
 Description:
-    Defines Game and GameParticipant models for storing chess games from
-    Chess.com with PGN, metadata, and per-player performance metrics.
+    Defines Game, GameParticipant, and GameMoveTime models. GameMoveTime
+    persists per-move clock data parsed from chess.com PGNs at ingest
+    time (issue #24).
 
 Changelog:
     2026-05-08: Added file header to meet documentation standards
     2026-05-10: Add created_at field for post-sync auto-enqueue (Task D1).
+    2026-05-11: Add Game.started_at_utc / time_class / time_control_base_s
+                / time_control_increment_s columns. Add GameMoveTime model.
 """
 
 from django.db import models
@@ -14,8 +17,6 @@ from django.db import models
 
 class Game(models.Model):
     """A chess game record with metadata from Chess.com, PGN, and analysis."""
-    # Chess.com game ID is a string — keep as the primary key to avoid any
-    # mapping complexity; use slug as the URL identifier everywhere.
     id = models.CharField(max_length=64, primary_key=True)
     slug = models.SlugField(max_length=80, null=True, blank=True, unique=True, db_index=True)
     played_at = models.DateTimeField(db_index=True)
@@ -31,6 +32,11 @@ class Game(models.Model):
     lichess_opening = models.CharField(max_length=200, null=True, blank=True)
     pgn = models.TextField(default="")
     created_at = models.DateTimeField(auto_now_add=True, null=True, db_index=True)
+
+    started_at_utc = models.DateTimeField(null=True, blank=True, db_index=True)
+    time_class = models.CharField(max_length=16, null=True, blank=True, db_index=True)
+    time_control_base_s = models.IntegerField(null=True, blank=True)
+    time_control_increment_s = models.IntegerField(null=True, blank=True)
 
     class Meta:
         db_table = "games"
@@ -83,3 +89,31 @@ class GameParticipant(models.Model):
     def __str__(self):
         """Return human-readable participation description."""
         return f"{self.player} ({self.color}) in {self.game_id}"
+
+
+class GameMoveTime(models.Model):
+    """Per-move clock data parsed from the chess.com PGN at ingest time.
+
+    `time_spent_ms` is universal — the time the player took to respond on
+    this move. `clock_after_ms` is live-only (NULL for daily). Per-move
+    wall-clock submission is derivable as
+    `Game.started_at_utc + cumsum(time_spent_ms[1..ply])`.
+    """
+
+    game = models.ForeignKey(Game, on_delete=models.CASCADE, related_name="move_times")
+    ply = models.IntegerField()
+    time_spent_ms = models.IntegerField()
+    clock_after_ms = models.IntegerField(null=True, blank=True)
+
+    class Meta:
+        db_table = "game_move_times"
+        unique_together = [("game", "ply")]
+        indexes = [
+            models.Index(fields=["game", "ply"]),
+        ]
+        verbose_name = "Game Move Time"
+        verbose_name_plural = "Game Move Times"
+
+    def __str__(self):
+        """Return human-readable description."""
+        return f"{self.game_id} ply {self.ply}: {self.time_spent_ms}ms"
