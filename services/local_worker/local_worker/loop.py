@@ -77,7 +77,7 @@ def run_one_job(
     settings: Settings,
     stats: WorkerStats,
     client: WorkerClient,
-    progress_callback: Optional[Callable[[int, int], None]] = None,
+    progress_callback: Optional[Callable[[int, int, str, str], None]] = None,
 ) -> bool:
     """Claim, analyse, and submit a single job.
 
@@ -93,6 +93,21 @@ def run_one_job(
     """
     worker_id = _worker_id(settings)
     start = time.monotonic()
+    log.info(
+        "Starting job %s — engine=%s game=%s depth=%s nodes=%s",
+        job.id, job.engine, job.game_id, job.depth, job.nodes,
+    )
+
+    # Wrap caller's progress callback to log each move so the log file shows
+    # which ply was just analysed (visible feedback even when the rich display
+    # is masking stdout).
+    def _logging_progress(ply: int, total: int, san: str = "", fen: str = "") -> None:
+        log.info(
+            "  job %s — move %d/%d %s",
+            job.id, ply, total, san or "?",
+        )
+        if progress_callback:
+            progress_callback(ply, total, san, fen)
 
     try:
         if job.engine == "stockfish":
@@ -103,7 +118,7 @@ def run_one_job(
                 threads=settings.stockfish_threads,
                 hash_mb=settings.stockfish_hash_mb,
                 syzygy_path=settings.syzygy_path,
-                progress_callback=progress_callback,
+                progress_callback=_logging_progress,
             )
             payload = build_stockfish_payload(result, worker_id=worker_id)
             client.complete_stockfish(job_id=job.id, worker_id=worker_id, payload=payload)
@@ -116,7 +131,7 @@ def run_one_job(
                 weights_path=settings.lc0_weights_path,
                 syzygy_path=settings.syzygy_path,
                 backend=settings.lc0_backend or "cpu",
-                progress_callback=progress_callback,
+                progress_callback=_logging_progress,
             )
             payload = build_lc0_payload(result, worker_id=worker_id)
             client.complete_lc0(job_id=job.id, worker_id=worker_id, payload=payload)
@@ -127,6 +142,7 @@ def run_one_job(
 
         elapsed = time.monotonic() - start
         stats.record_game(job.engine, elapsed)
+        log.info("Job %s complete (%s) in %.1fs", job.id, job.engine, elapsed)
         return True
 
     except Exception as exc:
@@ -149,7 +165,8 @@ def run_batch(
     game_id: Optional[str] = None,
     on_job_start: Optional[Callable] = None,
     on_job_done: Optional[Callable] = None,
-    on_progress: Optional[Callable[[int, int], None]] = None,
+    on_progress: Optional[Callable[[int, int, str, str], None]] = None,
+    on_jobs_claimed: Optional[Callable[[list], None]] = None,
     stop_event=None,
 ) -> WorkerStats:
     """Run the main claim->analyse->submit loop.
@@ -236,6 +253,11 @@ def run_batch(
 
             if not jobs:
                 break
+
+            log.info("Claimed %d %s job(s): %s",
+                     len(jobs), engine, ", ".join(str(j.id) for j in jobs))
+            if on_jobs_claimed:
+                on_jobs_claimed(jobs)
 
             for job in jobs:
                 if stop_event and stop_event.is_set():

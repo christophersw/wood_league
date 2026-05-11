@@ -13,6 +13,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from typing import Generator, Optional
 
+import chess
 from rich.columns import Columns
 from rich.console import Console
 from rich.live import Live
@@ -27,8 +28,11 @@ from rich.progress import (
     TimeElapsedColumn,
 )
 from rich.table import Table
+from rich.text import Text
 
 from local_worker.loop import WorkerStats
+
+_INITIAL_FEN = chess.STARTING_FEN
 
 console = Console()
 
@@ -97,6 +101,7 @@ def worker_display(stats: WorkerStats) -> Generator["DisplayHandle", None, None]
         batch_task=batch_task,
         move_task=move_task,
     )
+    handle._batch_total = 0
 
     with Live(console=console, refresh_per_second=4) as live:
         handle._live = live
@@ -123,6 +128,11 @@ class DisplayHandle:
         self._live: Optional[Live] = None
         self._current_engine = ""
         self._current_job = "idle"
+        self._current_san = ""
+        self._current_ply = 0
+        self._current_total_plies = 0
+        self._current_fen = _INITIAL_FEN
+        self._batch_total = 0
 
     def set_job(self, game_id: str, engine: str, total_moves: int) -> None:
         """Signal that a new job has started.
@@ -130,13 +140,18 @@ class DisplayHandle:
         Args:
             game_id: Game identifier string.
             engine: Engine being used ('stockfish' or 'lc0').
-            total_moves: Total plies in the game.
+            total_moves: Total plies in the game (rough estimate; refined by
+                advance_move once the engine reports the real ply count).
         """
         self._current_engine = engine
         self._current_job = game_id
+        self._current_san = ""
+        self._current_ply = 0
+        self._current_total_plies = total_moves
+        self._current_fen = _INITIAL_FEN
         self._move_progress.update(
             self._move_task,
-            description=f"[{engine}] {game_id}",
+            description=f"[{engine}] {game_id} — waiting for first move…",
             total=total_moves,
             completed=0,
             visible=True,
@@ -144,14 +159,59 @@ class DisplayHandle:
         self._batch_progress.advance(self._batch_task, 0)
         self._refresh()
 
-    def advance_move(self, ply: int, total: int) -> None:
-        """Update the per-move progress bar.
+    def advance_move(
+        self,
+        ply: int,
+        total: int,
+        san: str = "",
+        fen: str = "",
+    ) -> None:
+        """Update the per-move progress bar and current position.
 
         Args:
             ply: Current ply number (1-based).
             total: Total plies in the game.
+            san: SAN of the move just analysed (e.g. "Nxe5"). Optional.
+            fen: FEN of the resulting position, for the ASCII board panel.
+                Optional; defaults to the previously-shown position.
         """
-        self._move_progress.update(self._move_task, completed=ply, total=total)
+        self._current_ply = ply
+        self._current_total_plies = total
+        if san:
+            self._current_san = san
+        if fen:
+            self._current_fen = fen
+        move_no = (ply + 1) // 2
+        side = "." if ply % 2 == 1 else "..."
+        label = f"[{self._current_engine}] move {move_no}{side} {self._current_san}".strip()
+        self._move_progress.update(
+            self._move_task,
+            description=f"{label}  ({ply}/{total} plies)",
+            completed=ply,
+            total=total,
+        )
+        self._refresh()
+
+    def set_batch_total(self, total: int) -> None:
+        """Set the absolute total for the batch progress bar.
+
+        Args:
+            total: New absolute job count for this run.
+        """
+        self._batch_total = total
+        self._batch_progress.update(self._batch_task, total=total)
+        self._refresh()
+
+    def add_batch_total(self, delta: int) -> None:
+        """Increase the batch total by ``delta`` (used as more jobs are claimed).
+
+        Args:
+            delta: Number of additional jobs claimed in the latest checkout.
+        """
+        if delta <= 0:
+            return
+        self._batch_total += delta
+        self._batch_progress.update(self._batch_task, total=self._batch_total)
         self._refresh()
 
     def job_done(self) -> None:
@@ -160,12 +220,32 @@ class DisplayHandle:
         self._batch_progress.advance(self._batch_task, 1)
         self._refresh()
 
+    def _board_panel(self) -> Panel:
+        """Render the current board as an ASCII panel.
+
+        Returns:
+            Rich Panel containing the board (white pieces uppercase, black
+            lowercase, dots for empty squares — works in any terminal).
+        """
+        try:
+            board = chess.Board(self._current_fen)
+        except ValueError:
+            board = chess.Board()
+        body = Text(str(board), style="white")
+        title = "Board" if not self._current_san else f"After {self._current_san}"
+        return Panel(body, title=title, border_style="magenta", expand=False)
+
     def _render(self):
         stats_panel = _make_stats_panel(self.stats, self._current_engine, self._current_job)
-        columns = Columns([self._batch_progress, self._move_progress], equal=False, expand=True)
+        progress_panel = Panel(
+            Columns([self._batch_progress, self._move_progress], equal=False, expand=True),
+            title="Progress",
+            border_style="blue",
+        )
+        top = Columns([stats_panel, self._board_panel()], equal=False, expand=True)
         layout = Table.grid()
-        layout.add_row(stats_panel)
-        layout.add_row(Panel(columns, title="Progress", border_style="blue"))
+        layout.add_row(top)
+        layout.add_row(progress_panel)
         return layout
 
     def _refresh(self) -> None:

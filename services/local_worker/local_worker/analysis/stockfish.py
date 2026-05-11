@@ -111,7 +111,7 @@ def analyze_pgn(
     threads: int = 4,
     hash_mb: int = 512,
     syzygy_path: str = "",
-    progress_callback: Optional[Callable[[int, int], None]] = None,
+    progress_callback: Optional[Callable[[int, int, str, str], None]] = None,
 ) -> StockfishGameResult:
     """Analyse a PGN game with Stockfish per analysis-math.md.
 
@@ -191,7 +191,9 @@ def analyze_pgn(
                 cls_counts[mover][move_result.classification] += 1
 
             if progress_callback:
-                progress_callback(ply_index, total_plies)
+                # Pass move SAN + post-move FEN so the CLI can show which move
+                # just finished and render the resulting board.
+                progress_callback(ply_index, total_plies, move_result.san, board.fen())
 
         def _avg(nums: list) -> float:
             """Return the arithmetic mean of a list, or 0.0 for empty lists."""

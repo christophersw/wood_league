@@ -267,7 +267,7 @@ def analyze_pgn(
     weights_path: str = "",
     syzygy_path: str = "",
     backend: str = "cpu",
-    progress_callback: Optional[Callable[[int, int], None]] = None,
+    progress_callback: Optional[Callable[[int, int, str, str], None]] = None,
 ) -> Lc0GameResult:
     """Analyse a PGN game with Lc0 and return per-move WDL results.
 
@@ -278,7 +278,10 @@ def analyze_pgn(
         weights_path: Path to network weights file, or empty for default.
         syzygy_path: Path to Syzygy tablebase directory, or empty string.
         backend: Lc0 backend ('cuda-auto', 'metal', 'cpu').
-        progress_callback: Optional callable(ply, total_plies) called per move.
+        progress_callback: Optional callable(ply, total_plies, san, fen) called
+            once per analysed move. `san` is the move just played; `fen` is the
+            resulting board position. Both are empty strings for legacy callers
+            that only inspect ply/total.
 
     Returns:
         Lc0GameResult with per-move WDL evaluations and game statistics.
@@ -343,7 +346,9 @@ def analyze_pgn(
                 black_wdl_losses.append(wdl_white[2] / 1000)
 
             if progress_callback:
-                progress_callback(ply_index, total_plies)
+                # Pass move SAN + post-move FEN so the CLI can show which move
+                # just finished and render the resulting board.
+                progress_callback(ply_index, total_plies, move_result.san, board.fen())
 
         def _avg(lst: list[float]) -> float:
             """Return average of a list, or 0.0 if empty."""

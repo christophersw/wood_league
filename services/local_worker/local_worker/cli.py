@@ -398,8 +398,8 @@ def run(
                 total_moves = len(job.pgn.split("\n")) * 2  # rough estimate
                 display.set_job(job.game_id, job.engine, total_moves)
 
-            def on_progress(ply, total):
-                display.advance_move(ply, total)
+            def on_progress(ply, total, san="", fen=""):
+                display.advance_move(ply, total, san=san, fen=fen)
 
             def on_job_done(job, success, elapsed):
                 # Mirror run_batch's internal accounting onto the display-bound
@@ -410,6 +410,9 @@ def run(
                     stats.errors += 1
                 display.job_done()
 
+            def on_jobs_claimed(jobs):
+                display.add_batch_total(len(jobs))
+
             result_stats = run_batch(
                 settings=settings,
                 engines=engines,
@@ -418,6 +421,7 @@ def run(
                 on_job_start=on_job_start,
                 on_job_done=on_job_done,
                 on_progress=on_progress,
+                on_jobs_claimed=on_jobs_claimed,
                 stop_event=stop_event,
             )
     except KeyboardInterrupt:
@@ -447,8 +451,11 @@ def analyze(
 
     with worker_display(stats) as display:
 
-        def on_progress(ply, total):
-            display.advance_move(ply, total)
+        def on_progress(ply, total, san="", fen=""):
+            display.advance_move(ply, total, san=san, fen=fen)
+
+        def on_jobs_claimed(jobs):
+            display.add_batch_total(len(jobs))
 
         result = run_batch(
             settings=settings,
@@ -456,6 +463,7 @@ def analyze(
             batch_size=1,
             game_id=game_id,
             on_progress=on_progress,
+            on_jobs_claimed=on_jobs_claimed,
         )
 
     if result.games_processed == 0:
