@@ -10,6 +10,9 @@ Changelog:
     2026-05-10: Add created_at field for post-sync auto-enqueue (Task D1).
     2026-05-11: Add Game.started_at_utc / time_class / time_control_base_s
                 / time_control_increment_s columns. Add GameMoveTime model.
+    2026-05-11: Widen GameMoveTime.time_spent_ms / clock_after_ms to BigInteger.
+                Daily games with vacation can produce per-move delays > 24
+                days, exceeding the int4 ceiling (issue #24 hotfix).
 """
 
 from django.db import models
@@ -102,8 +105,11 @@ class GameMoveTime(models.Model):
 
     game = models.ForeignKey(Game, on_delete=models.CASCADE, related_name="move_times")
     ply = models.IntegerField()
-    time_spent_ms = models.IntegerField()
-    clock_after_ms = models.IntegerField(null=True, blank=True)
+    # BigInteger: daily-game inter-move delays exceed int4's ~24.8-day ceiling
+    # when players go inactive for weeks. Observed during backfill:
+    # 12,095,950,000 ms (~140 days) on a single move. (issue #24 hotfix)
+    time_spent_ms = models.BigIntegerField()
+    clock_after_ms = models.BigIntegerField(null=True, blank=True)
 
     class Meta:
         db_table = "game_move_times"
