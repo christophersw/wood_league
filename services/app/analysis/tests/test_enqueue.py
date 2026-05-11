@@ -6,8 +6,10 @@ Description: Six cases: no-existing creates; pending/running/submitted skip;
     objects created directly without pytest-django db fixture.
 Changelog:
     2026-05-10: Initial — Task A3 of scrap-dispatchers plan.
+    2026-05-11: Add race-path test (Task 3 of enqueue-race-safe plan).
 """
 import uuid
+from unittest.mock import patch
 
 import pytest
 from django.db import IntegrityError
@@ -144,3 +146,32 @@ def test_partial_unique_allows_two_completed():
         game=game, engine="stockfish",
         status=AnalysisJob.STATUS_COMPLETED, depth=25,
     )
+
+
+@pytest.mark.django_db
+def test_enqueue_returns_none_when_race_violates_constraint():
+    """If a concurrent caller inserts an active row between our .exists() check
+    and our .create(), the DB unique constraint rejects the insert. The service
+    must swallow the IntegrityError and return None, matching the dedup-skip
+    contract.
+
+    Simulated by pre-creating an active row, then patching the first .exists()
+    query in the service to return False (i.e., lying about the row's absence).
+    """
+    game = _make_game()
+    # The "concurrent" active row already exists.
+    AnalysisJob.objects.create(
+        game=game, engine="stockfish",
+        status=AnalysisJob.STATUS_PENDING, depth=20,
+    )
+
+    # Force the dedup pre-check to lie — simulates the race window.
+    with patch(
+        "analysis.services.enqueue.AnalysisJob.objects.filter"
+    ) as mock_filter:
+        mock_filter.return_value.exists.return_value = False
+        result = enqueue_analysis_job(game=game, engine="stockfish", depth=20)
+
+    assert result is None
+    # And we did not create a duplicate.
+    assert AnalysisJob.objects.filter(game=game, engine="stockfish").count() == 1
