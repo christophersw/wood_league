@@ -15,4 +15,5 @@ app_name = "dashboard"
 
 urlpatterns = [
     path("", views.index, name="index"),
+    path("healthz/", views.healthz, name="healthz"),
 ]

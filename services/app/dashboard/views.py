@@ -60,6 +60,18 @@ def _fmt_last_ingest(event: dict | None) -> str:
     return ts.strftime("%b %d, %Y at %I:%M %p UTC")
 
 
+@require_GET
+def healthz(request: HttpRequest) -> HttpResponse:
+    """Liveness probe for Railway's deploy healthcheck.
+
+    Returns plain-text 200 with no DB queries, no auth, and no SSL redirect
+    (configured via SECURE_REDIRECT_EXEMPT in settings.py and as a public path
+    in accounts.middleware.LoginRequiredMiddleware). Railway runs healthchecks
+    over internal HTTP, so any redirect (including HTTPS upgrade) breaks them.
+    """
+    return HttpResponse("ok", content_type="text/plain", status=200)
+
+
 @login_required
 def index(request: HttpRequest) -> HttpResponse:
     """Render the main dashboard page with recent games and chart placeholders."""

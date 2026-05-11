@@ -17,6 +17,7 @@ from django.urls import reverse
 _PUBLIC_PATHS = frozenset([
     "/auth/login/",
     "/auth/logout/",
+    "/healthz/",  # Railway deploy healthcheck — no auth, no SSL redirect
 ])
 
 
