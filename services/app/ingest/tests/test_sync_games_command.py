@@ -3,8 +3,10 @@ Title: test_sync_games_command.py — Auto-enqueue + advisory-lock tests
 Description: Verifies the management command enqueues stockfish jobs for
     newly-inserted games when the SiteSettings flag is on, and that a held
     advisory lock causes the command to exit zero without running the sync.
+    Also verifies the post-sync GameMoveTime population step (issue #24).
 Changelog:
     2026-05-10: Initial — Task D1 of scrap-dispatchers plan.
+    2026-05-11: Add test_sync_games_writes_move_times_for_synced_games (Task 7).
 """
 import uuid
 from io import StringIO
@@ -140,3 +142,33 @@ class SyncGamesCommandTests(TestCase):
             out = StringIO()
             call_command("sync_games", "alice", stdout=out)
         mock_run.assert_not_called()
+
+    def test_sync_games_writes_move_times_for_synced_games(self):
+        """sync_games should bulk-create GameMoveTime rows for games with %clk PGNs."""
+        from datetime import datetime, timezone
+
+        from games.models import GameMoveTime
+
+        Game.objects.create(
+            id="test-move-times-1",
+            played_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            time_control="180",
+            time_class="blitz",
+            time_control_base_s=180,
+            time_control_increment_s=0,
+            pgn=(
+                '[Event "Live Chess"]\n[TimeControl "180"]\n\n'
+                '1. e4 {[%clk 0:03:00]} 1... c5 {[%clk 0:02:58]} 1-0\n'
+            ),
+        )
+
+        with patch(
+            "ingest.management.commands.sync_games.subprocess.run",
+            return_value=MagicMock(returncode=0, stdout="ok"),
+        ):
+            call_command("sync_games", "alice-mt", stdout=StringIO())
+
+        rows = list(GameMoveTime.objects.filter(game_id="test-move-times-1").order_by("ply"))
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0].time_spent_ms, 0)
+        self.assertEqual(rows[1].time_spent_ms, 2_000)

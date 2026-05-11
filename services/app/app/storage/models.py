@@ -8,6 +8,7 @@ Description:
 
 Changelog:
     2026-05-08: Added file header to meet documentation standards
+    2026-05-11: Add time metadata columns to Game (issue #24).
 """
 from __future__ import annotations
 
@@ -77,6 +78,10 @@ class Game(Base):
     opening_name: Mapped[str] = mapped_column(String(120), default="")
     lichess_opening: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
     pgn: Mapped[str] = mapped_column(Text, default="")
+    started_at_utc: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, index=True)
+    time_class: Mapped[Optional[str]] = mapped_column(String(16), nullable=True, index=True)
+    time_control_base_s: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    time_control_increment_s: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
     analysis: Mapped[Optional[GameAnalysis]] = relationship(
         back_populates="game", uselist=False
