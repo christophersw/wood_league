@@ -268,11 +268,7 @@ class Command(BaseCommand):
         # Issue #24: populate per-move clock data for games written by the
         # subprocess. We pass `since=None` for now (full sweep is cheap and
         # idempotent); the backfill command handles bulk historic loads.
-        try:
-            written = _populate_move_times_for_recent_games(since=None, stdout=self.stdout)
-            self.stdout.write(f"move-time rows written: {written}\n")
-        except Exception as exc:  # noqa: BLE001
-            self.stdout.write(f"move-time post-step failed: {exc}\n")
+        self._run_move_time_post_step()
 
         SystemEvent.objects.create(
             event_type="game_sync",
@@ -288,3 +284,24 @@ class Command(BaseCommand):
             f"Sync complete in {elapsed:.1f}s — "
             f"auto-enqueued: stockfish={sf_count} lc0={lc_count}"
         )
+
+    def _run_move_time_post_step(self) -> None:
+        """Populate GameMoveTime rows post-sync, isolating failures.
+
+        Issue #24: parse %clk annotations for every Game with non-empty PGN
+        and a known time_class. Errors are logged and swallowed so the rest
+        of the sync pipeline (advisory-lock release, SystemEvent close) is
+        never blocked by a clock-parse hiccup.
+
+        Returns:
+            None
+
+        Side effects:
+            Bulk-creates GameMoveTime rows. May write error or success message
+            to self.stdout.
+        """
+        try:
+            written = _populate_move_times_for_recent_games(since=None, stdout=self.stdout)
+            self.stdout.write(f"move-time rows written: {written}\n")
+        except Exception as exc:  # noqa: BLE001
+            self.stdout.write(f"move-time post-step failed: {exc}\n")
