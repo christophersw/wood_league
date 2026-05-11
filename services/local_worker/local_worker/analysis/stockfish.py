@@ -135,6 +135,12 @@ def analyze_pgn(
     moves_list = list(parsed.mainline_moves())
     total_plies = len(moves_list)
 
+    if total_plies == 0:
+        # Refuse to submit empty analysis — completing a 0-ply game writes a
+        # bogus row with all-zero accuracies/counts. Caller (run_one_job) will
+        # catch this and call client.fail() so the job is surfaced.
+        raise ValueError("PGN has no moves — cannot analyse a 0-ply game")
+
     engine = chess.engine.SimpleEngine.popen_uci(stockfish_path)
     try:
         # MultiPV is passed directly to each analyse() call — do not set it

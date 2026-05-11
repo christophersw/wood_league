@@ -296,6 +296,13 @@ def analyze_pgn(
     total_plies = len(moves_list)
     network_name = ""
 
+    if total_plies == 0:
+        # Refuse to submit empty analysis — see issue tracker. Completing a
+        # 0-ply game writes a bogus row with all-zero accuracies/counts and
+        # poisons the queue. Caller (run_one_job) will catch this and call
+        # client.fail() so the job is requeued or surfaced.
+        raise ValueError("PGN has no moves — cannot analyse a 0-ply game")
+
     log.info("lc0: launching engine at %s", lc0_path)
     engine = chess.engine.SimpleEngine.popen_uci(lc0_path)
     log.info("lc0: engine launched; configuring backend=%s weights=%s syzygy=%s",
