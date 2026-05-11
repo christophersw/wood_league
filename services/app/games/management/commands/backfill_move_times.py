@@ -94,6 +94,44 @@ class Command(BaseCommand):
             help="Maximum number of games to process (useful for smoke testing).",
         )
 
+    def _record_system_event(
+        self,
+        *,
+        started_at,
+        completed_at,
+        dry_run: bool,
+        games_seen: int,
+        rows_written: int,
+        rows_planned: int,
+        parse_failures: int,
+        sanity_violations: list[str],
+    ) -> None:
+        """Persist a SystemEvent row summarising this backfill invocation."""
+        duration_seconds = (completed_at - started_at).total_seconds()
+        details_payload = {
+            "dry_run": dry_run,
+            "games_seen": games_seen,
+            "rows_written": rows_written if not dry_run else 0,
+            "rows_planned": rows_planned if dry_run else 0,
+            "parse_failures": parse_failures,
+            "sanity_violations": sanity_violations if not dry_run else [],
+        }
+        SystemEvent.objects.create(
+            event_type="backfill_move_times",
+            status="completed",
+            started_at=started_at,
+            completed_at=completed_at,
+            duration_seconds=duration_seconds,
+            details=json.dumps(details_payload),
+        )
+
+    def _run_and_report_sanity_checks(self) -> list[str]:
+        """Run post-write sanity checks and log violations to stdout."""
+        violations = _run_sanity_checks()
+        for line in violations:
+            self.stdout.write(self.style.WARNING(f"  sanity violation: {line}"))
+        return violations
+
     def handle(self, *args, **options):
         """
         Iterate Games, parse PGN clock annotations, and bulk-write GameMoveTime rows.
@@ -156,9 +194,7 @@ class Command(BaseCommand):
         # Run sanity checks (skip if dry-run, since no rows were written).
         sanity_violations: list[str] = []
         if not dry_run:
-            sanity_violations = _run_sanity_checks()
-            for line in sanity_violations:
-                self.stdout.write(self.style.WARNING(f"  sanity violation: {line}"))
+            sanity_violations = self._run_and_report_sanity_checks()
 
         if dry_run:
             self.stdout.write(
@@ -176,21 +212,13 @@ class Command(BaseCommand):
             )
 
         # Write SystemEvent for audit trail.
-        completed_at = timezone.now()
-        duration_seconds = (completed_at - started_at).total_seconds()
-        details_payload = {
-            "dry_run": dry_run,
-            "games_seen": games_seen,
-            "rows_written": rows_written if not dry_run else 0,
-            "rows_planned": rows_planned if dry_run else 0,
-            "parse_failures": failures,
-            "sanity_violations": sanity_violations if not dry_run else [],
-        }
-        SystemEvent.objects.create(
-            event_type="backfill_move_times",
-            status="completed",
+        self._record_system_event(
             started_at=started_at,
-            completed_at=completed_at,
-            duration_seconds=duration_seconds,
-            details=json.dumps(details_payload),
+            completed_at=timezone.now(),
+            dry_run=dry_run,
+            games_seen=games_seen,
+            rows_written=rows_written,
+            rows_planned=rows_planned,
+            parse_failures=failures,
+            sanity_violations=sanity_violations,
         )
