@@ -8,6 +8,8 @@ Description:
 Changelog:
     2026-05-08: Added file header to meet documentation standards
     2026-05-08: Suppressed C901 on _upsert_game — inherent sequential game record construction
+    2026-05-11: Skip ingest of games with no mainline moves (issue #18) to prevent
+                0-ply analysis pollution from abandoned/forfeit/glitched Chess.com PGNs.
 """
 from __future__ import annotations
 
@@ -107,15 +109,19 @@ class ChessComSyncService:
 
         return stats
 
-    def _upsert_game(self, session, player: Player, payload: dict) -> str:  # noqa: C901 — inherent: sequential game record construction with color detection, winner assignment, slug creation all operate on same mutable game object
-        """Insert or update a game record from Chess.com API payload. Returns 'inserted', 'updated', or None."""
-        game_id = payload.get("uuid") or self._stable_game_id(payload)
-        game = session.get(Game, game_id)
-        created = game is None
-        if created:
-            game = Game(id=game_id)
-            session.add(game)
+    @staticmethod
+    def _has_mainline_moves(pgn: str) -> bool:
+        """Return True if `pgn` parses and contains at least one mainline move."""
+        if not pgn or not pgn.strip():
+            return False
+        parsed = chess.pgn.read_game(io.StringIO(pgn))
+        if parsed is None:
+            return False
+        return any(True for _ in parsed.mainline_moves())
 
+    @staticmethod
+    def _resolve_perspective(payload: dict, player: Player) -> dict:
+        """Resolve which colour the synced player is and return both sides."""
         white = payload.get("white", {})
         black = payload.get("black", {})
         white_user = (white.get("username") or "").lower()
@@ -129,25 +135,47 @@ class ChessComSyncService:
             # Fallback for malformed usernames: keep deterministic perspective.
             is_white = True
 
-        my_side = white if is_white else black
-        opp_side = black if is_white else white
+        return {
+            "is_white": is_white,
+            "white": white,
+            "black": black,
+            "white_user": white_user,
+            "black_user": black_user,
+            "my_side": white if is_white else black,
+            "opp_side": black if is_white else white,
+        }
 
-        result = self._normalize_result(my_side.get("result", ""))
-        played_at = datetime.fromtimestamp(int(payload.get("end_time", 0)), tz=UTC)
-        result_pgn = payload.get("pgn", "")
+    @staticmethod
+    def _winner_from_header(result_header: str | None, white_user: str, black_user: str) -> str | None:
+        """Return the winning username for a normalized PGN Result header, else None."""
+        if result_header == "1-0":
+            return white_user or None
+        if result_header == "0-1":
+            return black_user or None
+        return None
+
+    @staticmethod
+    def _resolve_started_at(payload: dict, played_at: datetime) -> datetime:
+        """Use payload start_time when present, otherwise fall back to played_at."""
+        start_ts = payload.get("start_time")
+        if start_ts is None:
+            # Daily archives only — fall back to end_time so the column isn't NULL.
+            return played_at
+        return datetime.fromtimestamp(int(start_ts), tz=UTC)
+
+    def _populate_game_fields(self, game: Game, payload: dict, perspective: dict, result_pgn: str, played_at: datetime) -> None:
+        """Set all Chess.com-derived fields on `game` from `payload`."""
+        white = perspective["white"]
+        black = perspective["black"]
+        white_user = perspective["white_user"]
+        black_user = perspective["black_user"]
+
         result_header = self._result_from_pgn(result_pgn)
-
         opening_name, eco_code = self._opening_from_pgn(result_pgn)
 
         game.played_at = played_at
         game.time_control = payload.get("time_control", "")
-        # Time metadata for per-move analyses (issue #24).
-        start_ts = payload.get("start_time")
-        if start_ts is not None:
-            game.started_at_utc = datetime.fromtimestamp(int(start_ts), tz=UTC)
-        else:
-            # Daily archives only — fall back to end_time so the column isn't NULL.
-            game.started_at_utc = played_at
+        game.started_at_utc = self._resolve_started_at(payload, played_at)
         game.time_class = payload.get("time_class") or None
         base_s, inc_s = parse_time_control(game.time_control)
         game.time_control_base_s = base_s
@@ -157,30 +185,56 @@ class ChessComSyncService:
         game.white_rating = self._safe_int(white.get("rating"))
         game.black_rating = self._safe_int(black.get("rating"))
         game.result_pgn = result_header
-        if result_header == "1-0":
-            game.winner_username = white_user or None
-        elif result_header == "0-1":
-            game.winner_username = black_user or None
-        else:
-            game.winner_username = None
+        game.winner_username = self._winner_from_header(result_header, white_user, black_user)
         game.eco_code = eco_code
         game.opening_name = opening_name
         game.lichess_opening = self._lichess_opening_from_pgn(result_pgn)
         game.pgn = result_pgn
 
-        # Assign slug once on creation (not on updates, to keep URLs stable)
-        if created and game.slug is None:
-            game.slug = self._build_slug(session, white_user or "unknown", black_user or "unknown", played_at)
+    def _assign_slug_if_missing(self, session, game: Game, perspective: dict, played_at: datetime) -> None:
+        """Assign a unique URL slug to a newly-created Game once (keeps URLs stable on update)."""
+        if game.slug is not None:
+            return
+        white_user = perspective["white_user"] or "unknown"
+        black_user = perspective["black_user"] or "unknown"
+        game.slug = self._build_slug(session, white_user, black_user, played_at)
 
+    def _upsert_game(self, session, player: Player, payload: dict) -> str:
+        """Insert or update a game record from Chess.com API payload. Returns 'inserted', 'updated', or 'skipped'."""
+        # Issue #18: Chess.com occasionally returns games with empty or move-less PGN
+        # (abandoned games, forfeits, sync glitches). Ingesting them creates Game rows
+        # that get auto-enqueued for analysis and produce 0-ply, all-zero GameAnalysis
+        # results. Drop them at ingest time rather than flag-and-filter — forfeit /
+        # abandoned games carry no analyzable signal worth preserving here.
+        result_pgn = payload.get("pgn", "")
+        if not self._has_mainline_moves(result_pgn):
+            return "skipped"
+
+        game_id = payload.get("uuid") or self._stable_game_id(payload)
+        game = session.get(Game, game_id)
+        created = game is None
+        if created:
+            game = Game(id=game_id)
+            session.add(game)
+
+        perspective = self._resolve_perspective(payload, player)
+        played_at = datetime.fromtimestamp(int(payload.get("end_time", 0)), tz=UTC)
+        self._populate_game_fields(game, payload, perspective, result_pgn, played_at)
+
+        if created:
+            self._assign_slug_if_missing(session, game, perspective, played_at)
+
+        my_side = perspective["my_side"]
+        opp_side = perspective["opp_side"]
         self._upsert_participant(
             session=session,
             game_id=game_id,
             player=player,
-            color=("White" if is_white else "Black"),
+            color=("White" if perspective["is_white"] else "Black"),
             opponent_username=(opp_side.get("username") or "unknown").lower(),
             player_rating=self._safe_int(my_side.get("rating")),
             opponent_rating=self._safe_int(opp_side.get("rating")),
-            result=result,
+            result=self._normalize_result(my_side.get("result", "")),
         )
 
         return "inserted" if created else "updated"
