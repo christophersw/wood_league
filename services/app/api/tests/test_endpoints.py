@@ -7,6 +7,7 @@ Changelog:
     2026-05-06 (#15): Created endpoint integration tests
     2026-05-08: Added JobSubmitTests for POST /api/v1/jobs/<id>/submit/
     2026-05-10: Removed dispatch_mode kwargs from AnalysisJob.objects.create calls; removed tests for dispatch_mode-specific routing
+    2026-05-11 (#14): Added regression test ensuring complete_stockfish_job replaces existing MoveAnalysis rows via analysis FK
 """
 from django.test import TestCase
 from django.utils import timezone
@@ -304,6 +305,87 @@ class JobCompleteTests(TestCase):
         self.assertEqual(move.pv_san_1, '["e4", "e5", "Nf3"]')
         self.assertEqual(move.pv_san_2, '["d4", "d5"]')
         self.assertIsNone(move.pv_san_3)
+
+    def test_complete_stockfish_job_replaces_existing_move_analysis(self):
+        """Re-completing a job for a game with prior MoveAnalysis rows replaces them.
+
+        Regression test for issue #14: the move-replace path used to filter
+        MoveAnalysis on a non-existent ``game`` field, which raised FieldError
+        whenever a game already had analysis rows from a prior run.
+        """
+        existing_ga = GameAnalysis.objects.create(
+            game=self.game,
+            white_accuracy=10.0,
+            black_accuracy=10.0,
+            white_acpl=999.0,
+            black_acpl=999.0,
+            white_blunders=9,
+            white_mistakes=9,
+            white_inaccuracies=9,
+            black_blunders=9,
+            black_mistakes=9,
+            black_inaccuracies=9,
+            engine_depth=10,
+            analyzed_at=timezone.now(),
+        )
+        MoveAnalysis.objects.create(
+            analysis=existing_ga,
+            ply=1,
+            san='STALE',
+            fen='stale-fen',
+            cp_eval=0.0,
+            cpl=0.0,
+            best_move='',
+            classification='Best',
+        )
+
+        payload = {
+            'worker_id': 'my-worker',
+            'engine': 'stockfish',
+            'engine_depth': 20,
+            'white_accuracy': 95.5,
+            'black_accuracy': 87.2,
+            'white_acpl': 25.0,
+            'black_acpl': 35.5,
+            'white_blunders': 0,
+            'white_mistakes': 1,
+            'white_inaccuracies': 2,
+            'black_blunders': 1,
+            'black_mistakes': 2,
+            'black_inaccuracies': 3,
+            'moves': [
+                {
+                    'ply': 1,
+                    'san': 'e4',
+                    'fen': 'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1',
+                    'cp_eval': 35,
+                    'cpl': 0,
+                    'best_move': 'e4',
+                    'classification': 'Best',
+                    'arrow_uci': 'e2e4',
+                    'arrow_uci_2': '',
+                    'arrow_uci_3': '',
+                    'arrow_score_1': None,
+                    'arrow_score_2': None,
+                    'arrow_score_3': None,
+                    'pv_san_1': None,
+                    'pv_san_2': None,
+                    'pv_san_3': None,
+                },
+            ],
+        }
+
+        response = self.client.post(
+            f'/api/v1/jobs/{self.job.id}/complete/', payload, format='json'
+        )
+
+        self.assertEqual(response.status_code, 200)
+        analysis = GameAnalysis.objects.get(game=self.game)
+        moves = list(MoveAnalysis.objects.filter(analysis=analysis))
+        self.assertEqual(len(moves), 1)
+        self.assertEqual(moves[0].san, 'e4')
+        self.assertEqual(moves[0].fen, 'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1')
+        self.assertEqual(MoveAnalysis.objects.count(), 1)
 
     def test_complete_wrong_worker_returns_404(self):
         """Complete with wrong worker_id returns 404."""
