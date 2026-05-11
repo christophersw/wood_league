@@ -43,7 +43,7 @@ class JobSerializer(serializers.Serializer):
 
 
 class StockfishMoveSerializer(serializers.Serializer):
-    """Individual move analysis from Stockfish."""
+    """Individual move analysis from Stockfish, including MultiPV candidate data."""
 
     ply = serializers.IntegerField(min_value=1)
     san = serializers.CharField(max_length=10)
@@ -52,6 +52,15 @@ class StockfishMoveSerializer(serializers.Serializer):
     cpl = serializers.IntegerField(min_value=0)
     best_move = serializers.CharField(max_length=10)
     classification = serializers.ChoiceField(choices=CLASSIFICATION_CHOICES)
+    arrow_uci = serializers.CharField(max_length=8, allow_blank=True)
+    arrow_uci_2 = serializers.CharField(max_length=8, allow_blank=True)
+    arrow_uci_3 = serializers.CharField(max_length=8, allow_blank=True)
+    arrow_score_1 = serializers.FloatField(allow_null=True)
+    arrow_score_2 = serializers.FloatField(allow_null=True)
+    arrow_score_3 = serializers.FloatField(allow_null=True)
+    pv_san_1 = serializers.CharField(allow_null=True)
+    pv_san_2 = serializers.CharField(allow_null=True)
+    pv_san_3 = serializers.CharField(allow_null=True)
 
 
 class StockfishCompleteSerializer(serializers.Serializer):

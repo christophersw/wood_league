@@ -200,6 +200,15 @@ def complete_stockfish_job(
                 cpl=m['cpl'],
                 best_move=m['best_move'],
                 classification=m['classification'],
+                arrow_uci=m['arrow_uci'],
+                arrow_uci_2=m['arrow_uci_2'],
+                arrow_uci_3=m['arrow_uci_3'],
+                arrow_score_1=m['arrow_score_1'],
+                arrow_score_2=m['arrow_score_2'],
+                arrow_score_3=m['arrow_score_3'],
+                pv_san_1=m['pv_san_1'],
+                pv_san_2=m['pv_san_2'],
+                pv_san_3=m['pv_san_3'],
             )
             for m in payload['moves']
         ])
