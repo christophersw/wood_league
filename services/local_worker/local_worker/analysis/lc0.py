@@ -99,7 +99,7 @@ def _analyze_arrows(
             arrow_scores.append(_mover_win_pct_from_wdl(pv_wdl))
             pv_board = board.copy()
             pv_san_list: list[str] = []
-            for pv_move in pv[:5]:
+            for pv_move in pv[:10]:
                 try:
                     pv_san_list.append(pv_board.san(pv_move))
                     pv_board.push(pv_move)

@@ -23,6 +23,7 @@ Changelog:
 from __future__ import annotations
 
 import io
+import json
 import logging
 from typing import Callable, Optional
 
@@ -35,7 +36,110 @@ from .math import classify_stockfish_move, game_accuracy, move_accuracy, win_pct
 from .models import StockfishGameResult, StockfishMoveResult
 from .see import see_capture_or_sacrifice
 
+# Cap how many SAN plies are stored per PV continuation. Matches the lc0 path
+# (lc0.py::_extract_arrows_and_pvs) so the UI can render both engines uniformly.
+_PV_SAN_DEPTH = 10
+
 log = logging.getLogger(__name__)
+
+
+def _extract_arrows_and_pvs(
+    info_list: list,
+    board: chess.Board,
+    mover: chess.Color,
+) -> tuple[list[str], list[Optional[float]], list[Optional[str]]]:
+    """Extract MultiPV arrow UCIs, mover-frame Win% scores, and PV SAN lines.
+
+    Mirrors lc0._extract_arrows_and_pvs but converts each PV's cp evaluation
+    (White's frame) into mover Win% via white_cp -> mover_cp -> win_pct.
+
+    Args:
+        info_list: MultiPV result list from engine.analyse(..., multipv=N).
+        board: Position before the move (not mutated).
+        mover: Side to move.
+
+    Returns:
+        Tuple of (arrows, arrow_scores, pv_sans), each up to 3 entries. Missing
+        slots are "", None, None respectively.
+    """
+    arrows: list[str] = []
+    arrow_scores: list[Optional[float]] = []
+    pv_sans: list[Optional[str]] = []
+
+    for pv_info in info_list[:3]:
+        pv = pv_info.get("pv") or []
+        if not pv:
+            arrows.append("")
+            arrow_scores.append(None)
+            pv_sans.append(None)
+            continue
+
+        arrows.append(pv[0].uci())
+        pv_cp_white = white_cp(pv_info["score"])
+        arrow_scores.append(win_pct(mover_cp(pv_cp_white, mover)))
+
+        pv_board = board.copy()
+        pv_san_list: list[str] = []
+        for pv_move in pv[:_PV_SAN_DEPTH]:
+            try:
+                pv_san_list.append(pv_board.san(pv_move))
+                pv_board.push(pv_move)
+            except Exception:
+                break
+        pv_sans.append(json.dumps(pv_san_list) if pv_san_list else None)
+
+    return arrows, arrow_scores, pv_sans
+
+
+def _build_move_result(
+    *,
+    san: str,
+    fen_before: str,
+    cp_eval_after_white: int,
+    cpl: int,
+    best_move_san: str,
+    classification: str,
+    arrows: list[str],
+    arrow_scores: list[Optional[float]],
+    pv_sans: list[Optional[str]],
+) -> StockfishMoveResult:
+    """Assemble a StockfishMoveResult from base fields and MultiPV arrays.
+
+    Caller fills in ``ply`` afterwards. Empty MultiPV slots fall back to ""
+    (arrows) and None (scores / pv_sans) — matching Lc0MoveResult's contract.
+
+    Args:
+        san: SAN of the played move.
+        fen_before: FEN before the move was played.
+        cp_eval_after_white: cp evaluation in White's frame after the move.
+        cpl: Centipawn loss for the mover.
+        best_move_san: SAN of the top engine line's first move.
+        classification: Move quality label.
+        arrows: UCI strings for the top up-to-3 MultiPV candidate moves.
+        arrow_scores: Mover Win% for each PV line.
+        pv_sans: JSON-encoded SAN continuations for each PV line.
+
+    Returns:
+        StockfishMoveResult with ply=0 (caller sets the real ply_index).
+    """
+    return StockfishMoveResult(
+        ply=0,
+        san=san,
+        fen=fen_before,
+        cp_eval=cp_eval_after_white,
+        cpl=cpl,
+        best_move=best_move_san,
+        classification=classification,
+        arrow_uci=arrows[0] if len(arrows) > 0 else "",
+        arrow_uci_2=arrows[1] if len(arrows) > 1 else "",
+        arrow_uci_3=arrows[2] if len(arrows) > 2 else "",
+        arrow_score_1=arrow_scores[0] if len(arrow_scores) > 0 else None,
+        arrow_score_2=arrow_scores[1] if len(arrow_scores) > 1 else None,
+        arrow_score_3=arrow_scores[2] if len(arrow_scores) > 2 else None,
+        pv_san_1=pv_sans[0] if len(pv_sans) > 0 else None,
+        pv_san_2=pv_sans[1] if len(pv_sans) > 1 else None,
+        pv_san_3=pv_sans[2] if len(pv_sans) > 2 else None,
+    )
 
 
 def _analyze_one_move(
@@ -67,7 +171,7 @@ def _analyze_one_move(
     move_san = board.san(move)
     is_cap_or_sac = see_capture_or_sacrifice(board, move)
 
-    info_before = engine.analyse(board, limit, multipv=2)
+    info_before = engine.analyse(board, limit, multipv=3)
     eval_before_white = white_cp(info_before[0]["score"])
     mover_eval_before = mover_cp(eval_before_white, mover)
     mover_win_pct_before = win_pct(mover_eval_before)
@@ -75,6 +179,8 @@ def _analyze_one_move(
 
     best_pv = info_before[0].get("pv") or []
     best_move_san = board.san(best_pv[0]) if best_pv else ""
+
+    arrows, arrow_scores, pv_sans = _extract_arrows_and_pvs(info_before, board, mover)
 
     board.push(move)
     info_after = engine.analyse(board, limit)
@@ -92,14 +198,16 @@ def _analyze_one_move(
         is_capture_or_sacrifice=is_cap_or_sac,
     )
 
-    move_result = StockfishMoveResult(
-        ply=0,  # caller sets ply_index
+    move_result = _build_move_result(
         san=move_san,
-        fen=fen_before,
-        cp_eval=eval_after_white,
+        fen_before=fen_before,
+        cp_eval_after_white=eval_after_white,
         cpl=cpl,
-        best_move=best_move_san,
+        best_move_san=best_move_san,
         classification=classification,
+        arrows=arrows,
+        arrow_scores=arrow_scores,
+        pv_sans=pv_sans,
     )
     return move_result, move_acc, mover_win_pct_before, cpl, win_pct_after_white
 
@@ -264,6 +372,15 @@ def build_stockfish_payload(result: StockfishGameResult, *, worker_id: str) -> d
                 "cpl": m.cpl,
                 "best_move": m.best_move,
                 "classification": m.classification,
+                "arrow_uci": m.arrow_uci,
+                "arrow_uci_2": m.arrow_uci_2,
+                "arrow_uci_3": m.arrow_uci_3,
+                "arrow_score_1": m.arrow_score_1,
+                "arrow_score_2": m.arrow_score_2,
+                "arrow_score_3": m.arrow_score_3,
+                "pv_san_1": m.pv_san_1,
+                "pv_san_2": m.pv_san_2,
+                "pv_san_3": m.pv_san_3,
             }
             for m in result.moves
         ],

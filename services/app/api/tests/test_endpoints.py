@@ -245,9 +245,10 @@ class JobCompleteTests(TestCase):
         )
 
     def test_complete_stockfish_job_writes_results(self):
-        """Complete endpoint writes GameAnalysis and MoveAnalysis."""
+        """Complete endpoint writes GameAnalysis and MoveAnalysis with multi-PV fields."""
         payload = {
             'worker_id': 'my-worker',
+            'engine': 'stockfish',
             'engine_depth': 20,
             'white_accuracy': 95.5,
             'black_accuracy': 87.2,
@@ -268,26 +269,47 @@ class JobCompleteTests(TestCase):
                     'cpl': 0,
                     'best_move': 'e4',
                     'classification': 'Best',
+                    'arrow_uci': 'e2e4',
+                    'arrow_uci_2': 'd2d4',
+                    'arrow_uci_3': 'g1f3',
+                    'arrow_score_1': 55.1,
+                    'arrow_score_2': 54.8,
+                    'arrow_score_3': 53.0,
+                    'pv_san_1': '["e4", "e5", "Nf3"]',
+                    'pv_san_2': '["d4", "d5"]',
+                    'pv_san_3': None,
                 }
             ],
         }
-        
-        response = self.client.post(f'/api/v1/jobs/{self.job.id}/complete/', payload)
-        
+
+        response = self.client.post(
+            f'/api/v1/jobs/{self.job.id}/complete/', payload, format='json'
+        )
+
         self.assertEqual(response.status_code, 200)
         self.job.refresh_from_db()
         self.assertEqual(self.job.status, AnalysisJob.STATUS_COMPLETED)
-        
+
         analysis = GameAnalysis.objects.get(game=self.game)
         self.assertEqual(analysis.white_accuracy, 95.5)
-        
-        move = MoveAnalysis.objects.get(game=self.game)
+
+        move = MoveAnalysis.objects.get(analysis=analysis)
         self.assertEqual(move.ply, 1)
+        self.assertEqual(move.arrow_uci, 'e2e4')
+        self.assertEqual(move.arrow_uci_2, 'd2d4')
+        self.assertEqual(move.arrow_uci_3, 'g1f3')
+        self.assertAlmostEqual(move.arrow_score_1, 55.1, places=4)
+        self.assertAlmostEqual(move.arrow_score_2, 54.8, places=4)
+        self.assertAlmostEqual(move.arrow_score_3, 53.0, places=4)
+        self.assertEqual(move.pv_san_1, '["e4", "e5", "Nf3"]')
+        self.assertEqual(move.pv_san_2, '["d4", "d5"]')
+        self.assertIsNone(move.pv_san_3)
 
     def test_complete_wrong_worker_returns_404(self):
         """Complete with wrong worker_id returns 404."""
         response = self.client.post(f'/api/v1/jobs/{self.job.id}/complete/', {
             'worker_id': 'wrong-worker',
+            'engine': 'stockfish',
             'engine_depth': 20,
             'white_accuracy': 95.5,
             'black_accuracy': 87.2,
@@ -300,17 +322,18 @@ class JobCompleteTests(TestCase):
             'black_mistakes': 0,
             'black_inaccuracies': 0,
             'moves': [],
-        })
-        
+        }, format='json')
+
         self.assertEqual(response.status_code, 404)
 
     def test_complete_already_completed_returns_404(self):
         """Completing an already-completed job returns 404."""
         self.job.status = AnalysisJob.STATUS_COMPLETED
         self.job.save()
-        
+
         response = self.client.post(f'/api/v1/jobs/{self.job.id}/complete/', {
             'worker_id': 'my-worker',
+            'engine': 'stockfish',
             'engine_depth': 20,
             'white_accuracy': 95.5,
             'black_accuracy': 87.2,
@@ -323,8 +346,8 @@ class JobCompleteTests(TestCase):
             'black_mistakes': 0,
             'black_inaccuracies': 0,
             'moves': [],
-        })
-        
+        }, format='json')
+
         self.assertEqual(response.status_code, 404)
 
 
