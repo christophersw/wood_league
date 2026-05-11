@@ -3,11 +3,15 @@ Title: sync_games.py — Django management command for Chess.com game sync
 Description:
     Acquires a Postgres advisory lock (cron-overlap protection), runs the
     existing Chess.com sync subprocess (run_sync.py), then auto-enqueues
-    AnalysisJobs for newly-ingested games per SiteSettings toggles.
+    AnalysisJobs for newly-ingested games per SiteSettings toggles. After
+    the subprocess completes, parses %clk annotations and bulk-creates
+    GameMoveTime rows for all games with non-empty PGN and a known
+    time_class (idempotent; deletes and rewrites on re-ingest).
 
 Changelog:
     2026-05-08: Added file header to meet documentation standards
     2026-05-10: Add advisory lock + auto-enqueue + SystemEvent (Task D1).
+    2026-05-11: Post-sync GameMoveTime population (issue #24, Task 7).
 """
 from __future__ import annotations
 
@@ -24,7 +28,8 @@ from django.utils import timezone
 
 from analysis.services.enqueue import enqueue_analysis_job
 from core.models import SiteSettings
-from games.models import Game
+from games.clock_parser import parse_move_times
+from games.models import Game, GameMoveTime
 from ingest.models import SystemEvent
 from players.models import Player
 
@@ -77,6 +82,63 @@ def _lc0_nodes() -> int:
         int: Lc0 node budget from LC0_NODES setting (default 25000).
     """
     return int(getattr(settings, "LC0_NODES", 25000))
+
+
+def _populate_move_times_for_recent_games(*, since, stdout) -> int:
+    """Parse %clk annotations for any Game with non-empty PGN updated since `since`.
+
+    Returns the number of GameMoveTime rows written. Idempotent: existing
+    rows for each game are deleted and rewritten so re-ingest of a game
+    leaves the table consistent.
+
+    Args:
+        since: Optional datetime. If provided, only games created on or after
+            this timestamp are processed. Pass None to sweep all games.
+        stdout: A file-like object for progress/error output (e.g. self.stdout).
+
+    Returns:
+        int: Total number of GameMoveTime rows written across all games.
+
+    Side effects:
+        Deletes and re-creates GameMoveTime rows for each processed game.
+        Errors for individual games are written to `stdout` and skipped.
+    """
+    from django.db import transaction
+
+    written = 0
+    candidates = Game.objects.filter(
+        pgn__gt="",
+        time_class__isnull=False,
+    )
+    if since is not None:
+        candidates = candidates.filter(created_at__gte=since)
+
+    for game in candidates.iterator():
+        try:
+            move_times = parse_move_times(
+                game.pgn,
+                time_class=game.time_class,
+                time_control_base_s=game.time_control_base_s,
+                time_control_increment_s=game.time_control_increment_s,
+            )
+        except Exception as exc:  # noqa: BLE001 — clock parsing is best-effort
+            stdout.write(f"move-time parse failed for {game.id}: {exc}\n")
+            continue
+        if not move_times:
+            continue
+        with transaction.atomic():
+            GameMoveTime.objects.filter(game=game).delete()
+            GameMoveTime.objects.bulk_create([
+                GameMoveTime(
+                    game=game,
+                    ply=mt.ply,
+                    time_spent_ms=mt.time_spent_ms,
+                    clock_after_ms=mt.clock_after_ms,
+                )
+                for mt in move_times
+            ])
+            written += len(move_times)
+    return written
 
 
 class Command(BaseCommand):
@@ -143,6 +205,7 @@ class Command(BaseCommand):
 
         Side effects:
             Runs run_sync.py subprocess. Creates SystemEvent and AnalysisJob rows.
+            Bulk-creates GameMoveTime rows for games with %clk PGN annotations.
         """
         usernames = options["usernames"] or list(
             Player.objects.values_list("username", flat=True)
@@ -201,6 +264,15 @@ class Command(BaseCommand):
                     game=game, engine="lc0", depth=_lc0_nodes()
                 ):
                     lc_count += 1
+
+        # Issue #24: populate per-move clock data for games written by the
+        # subprocess. We pass `since=None` for now (full sweep is cheap and
+        # idempotent); the backfill command handles bulk historic loads.
+        try:
+            written = _populate_move_times_for_recent_games(since=None, stdout=self.stdout)
+            self.stdout.write(f"move-time rows written: {written}\n")
+        except Exception as exc:  # noqa: BLE001
+            self.stdout.write(f"move-time post-step failed: {exc}\n")
 
         SystemEvent.objects.create(
             event_type="game_sync",
