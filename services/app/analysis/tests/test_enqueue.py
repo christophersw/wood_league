@@ -10,6 +10,7 @@ Changelog:
 import uuid
 
 import pytest
+from django.db import IntegrityError
 from django.utils import timezone
 
 from analysis.models import AnalysisJob
@@ -80,3 +81,66 @@ def test_completed_lower_depth_creates():
     job = enqueue_analysis_job(game=game, engine="stockfish", depth=20)
     assert job is not None
     assert job.status == AnalysisJob.STATUS_PENDING
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("second_status", [
+    AnalysisJob.STATUS_PENDING,
+    AnalysisJob.STATUS_RUNNING,
+    AnalysisJob.STATUS_SUBMITTED,
+])
+def test_partial_unique_blocks_second_active(second_status):
+    """DB-level: a second active job for the same (game, engine) must be rejected.
+
+    Args:
+        second_status: Active status for the second insert — parametrized over
+            pending/running/submitted.
+    """
+    game = _make_game()
+    AnalysisJob.objects.create(
+        game=game, engine="stockfish",
+        status=AnalysisJob.STATUS_PENDING, depth=20,
+    )
+    with pytest.raises(IntegrityError):
+        AnalysisJob.objects.create(
+            game=game, engine="stockfish",
+            status=second_status, depth=20,
+        )
+
+
+@pytest.mark.django_db
+def test_partial_unique_allows_completed_plus_active():
+    """DB-level: completed + active for the same (game, engine) is allowed.
+
+    Only active statuses fall under the partial unique index, so a completed
+    job must not block a new pending job.
+    """
+    game = _make_game()
+    AnalysisJob.objects.create(
+        game=game, engine="stockfish",
+        status=AnalysisJob.STATUS_COMPLETED, depth=20,
+    )
+    # Should not raise.
+    AnalysisJob.objects.create(
+        game=game, engine="stockfish",
+        status=AnalysisJob.STATUS_PENDING, depth=25,
+    )
+
+
+@pytest.mark.django_db
+def test_partial_unique_allows_two_completed():
+    """DB-level: two completed jobs for the same (game, engine) are allowed.
+
+    Completed jobs are outside the partial unique index, so re-analysis
+    history can accumulate.
+    """
+    game = _make_game()
+    AnalysisJob.objects.create(
+        game=game, engine="stockfish",
+        status=AnalysisJob.STATUS_COMPLETED, depth=20,
+    )
+    # Should not raise.
+    AnalysisJob.objects.create(
+        game=game, engine="stockfish",
+        status=AnalysisJob.STATUS_COMPLETED, depth=25,
+    )
