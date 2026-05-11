@@ -49,6 +49,25 @@ class Settings:
         return bool(self.api_url and self.api_key)
 
 
+def normalize_api_url(url: str) -> str:
+    """Return the api_url with a scheme, defaulting to https:// when missing.
+
+    Args:
+        url: A possibly schemeless URL like "example.com" or "host:8000".
+
+    Returns:
+        The same URL with a leading "https://" if no scheme was present. An
+        empty string is returned unchanged so is_configured() still reports
+        False for unconfigured installs.
+    """
+    stripped = url.strip()
+    if not stripped:
+        return ""
+    if "://" in stripped:
+        return stripped
+    return f"https://{stripped}"
+
+
 def load_settings(path: Optional[Path] = None) -> Settings:
     """Load settings from disk, returning defaults if the file does not exist.
 
@@ -64,7 +83,9 @@ def load_settings(path: Optional[Path] = None) -> Settings:
     raw = json.loads(cfg_path.read_text(encoding="utf-8"))
     known = {f.name for f in Settings.__dataclass_fields__.values()}
     filtered = {k: v for k, v in raw.items() if k in known}
-    return Settings(**filtered)
+    settings = Settings(**filtered)
+    settings.api_url = normalize_api_url(settings.api_url)
+    return settings
 
 
 def save_settings(settings: Settings, path: Optional[Path] = None) -> None:

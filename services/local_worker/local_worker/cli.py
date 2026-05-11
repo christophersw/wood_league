@@ -25,7 +25,9 @@ from rich.console import Console
 from rich.progress import BarColumn, DownloadColumn, Progress, TextColumn, TransferSpeedColumn
 from rich.table import Table
 
-from local_worker.config import Settings, load_settings, save_settings
+from importlib.metadata import PackageNotFoundError, version as _pkg_version
+
+from local_worker.config import Settings, load_settings, normalize_api_url, save_settings
 from local_worker.detector import (
     detect_hardware,
     detect_lc0_backend,
@@ -300,7 +302,7 @@ def setup() -> None:
     threads, hash_mb, sf_depth, lc0_nodes = _prompt_engine_settings(sf_settings, settings)
 
     new_settings = Settings(
-        api_url=api_url.rstrip("/"),
+        api_url=normalize_api_url(api_url.rstrip("/")),
         api_key=api_key,
         stockfish_path=sf_path,
         lc0_path=lc0_path,
@@ -387,6 +389,7 @@ def run(
     stop_event = threading.Event()
 
     stats = WorkerStats()
+    result_stats: Optional[WorkerStats] = None
 
     try:
         with worker_display(stats) as display:
@@ -399,9 +402,15 @@ def run(
                 display.advance_move(ply, total)
 
             def on_job_done(job, success, elapsed):
+                # Mirror run_batch's internal accounting onto the display-bound
+                # stats so the live UI reflects progress as it happens.
+                if success:
+                    stats.record_game(job.engine, elapsed)
+                else:
+                    stats.errors += 1
                 display.job_done()
 
-            run_batch(
+            result_stats = run_batch(
                 settings=settings,
                 engines=engines,
                 batch_size=batch_size,
@@ -414,11 +423,12 @@ def run(
     except KeyboardInterrupt:
         stop_event.set()
 
+    final = result_stats or stats
     console.rule("[bold green]Session complete")
-    console.print(f"Games processed: [cyan]{stats.games_processed}")
-    console.print(f"Stockfish: {stats.stockfish_count}  Lc0: {stats.lc0_count}")
-    console.print(f"Avg time/game: {stats.avg_seconds_per_game():.1f}s")
-    console.print(f"Errors: {stats.errors}")
+    console.print(f"Games processed: [cyan]{final.games_processed}")
+    console.print(f"Stockfish: {final.stockfish_count}  Lc0: {final.lc0_count}")
+    console.print(f"Avg time/game: {final.avg_seconds_per_game():.1f}s")
+    console.print(f"Errors: {final.errors}")
 
 
 @app.command()
@@ -454,6 +464,15 @@ def analyze(
         )
     else:
         console.print(f"[green]Done! Analysed in {result.total_seconds:.1f}s")
+
+
+@app.command()
+def version() -> None:
+    """Print the installed wood-league-worker version."""
+    try:
+        console.print(_pkg_version("wood-league-worker"))
+    except PackageNotFoundError:
+        console.print("[yellow]wood-league-worker is not installed as a distribution (running from source).")
 
 
 @app.command()
