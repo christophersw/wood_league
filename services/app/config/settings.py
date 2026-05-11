@@ -234,6 +234,10 @@ if not DEBUG:
     CSRF_COOKIE_SECURE = True
     SESSION_COOKIE_SECURE = True
     SECURE_SSL_REDIRECT = True
+    # Trust Railway's edge proxy SSL termination. Without this, Django sees
+    # the inbound HTTP from the proxy and SECURE_SSL_REDIRECT kicks in,
+    # creating an infinite redirect loop with the edge.
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
     # Exempt the Railway deploy healthcheck from HTTPS redirect — Railway
     # checks via internal HTTP and a 302 fails the deploy.
     SECURE_REDIRECT_EXEMPT = [r"^healthz/$"]
