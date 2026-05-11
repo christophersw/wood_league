@@ -125,8 +125,9 @@ def _parse_daily(matches: list[re.Match]) -> list[MoveTime]:
         dots = m.group("dots")
         is_black = len(dots) == 3
         ply = move_no * 2 - (0 if is_black else 1)
-        clk_seconds_decisecond_units = _clk_to_ms(m.group("clk")) / 1000.0
-        time_spent_ms = int(clk_seconds_decisecond_units * 10 * 1000)
+        # chess.com encodes daily delays in deciseconds but renders them as
+        # seconds; the rendered ms value × 10 = real inter-move delay ms.
+        time_spent_ms = int(_clk_to_ms(m.group("clk")) * 10)
         out.append(MoveTime(ply=ply, time_spent_ms=time_spent_ms, clock_after_ms=None))
     return out
 
