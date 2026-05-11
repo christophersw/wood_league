@@ -36,6 +36,7 @@ from local_worker.detector import (
     suggest_stockfish_settings,
 )
 from local_worker.display import worker_display
+from local_worker.game_meta import parse_game_meta
 from local_worker.logging_setup import configure_logging
 from local_worker.loop import WorkerStats, run_batch
 
@@ -396,7 +397,15 @@ def run(
 
             def on_job_start(job):
                 total_moves = len(job.pgn.split("\n")) * 2  # rough estimate
-                display.set_job(job.game_id, job.engine, total_moves)
+                meta = parse_game_meta(job.pgn)
+                display.set_job(
+                    job.game_id,
+                    job.engine,
+                    total_moves,
+                    matchup=meta.matchup,
+                    date=meta.date,
+                    event=meta.event,
+                )
 
             def on_progress(ply, total, san="", fen=""):
                 display.advance_move(ply, total, san=san, fen=fen)

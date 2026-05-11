@@ -37,16 +37,19 @@ _INITIAL_FEN = chess.STARTING_FEN
 console = Console()
 
 
-def _make_stats_panel(stats: WorkerStats, engine: str, job_desc: str) -> Panel:
+def _make_stats_panel(
+    stats: WorkerStats,
+    engine: str,
+    job_desc: str,
+    *,
+    matchup: str = "",
+    date: str = "",
+    event: str = "",
+) -> Panel:
     """Build a Rich Panel showing current session statistics.
 
-    Args:
-        stats: Current WorkerStats.
-        engine: Currently active engine name.
-        job_desc: Short description of the current job.
-
-    Returns:
-        A Rich Panel renderable.
+    Matchup/date/event rows are suppressed when empty so games without those
+    PGN tags don't leave dangling labels.
     """
     table = Table.grid(padding=(0, 2))
     table.add_column(style="bold cyan", justify="right")
@@ -59,6 +62,12 @@ def _make_stats_panel(stats: WorkerStats, engine: str, job_desc: str) -> Panel:
     table.add_row("Errors", str(stats.errors))
     table.add_row("Active engine", engine)
     table.add_row("Current job", job_desc)
+    if matchup:
+        table.add_row("Matchup", matchup)
+    if date:
+        table.add_row("Date", date)
+    if event:
+        table.add_row("Event", event)
 
     return Panel(table, title="[bold green]Session Stats", border_style="green")
 
@@ -133,8 +142,20 @@ class DisplayHandle:
         self._current_total_plies = 0
         self._current_fen = _INITIAL_FEN
         self._batch_total = 0
+        self._current_matchup = ""
+        self._current_date = ""
+        self._current_event = ""
 
-    def set_job(self, game_id: str, engine: str, total_moves: int) -> None:
+    def set_job(
+        self,
+        game_id: str,
+        engine: str,
+        total_moves: int,
+        *,
+        matchup: str = "",
+        date: str = "",
+        event: str = "",
+    ) -> None:
         """Signal that a new job has started.
 
         Args:
@@ -142,6 +163,9 @@ class DisplayHandle:
             engine: Engine being used ('stockfish' or 'lc0').
             total_moves: Total plies in the game (rough estimate; refined by
                 advance_move once the engine reports the real ply count).
+            matchup: Optional "White vs. Black" string parsed from the PGN.
+            date: Optional game date (YYYY-MM-DD) parsed from the PGN.
+            event: Optional event/tournament name parsed from the PGN.
         """
         self._current_engine = engine
         self._current_job = game_id
@@ -149,6 +173,9 @@ class DisplayHandle:
         self._current_ply = 0
         self._current_total_plies = total_moves
         self._current_fen = _INITIAL_FEN
+        self._current_matchup = matchup
+        self._current_date = date
+        self._current_event = event
         self._move_progress.update(
             self._move_task,
             description=f"[{engine}] {game_id} — waiting for first move…",
@@ -236,7 +263,14 @@ class DisplayHandle:
         return Panel(body, title=title, border_style="magenta", expand=False)
 
     def _render(self):
-        stats_panel = _make_stats_panel(self.stats, self._current_engine, self._current_job)
+        stats_panel = _make_stats_panel(
+            self.stats,
+            self._current_engine,
+            self._current_job,
+            matchup=self._current_matchup,
+            date=self._current_date,
+            event=self._current_event,
+        )
         progress_panel = Panel(
             Columns([self._batch_progress, self._move_progress], equal=False, expand=True),
             title="Progress",
