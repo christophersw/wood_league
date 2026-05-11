@@ -14,6 +14,7 @@ Changelog:
 from __future__ import annotations
 
 import json
+from datetime import timezone as datetime_timezone
 
 from django.core.management.base import BaseCommand
 from django.db import transaction
@@ -26,6 +27,22 @@ from ingest.models import SystemEvent
 
 
 _BATCH_SIZE = 500
+
+
+def _as_aware_utc(dt):
+    """Coerce a datetime to tz-aware UTC.
+
+    The SQLAlchemy ingest path writes `played_at` to a `timestamp without
+    time zone` column, so Django reads it back naive even though
+    sync_service constructs it tz-aware. `started_at_utc` was added later
+    via the Django ORM and is aware. Subtracting them raises TypeError;
+    normalising both to aware-UTC before subtraction is safe.
+    """
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=datetime_timezone.utc)
+    return dt
 
 
 def _run_sanity_checks() -> list[str]:
@@ -49,7 +66,9 @@ def _run_sanity_checks() -> list[str]:
         total_ms = GameMoveTime.objects.filter(game=game).aggregate(
             total=Sum("time_spent_ms")
         )["total"] or 0
-        wall_clock_ms = int((game.played_at - game.started_at_utc).total_seconds() * 1000)
+        played_at = _as_aware_utc(game.played_at)
+        started_at = _as_aware_utc(game.started_at_utc)
+        wall_clock_ms = int((played_at - started_at).total_seconds() * 1000)
         if total_ms > wall_clock_ms:
             violations.append(
                 f"daily game {game.id}: sum(time_spent_ms)={total_ms} > "
