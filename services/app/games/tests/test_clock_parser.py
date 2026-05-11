@@ -77,3 +77,57 @@ def test_live_clock_anomaly_clamps_to_zero():
         time_control_base_s=180, time_control_increment_s=0,
     )
     assert result[0].time_spent_ms == 0
+
+
+# Real PGN fragment from chess.com API (game 948193485, daily 1/604800).
+# Each API %clk value × 10 gives the actual inter-move delay in seconds.
+_DAILY_API_PGN = """[Event "Let's Play!"]
+[TimeControl "1/604800"]
+
+1. e4 {[%clk 0:00:00.5]} 1... c6 {[%clk 0:30:05.2]} 2. d4 {[%clk 0:05:21.7]} 1-0
+"""
+
+
+def test_daily_clk_treated_as_deciseconds_scaled():
+    """In the API daily PGN, %clk seconds × 10 = real inter-move delay seconds.
+
+    Move 1 e4: %clk 0:00:00.5 = 0.5s api -> 5000ms real spent.
+    Move 2 c6: %clk 0:30:05.2 = 1805.2s api -> 18,052,000ms real spent.
+    Move 3 d4: %clk 0:05:21.7 = 321.7s api -> 3,217,000ms real spent.
+    """
+    result = parse_move_times(_DAILY_API_PGN, time_class="daily")
+    assert len(result) == 3
+    assert result[0] == MoveTime(ply=1, time_spent_ms=5_000, clock_after_ms=None)
+    assert result[1] == MoveTime(ply=2, time_spent_ms=18_052_000, clock_after_ms=None)
+    assert result[2] == MoveTime(ply=3, time_spent_ms=3_217_000, clock_after_ms=None)
+
+
+def test_empty_pgn_returns_empty_list():
+    assert parse_move_times("", time_class="blitz", time_control_base_s=180) == []
+
+
+def test_pgn_without_clk_returns_empty_list():
+    """Pre-2020 daily games carry no %clk annotations; caller handles game-level only."""
+    old_pgn = """[Event "Old Game"]
+[TimeControl "1/86400"]
+
+1. e4 e5 2. Nf3 Nc6 1-0
+"""
+    assert parse_move_times(old_pgn, time_class="daily") == []
+
+
+def test_live_missing_base_treats_as_zero():
+    """Defensive: if base is missing (unparseable time_control), every spent_ms is 0.
+
+    Not ideal but doesn't crash. The parser is best-effort; the caller decides
+    whether to suppress writes for these rows.
+    """
+    pgn = """[Event "?"]
+[TimeControl "?"]
+
+1. e4 {[%clk 0:03:00]} 1-0
+"""
+    # base_s defaults to None -> 0; current clk 180_000 -> spent (0+0)-180_000 = -180_000 -> clamped 0
+    result = parse_move_times(pgn, time_class="blitz")
+    assert result[0].time_spent_ms == 0
+    assert result[0].clock_after_ms == 180_000
