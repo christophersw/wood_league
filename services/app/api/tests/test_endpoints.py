@@ -248,6 +248,7 @@ class JobCompleteTests(TestCase):
         """Complete endpoint writes GameAnalysis and MoveAnalysis with multi-PV fields."""
         payload = {
             'worker_id': 'my-worker',
+            'engine': 'stockfish',
             'engine_depth': 20,
             'white_accuracy': 95.5,
             'black_accuracy': 87.2,
@@ -281,7 +282,9 @@ class JobCompleteTests(TestCase):
             ],
         }
 
-        response = self.client.post(f'/api/v1/jobs/{self.job.id}/complete/', payload)
+        response = self.client.post(
+            f'/api/v1/jobs/{self.job.id}/complete/', payload, format='json'
+        )
 
         self.assertEqual(response.status_code, 200)
         self.job.refresh_from_db()
@@ -306,6 +309,7 @@ class JobCompleteTests(TestCase):
         """Complete with wrong worker_id returns 404."""
         response = self.client.post(f'/api/v1/jobs/{self.job.id}/complete/', {
             'worker_id': 'wrong-worker',
+            'engine': 'stockfish',
             'engine_depth': 20,
             'white_accuracy': 95.5,
             'black_accuracy': 87.2,
@@ -318,17 +322,18 @@ class JobCompleteTests(TestCase):
             'black_mistakes': 0,
             'black_inaccuracies': 0,
             'moves': [],
-        })
-        
+        }, format='json')
+
         self.assertEqual(response.status_code, 404)
 
     def test_complete_already_completed_returns_404(self):
         """Completing an already-completed job returns 404."""
         self.job.status = AnalysisJob.STATUS_COMPLETED
         self.job.save()
-        
+
         response = self.client.post(f'/api/v1/jobs/{self.job.id}/complete/', {
             'worker_id': 'my-worker',
+            'engine': 'stockfish',
             'engine_depth': 20,
             'white_accuracy': 95.5,
             'black_accuracy': 87.2,
@@ -341,8 +346,8 @@ class JobCompleteTests(TestCase):
             'black_mistakes': 0,
             'black_inaccuracies': 0,
             'moves': [],
-        })
-        
+        }, format='json')
+
         self.assertEqual(response.status_code, 404)
 
 
