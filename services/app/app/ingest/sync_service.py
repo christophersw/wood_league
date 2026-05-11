@@ -23,6 +23,7 @@ from sqlalchemy import select
 
 from app.config import get_settings
 from app.ingest.chesscom_client import ChessComClient
+from games.time_control_parser import parse_time_control
 from app.storage.database import get_session, init_db
 from app.storage.models import Game, GameParticipant, Player
 
@@ -140,6 +141,17 @@ class ChessComSyncService:
 
         game.played_at = played_at
         game.time_control = payload.get("time_control", "")
+        # Time metadata for per-move analyses (issue #24).
+        start_ts = payload.get("start_time")
+        if start_ts is not None:
+            game.started_at_utc = datetime.fromtimestamp(int(start_ts), tz=UTC)
+        else:
+            # Daily archives only — fall back to end_time so the column isn't NULL.
+            game.started_at_utc = played_at
+        game.time_class = payload.get("time_class") or None
+        base_s, inc_s = parse_time_control(game.time_control)
+        game.time_control_base_s = base_s
+        game.time_control_increment_s = inc_s
         game.white_username = white_user or None
         game.black_username = black_user or None
         game.white_rating = self._safe_int(white.get("rating"))
