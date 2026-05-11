@@ -84,6 +84,7 @@ class SyncGamesCommandTests(TestCase):
         captured = {}
 
         def fake_run(*args, **kwargs):
+            captured["args"] = args[0] if args else kwargs.get("args")
             captured["env"] = kwargs.get("env", {})
             return MagicMock(returncode=0)
 
@@ -97,6 +98,36 @@ class SyncGamesCommandTests(TestCase):
         assert "PYTHONPATH" in env, "subprocess must receive PYTHONPATH"
         # Path must end at services/app (the parent of the `app` package)
         assert env["PYTHONPATH"].endswith("/services/app"), env["PYTHONPATH"]
+
+    def test_subprocess_passes_usernames_via_flag(self):
+        """run_sync.py expects `--usernames=a,b,c`, not positional args."""
+        s1 = f"alice-{uuid.uuid4().hex[:6]}"
+        s2 = f"bob-{uuid.uuid4().hex[:6]}"
+        _make_player(s1)
+        _make_player(s2)
+        captured = {}
+
+        def fake_run(*args, **kwargs):
+            captured["args"] = args[0] if args else kwargs.get("args")
+            return MagicMock(returncode=0)
+
+        with patch(
+            "ingest.management.commands.sync_games.subprocess.run",
+            side_effect=fake_run,
+        ):
+            call_command("sync_games", stdout=StringIO())
+
+        cmd_args = captured["args"]
+        # Must contain "--usernames" with comma-joined value
+        assert "--usernames" in cmd_args, cmd_args
+        flag_idx = cmd_args.index("--usernames")
+        value = cmd_args[flag_idx + 1]
+        assert s1 in value and s2 in value, value
+        assert "," in value, value
+        # And no bare positional usernames trailing the script path
+        # (the value after --usernames is its argument, not a positional)
+        assert s1 not in cmd_args[: flag_idx + 1], cmd_args
+        assert s2 not in cmd_args[: flag_idx + 1], cmd_args
 
     def test_held_advisory_lock_skips_sync(self):
         """If pg_try_advisory_lock returns false, the subprocess is not invoked."""

@@ -162,7 +162,9 @@ class Command(BaseCommand):
         )
 
         sync_start = time.time()
-        cmd = [sys.executable, str(_SCRIPT)] + usernames
+        # run_sync.py accepts `--usernames=a,b,c` (single comma-joined flag),
+        # NOT positional args. Always pass via the flag.
+        cmd = [sys.executable, str(_SCRIPT), "--usernames", ",".join(usernames)]
         if options["days"]:
             cmd += ["--days", str(options["days"])]
         # run_sync.py uses `from app.config import get_settings`, so the
