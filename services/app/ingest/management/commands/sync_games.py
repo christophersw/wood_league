@@ -11,6 +11,7 @@ Changelog:
 """
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import time
@@ -164,7 +165,10 @@ class Command(BaseCommand):
         cmd = [sys.executable, str(_SCRIPT)] + usernames
         if options["days"]:
             cmd += ["--days", str(options["days"])]
-        result = subprocess.run(cmd, capture_output=False)  # noqa: S603
+        # run_sync.py uses `from app.config import get_settings`, so the
+        # parent of the `app` package (services/app/) must be on PYTHONPATH.
+        sync_env = {**os.environ, "PYTHONPATH": str(_SCRIPT.parents[2])}
+        result = subprocess.run(cmd, capture_output=False, env=sync_env)  # noqa: S603
 
         elapsed = time.time() - sync_start
 

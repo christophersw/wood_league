@@ -77,6 +77,27 @@ class SyncGamesCommandTests(TestCase):
         )
         self.assertEqual(new_lc0.count(), 0)
 
+    def test_subprocess_runs_with_pythonpath_set(self):
+        """run_sync.py imports `from app.config import ...` and needs services/app on PYTHONPATH."""
+        suffix = uuid.uuid4().hex[:8]
+        _make_player(f"alice-{suffix}")
+        captured = {}
+
+        def fake_run(*args, **kwargs):
+            captured["env"] = kwargs.get("env", {})
+            return MagicMock(returncode=0)
+
+        with patch(
+            "ingest.management.commands.sync_games.subprocess.run",
+            side_effect=fake_run,
+        ):
+            call_command("sync_games", f"alice-{suffix}", stdout=StringIO())
+
+        env = captured["env"]
+        assert "PYTHONPATH" in env, "subprocess must receive PYTHONPATH"
+        # Path must end at services/app (the parent of the `app` package)
+        assert env["PYTHONPATH"].endswith("/services/app"), env["PYTHONPATH"]
+
     def test_held_advisory_lock_skips_sync(self):
         """If pg_try_advisory_lock returns false, the subprocess is not invoked."""
         with patch(
