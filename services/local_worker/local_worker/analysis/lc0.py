@@ -214,7 +214,9 @@ def _analyze_one_move(
     move_san = board.san(move)
     is_cap_or_sac = see_capture_or_sacrifice(board, move)
 
+    log.debug("lc0: analyse() multipv=3 starting")
     info_before_list = engine.analyse(board, limit, multipv=3)
+    log.debug("lc0: analyse() multipv=3 returned")
     wdl_before = info_before_list[0]["score"].pov(mover).wdl()
     mover_win_pct_before = _mover_win_pct_from_wdl(wdl_before)
 
@@ -294,7 +296,10 @@ def analyze_pgn(
     total_plies = len(moves_list)
     network_name = ""
 
+    log.info("lc0: launching engine at %s", lc0_path)
     engine = chess.engine.SimpleEngine.popen_uci(lc0_path)
+    log.info("lc0: engine launched; configuring backend=%s weights=%s syzygy=%s",
+             backend or "(default)", weights_path or "(default)", syzygy_path or "(none)")
     try:
         opts: dict[str, str] = {}
         if backend:
@@ -305,6 +310,7 @@ def analyze_pgn(
             opts["SyzygyPath"] = syzygy_path
         if opts:
             engine.configure(opts)
+            log.info("lc0: configure complete")
 
         try:
             engine_id_name = engine.id.get("name", "")
@@ -325,8 +331,10 @@ def analyze_pgn(
             "black": {"Blunder": 0, "Mistake": 0, "Inaccuracy": 0},
         }
         limit = chess.engine.Limit(nodes=nodes)
+        log.info("lc0: entering move loop — %d plies, %d nodes/move", total_plies, nodes)
 
         for ply_index, move in enumerate(moves_list, start=1):
+            log.info("lc0: analysing ply %d/%d", ply_index, total_plies)
             move_result, mover, wdl_white = _analyze_one_move(
                 board, move, ply_index, engine, limit
             )

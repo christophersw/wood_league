@@ -475,6 +475,50 @@ def analyze(
 
 
 @app.command()
+def logs(
+    follow: bool = typer.Option(
+        False, "--follow", "-f", help="Stream new log lines as they're written."
+    ),
+    tail: int = typer.Option(
+        50, "--tail", "-n", help="How many recent lines to print before following."
+    ),
+) -> None:
+    """Show worker log output.
+
+    With no flags, prints the log file path and the last `--tail` lines.
+    With `--follow`, streams new lines as the worker writes them (useful in
+    a second terminal while `run` is going).
+    """
+    import platformdirs
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    log_path = Path(platformdirs.user_log_dir("wood-league-worker", "WoodLeague")) / "worker.log"
+    console.print(f"[cyan]Log file:[/] {log_path}")
+    if not log_path.exists():
+        console.print("[yellow]Log file does not exist yet — run the worker first.")
+        return
+
+    if follow:
+        try:
+            subprocess.run(["tail", "-n", str(tail), "-f", str(log_path)], check=False)  # noqa: S603, S607
+        except KeyboardInterrupt:
+            pass
+        return
+
+    try:
+        # Read just the tail to avoid loading huge files into memory.
+        result = subprocess.run(  # noqa: S603, S607
+            ["tail", "-n", str(tail), str(log_path)],
+            capture_output=True, text=True, check=False,
+        )
+        sys.stdout.write(result.stdout)
+    except Exception as exc:
+        console.print(f"[red]Could not read log: {exc}")
+
+
+@app.command()
 def version() -> None:
     """Print the installed wood-league-worker version."""
     try:
