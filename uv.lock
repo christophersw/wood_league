@@ -2283,7 +2283,7 @@ requires-dist = [
 
 [[package]]
 name = "wood-league-worker"
-version = "0.1.0"
+version = "0.3.1"
 source = { editable = "services/local_worker" }
 dependencies = [
     { name = "httpx" },

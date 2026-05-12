@@ -60,7 +60,7 @@ Prompts for:
 - Stockfish path (auto-detected if on PATH)
 - Lc0 path (auto-detected if on PATH)
 - Lc0 network weights — offers to download **BT4-it332** (~200 MB) from `storage.lczero.org` if not already present (this is the same network used by the RunPod worker)
-- Syzygy tablebases — offers to download 3-4-5 piece WDL files (~150 MB total) from `tablebase.lichess.ovh` if not configured
+- Syzygy tablebases — offers to download 3-4-5 piece WDL + DTZ files (~290 MB total) from `tablebase.lichess.ovh` if not configured
 - Stockfish thread count, hash memory, and search depth
 - Lc0 nodes per move
 
@@ -140,7 +140,7 @@ Settings are stored as JSON. All fields can also be set by re-running `setup`. T
 | `stockfish_path` | `""` | Full path to the Stockfish binary |
 | `lc0_path` | `""` | Full path to the Lc0 (`lc0`) binary |
 | `lc0_weights_path` | `""` | Path to the Lc0 network weights file (`.pb.gz`). `setup` offers to download BT4-it332 automatically. |
-| `syzygy_path` | `""` | Path to Syzygy endgame tablebases directory. `setup` offers to download 3-4-5 piece WDL files automatically. |
+| `syzygy_path` | `""` | Path to Syzygy endgame tablebases directory. `setup` offers to download 3-4-5 piece WDL + DTZ files automatically. |
 | `lc0_backend` | `""` | Lc0 backend override (e.g. `cuda`, `opencl`, `cpu`). Auto-detected during setup. |
 | `default_engines` | `["stockfish"]` | Engines to suggest when running interactively |
 | `default_batch_size` | `5` | Default jobs per checkout |

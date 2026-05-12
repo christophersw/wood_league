@@ -1,0 +1,87 @@
+<h2>How should controls stay visible on long pending tables?</h2>
+<p class="subtitle">Hundreds of rows. Admin needs bulk-select, submit, send-to-top/bottom always reachable.</p>
+
+<div class="cards">
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">A — Sticky top toolbar</div>
+        <div class="mockup-body">
+          <div style="position:sticky;top:0;background:#1a2332;padding:8px;border-bottom:2px solid #3b82f6;display:flex;gap:8px;align-items:center;font-size:11px">
+            <input type="checkbox" checked> <span>12 selected</span>
+            <button class="mock-button" style="font-size:10px;padding:2px 8px">Submit to RunPod</button>
+            <button class="mock-button" style="font-size:10px;padding:2px 8px">↑ Top</button>
+            <button class="mock-button" style="font-size:10px;padding:2px 8px">↓ Bottom</button>
+          </div>
+          <div style="font-size:10px;line-height:1.4;padding:4px">
+            <div style="background:#2a3a4a;padding:2px">☑ game-abc · played 2026-05-10</div>
+            <div style="padding:2px">☐ game-def · played 2026-05-09</div>
+            <div style="padding:2px">☐ game-ghi · played 2026-05-09</div>
+            <div style="padding:2px;color:#666">…200 more rows scroll under toolbar…</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A — Sticky top toolbar</h3>
+      <p>Toolbar pinned at top. Bulk actions + selection count always visible while scrolling. Table header also sticky underneath.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">B — Bottom action bar (appears on select)</div>
+        <div class="mockup-body">
+          <div style="font-size:10px;line-height:1.4;padding:4px">
+            <div style="background:#2a3a4a;padding:2px">☑ game-abc · played 2026-05-10</div>
+            <div style="padding:2px">☐ game-def · played 2026-05-09</div>
+            <div style="padding:2px">☐ game-ghi · played 2026-05-09</div>
+            <div style="padding:2px;color:#666">…scroll…</div>
+          </div>
+          <div style="position:sticky;bottom:0;background:#1a2332;padding:10px;border-top:2px solid #10b981;display:flex;gap:8px;align-items:center;font-size:11px;box-shadow:0 -4px 12px rgba(0,0,0,.4)">
+            <span>12 selected</span>
+            <button class="mock-button" style="font-size:10px;padding:2px 8px">Submit to RunPod</button>
+            <button class="mock-button" style="font-size:10px;padding:2px 8px">↑ Top</button>
+            <button class="mock-button" style="font-size:10px;padding:2px 8px">↓ Bottom</button>
+            <span style="margin-left:auto;color:#888">Clear ×</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B — Bottom action bar</h3>
+      <p>Gmail/Linear-style. Empty until rows selected, then slides up from bottom with all bulk actions. Per-row ↑↓ buttons inline for one-off reorders.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">C — Paginated, no sticky needed</div>
+        <div class="mockup-body">
+          <div style="padding:6px;display:flex;gap:6px;font-size:10px;align-items:center">
+            <span>Page 1/8</span>
+            <button class="mock-button" style="font-size:10px;padding:1px 6px">‹</button>
+            <button class="mock-button" style="font-size:10px;padding:1px 6px">›</button>
+            <span style="margin-left:auto">Show 25 ▾</span>
+          </div>
+          <div style="font-size:10px;line-height:1.4;padding:4px">
+            <div style="padding:2px">☐ game-abc · played 2026-05-10</div>
+            <div style="padding:2px">☐ game-def · played 2026-05-09</div>
+            <div style="padding:2px;color:#666">… 25 rows per page …</div>
+          </div>
+          <div style="padding:8px;border-top:1px solid #333;display:flex;gap:8px;font-size:10px">
+            <button class="mock-button" style="font-size:10px;padding:2px 8px">Submit selected</button>
+            <button class="mock-button" style="font-size:10px;padding:2px 8px">↑ Top</button>
+            <button class="mock-button" style="font-size:10px;padding:2px 8px">↓ Bottom</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C — Pagination, no sticky</h3>
+      <p>Constrain rows-per-page (25/50/100). Actions live above & below the table. Simpler — no scroll handling. "Select all on page" only.</p>
+    </div>
+  </div>
+</div>

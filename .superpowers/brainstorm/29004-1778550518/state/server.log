@@ -1,0 +1,4 @@
+{"type":"server-started","port":51134,"host":"127.0.0.1","url_host":"localhost","url":"http://localhost:51134","screen_dir":"/Users/christopherwebster/Projects/wood_league/.superpowers/brainstorm/29004-1778550518/content","state_dir":"/Users/christopherwebster/Projects/wood_league/.superpowers/brainstorm/29004-1778550518/state"}
+{"type":"screen-added","file":"/Users/christopherwebster/Projects/wood_league/.superpowers/brainstorm/29004-1778550518/content/long-table-layout.html"}
+{"type":"screen-added","file":"/Users/christopherwebster/Projects/wood_league/.superpowers/brainstorm/29004-1778550518/content/waiting.html"}
+{"type":"server-stopped","reason":"idle timeout"}
