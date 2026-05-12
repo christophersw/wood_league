@@ -3,10 +3,12 @@ Title: views_queue.py — Per-engine queue detail pages
 Description: Admin-only views for /queue/stockfish/ and /queue/lc0/. Renders
     Pending (with bulk-submit checkbox UI), Active (running+submitted, read-only),
     and Recent (last 50 completed/failed) sections. Also includes the bulk
-    RunPod submit endpoint (POST /queue/<engine>/submit/).
+    RunPod submit endpoint (POST /queue/<engine>/submit/) and the bulk priority
+    reorder endpoint (POST /queue/<engine>/reorder/).
 Changelog:
     2026-05-10: Initial — Task B1 of scrap-dispatchers plan.
     2026-05-10: Added queue_submit view — Task B2 of scrap-dispatchers plan.
+    2026-05-11: Added queue_reorder view — Task 6 of analysis-queue-ui-overhaul plan.
 """
 from __future__ import annotations
 
@@ -181,6 +183,60 @@ def queue_submit(request: HttpRequest, engine: str) -> HttpResponse:
         "skipped": skipped,
         "failed": failed,
         "errors": errors,
+        **_queue_context(engine),
+    }
+    return render(request, "analysis/_queue_submit_result.html", context)
+
+
+@_admin_required
+@require_POST
+def queue_reorder(request: HttpRequest, engine: str) -> HttpResponse:
+    """Bulk-update priority for selected pending jobs to HIGH or LOW.
+
+    Sets `priority` to AnalysisJob.PRIORITY_HIGH for action='top' or
+    AnalysisJob.PRIORITY_LOW for action='bottom'. Only affects pending jobs
+    for the given engine; non-matching IDs are silently skipped (same
+    pattern as queue_submit).
+
+    Args:
+        request: POST request with `job_ids` list and `action` field.
+        engine: 'stockfish' or 'lc0' from the URL.
+
+    Returns:
+        HttpResponse: refreshed pending-table partial for HTMX swap.
+        HttpResponseBadRequest: on invalid engine or action.
+    """
+    if engine not in _ENGINES:
+        return HttpResponseBadRequest("invalid engine")
+    action = request.POST.get("action", "")
+    if action == "top":
+        new_priority = AnalysisJob.PRIORITY_HIGH
+    elif action == "bottom":
+        new_priority = AnalysisJob.PRIORITY_LOW
+    else:
+        return HttpResponseBadRequest("invalid action")
+
+    raw_ids = request.POST.getlist("job_ids")
+    job_ids: list[int] = []
+    for raw in raw_ids:
+        try:
+            job_ids.append(int(raw))
+        except ValueError:
+            continue
+
+    updated = AnalysisJob.objects.filter(
+        id__in=job_ids,
+        engine=engine,
+        status=AnalysisJob.STATUS_PENDING,
+    ).update(priority=new_priority)
+
+    context = {
+        "engine": engine,
+        "moved": updated,
+        "moved_to": action,
+        "submitted": 0,
+        "skipped": 0,
+        "failed": 0,
         **_queue_context(engine),
     }
     return render(request, "analysis/_queue_submit_result.html", context)
