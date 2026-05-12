@@ -40,7 +40,7 @@
            class="nav-link {% if request.resolver_match.namespace == 'players' %}nav-link--active{% endif %}">
           Members
         </a>
-        <a href="{% url 'analysis:status' %}"
+        <a href="{% url 'analysis:queues_summary' %}"
            class="nav-link {% if request.resolver_match.namespace == 'analysis' %}nav-link--active{% endif %}">
           Analysis
         </a>
@@ -81,7 +81,7 @@
          class="nav-link {% if request.resolver_match.namespace == 'players' %}nav-link--active{% endif %}">
         Members
       </a>
-      <a href="{% url 'analysis:status' %}"
+      <a href="{% url 'analysis:queues_summary' %}"
          class="nav-link {% if request.resolver_match.namespace == 'analysis' %}nav-link--active{% endif %}">
         Analysis
       </a>

@@ -1,9 +1,10 @@
 """
 Title: test_views_queues_summary.py — Tests for the analysis queues summary page
 Description: Verifies queues_summary view renders engine cards and is admin-only.
-    Covers the renamed status → queues_summary view (Task 5 of analysis-queue-ui-overhaul).
-    Until URL rename (Task 4), the route name 'analysis:status' still resolves.
+    Covers the renamed status → queues_summary view (Task 5) and the URL rename
+    to /admin/queues/ (Task 4 of analysis-queue-ui-overhaul).
 Changelog:
+    2026-05-11: Task 4 — update reverse() calls to use 'analysis:queues_summary'.
     2026-05-11: Initial — Task 5 of analysis-queue-ui-overhaul plan.
 """
 import uuid
@@ -38,8 +39,7 @@ def test_summary_renders_engine_cards(db, client):
     """
     admin = _make_user("admin")
     client.force_login(admin)
-    # Until URL rename (Task 4), the route name 'analysis:status' still resolves.
-    resp = client.get(reverse("analysis:status"))
+    resp = client.get(reverse("analysis:queues_summary"))
     assert resp.status_code == 200
     body = resp.content.decode()
     assert "stockfish" in body.lower()
@@ -57,5 +57,5 @@ def test_summary_requires_admin(db, client):
     """
     player = _make_user("player")
     client.force_login(player)
-    resp = client.get(reverse("analysis:status"))
+    resp = client.get(reverse("analysis:queues_summary"))
     assert resp.status_code in (302, 403)
