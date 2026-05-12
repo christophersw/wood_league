@@ -1,14 +1,17 @@
 """
 Title: test_views_queue_submit.py — Bulk RunPod submit endpoint tests
-Description: Happy path, partial failure, skip-when-not-pending, and engine-filter
-    protection for POST /admin/queue/<engine>/submit/.
+Description: Happy path, partial failure, skip-when-not-pending, engine-filter
+    protection, and concurrent-submit race for POST /admin/queue/<engine>/submit/.
 Changelog:
     2026-05-10: Initial — Task B2 of scrap-dispatchers plan.
+    2026-05-11: Add concurrent-submit race test (issue #16).
 """
 import uuid
 from unittest.mock import patch
 
-from django.test import TestCase
+import psycopg2
+from django.db import connection
+from django.test import TestCase, TransactionTestCase
 from django.urls import reverse
 from django.utils import timezone
 
@@ -134,3 +137,138 @@ class BulkSubmitTests(TestCase):
         self.assertEqual(
             AnalysisJob.objects.get(pk=lc_ids[0]).status, AnalysisJob.STATUS_PENDING
         )
+
+
+class ConcurrentSubmitRaceTests(TransactionTestCase):
+    """Race test for the per-job ``SELECT FOR UPDATE SKIP LOCKED`` in queue_submit.
+
+    Simulates the worst-case race deterministically: a separate raw psycopg2
+    connection opens its own transaction and locks the candidate row with
+    ``SELECT ... FOR UPDATE``. The view is then invoked through the Django
+    test client. Because ``queue_submit`` uses ``skip_locked=True``, its
+    ``select_for_update`` must return ``None`` for the held row — the job
+    is counted as skipped and ``submit_job_to_runpod`` is never called. After
+    releasing the external lock, a second invocation of the view should win
+    the lock cleanly and submit the job exactly once.
+
+    Uses ``TransactionTestCase`` (instead of ``TestCase``) so each ORM
+    operation commits — the external psycopg2 connection has to see the
+    seeded row from another transaction.
+    """
+
+    def _connection_params(self) -> dict:
+        """Return psycopg2 connect kwargs for the active test database.
+
+        Returns:
+            dict: Connection parameters (host, port, dbname, user, password)
+                pointing at the Django test database for the default alias.
+        """
+        # ``connection.settings_dict`` reflects the active test DB name
+        # (e.g. ``test_railway``), whereas ``settings.DATABASES`` still holds
+        # the original production NAME from DATABASE_URL.
+        config = connection.settings_dict
+        return {
+            "host": config.get("HOST") or "localhost",
+            "port": config.get("PORT") or 5432,
+            "dbname": config["NAME"],
+            "user": config.get("USER"),
+            "password": config.get("PASSWORD"),
+        }
+
+    def _make_pending_job(self) -> int:
+        """Create one pending Stockfish AnalysisJob and return its primary key.
+
+        Returns:
+            int: The primary key of the created AnalysisJob row.
+        """
+        game = Game.objects.create(
+            id=f"qb2-race-{uuid.uuid4().hex[:8]}",
+            played_at=timezone.now(),
+            time_control="600",
+            pgn="1. e4 *",
+        )
+        job = AnalysisJob.objects.create(
+            game=game, engine="stockfish",
+            status=AnalysisJob.STATUS_PENDING, depth=20,
+        )
+        return job.id
+
+    def test_skip_locked_prevents_double_submit_to_runpod(self):
+        """A row locked by a parallel transaction must be skipped, not submitted.
+
+        Holds a ``SELECT ... FOR UPDATE`` on the candidate row via a separate
+        psycopg2 connection, then invokes ``queue_submit`` through the Django
+        test client. Because the view's ``select_for_update(skip_locked=True)``
+        encounters a locked row, it must:
+          * return immediately with ``job is None``,
+          * count the job as skipped,
+          * never call ``submit_job_to_runpod``.
+
+        After releasing the external lock, a second call must successfully
+        submit the still-pending job, proving the lock didn't permanently
+        corrupt state. ``submit_job_to_runpod`` is therefore called exactly
+        once across both invocations — no double-submission to RunPod.
+        """
+        admin = User.objects.create_user(
+            email=f"admin-{uuid.uuid4().hex[:6]}@test",
+            password="x",  # noqa: S106 — test-only password
+            role="admin",
+        )
+        self.client.force_login(admin)
+        jid = self._make_pending_job()
+
+        submit_calls: list[int] = []
+
+        def fake_submit(job):
+            """Record each call; return a unique fake RunPod job id."""
+            submit_calls.append(job.id)
+            return f"rp-{job.id}"
+
+        # Open a raw connection and lock the row from a parallel transaction.
+        parallel = psycopg2.connect(**self._connection_params())
+        parallel.autocommit = False
+        try:
+            with parallel.cursor() as cur:
+                cur.execute(
+                    "SELECT id FROM analysis_jobs WHERE id = %s FOR UPDATE",
+                    (jid,),
+                )
+                self.assertEqual(cur.fetchone()[0], jid)
+
+                with patch("analysis.views_queue.submit_job_to_runpod",
+                           side_effect=fake_submit):
+                    resp = self.client.post(
+                        reverse("analysis:queue_submit", args=["stockfish"]),
+                        {"job_ids": [str(jid)]},
+                        secure=True,
+                    )
+
+            self.assertEqual(resp.status_code, 200)
+            self.assertEqual(
+                submit_calls, [],
+                "submit_job_to_runpod must not run while the row is locked",
+            )
+            still_pending = AnalysisJob.objects.get(pk=jid)
+            self.assertEqual(still_pending.status, AnalysisJob.STATUS_PENDING)
+            self.assertIsNone(still_pending.runpod_job_id)
+        finally:
+            parallel.rollback()
+            parallel.close()
+
+        # Now the lock is released; the next invocation must submit cleanly
+        # and exactly once — proving no double-submission across the race.
+        with patch("analysis.views_queue.submit_job_to_runpod",
+                   side_effect=fake_submit):
+            resp = self.client.post(
+                reverse("analysis:queue_submit", args=["stockfish"]),
+                {"job_ids": [str(jid)]},
+                secure=True,
+            )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(
+            submit_calls, [jid],
+            "submit_job_to_runpod must run exactly once across both attempts",
+        )
+        submitted = AnalysisJob.objects.get(pk=jid)
+        self.assertEqual(submitted.status, AnalysisJob.STATUS_SUBMITTED)
+        self.assertEqual(submitted.runpod_job_id, f"rp-{jid}")
