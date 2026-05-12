@@ -640,7 +640,7 @@ def queue_analysis(request: HttpRequest, slug: str) -> HttpResponse:
         game=game,
         engine=engine,
         status=AnalysisJob.STATUS_PENDING,
-        priority=1,
+        priority=AnalysisJob.PRIORITY_HIGH,
         depth=depth,
     )
     return render(request, "games/_queue_success.html", {"engine": engine})
