@@ -1,9 +1,10 @@
 """
 Title: test_status_overview.py — /analysis/ overview cards tests
-Description: Verifies /analysis/ renders one card per engine with the right
+Description: Verifies /admin/queues/ renders one card per engine with the right
     counts and links to the per-engine queue pages, and confirms the
     100-row recent-jobs table is removed.
 Changelog:
+    2026-05-11: Task 4 — update reverse() calls to 'analysis:queues_summary'.
     2026-05-10: Initial — Task C1 of scrap-dispatchers plan.
 """
 import uuid
@@ -65,7 +66,7 @@ class StatusOverviewTests(TestCase):
             depth=20,
         )
         self.client.force_login(admin)
-        resp = self.client.get(reverse("analysis:status"))
+        resp = self.client.get(reverse("analysis:queues_summary"))
         self.assertEqual(resp.status_code, 200)
         body = resp.content.decode()
         # Both engine cards rendered
@@ -79,7 +80,7 @@ class StatusOverviewTests(TestCase):
 
     def test_requires_admin_login(self):
         """Anonymous requests are redirected to the login page."""
-        resp = self.client.get(reverse("analysis:status"))
+        resp = self.client.get(reverse("analysis:queues_summary"))
         self.assertIn(resp.status_code, (302, 403))
 
     def test_non_admin_redirected(self):
@@ -90,5 +91,5 @@ class StatusOverviewTests(TestCase):
             role="player",
         )
         self.client.force_login(user)
-        resp = self.client.get(reverse("analysis:status"))
+        resp = self.client.get(reverse("analysis:queues_summary"))
         self.assertIn(resp.status_code, (302, 403))

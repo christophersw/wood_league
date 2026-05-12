@@ -1,0 +1,281 @@
+{% extends "base.html" %}
+{% block title %}Analysis Queues — Wood League Chess{% endblock %}
+
+{% block content %}
+
+{# ── Page hero ──────────────────────────────────────────────────────────── #}
+<div class="page-hero">
+  <div>
+    <h1>Analysis Queues</h1>
+    <p class="page-hero-sub">Per-engine dispatch status · Live queue counts</p>
+  </div>
+  <span class="page-hero-meta">{{ now|date:"Y-m-d H:i" }} UTC</span>
+</div>
+
+{# ── Engine cards grid ──────────────────────────────────────────────────── #}
+<div class="pg-section">
+
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+    {% for row in engine_rows %}
+
+    {# The entire card is clickable — no inner <button>, just a styled <a> #}
+    <a href="{% if row.name == 'stockfish' %}{% url 'analysis:queue_stockfish' %}{% else %}{% url 'analysis:queue_lc0' %}{% endif %}"
+       class="queue-engine-card"
+       aria-label="View {{ row.name }} queue">
+
+      {# Card header: engine name + arrow hint #}
+      <div class="queue-card-head">
+        <h2 class="queue-card-title">{{ row.name|title }}</h2>
+        <span class="queue-card-arrow" aria-hidden="true">→</span>
+      </div>
+
+      {# Divider rule after heading #}
+      <div class="queue-card-rule"></div>
+
+      {# Stats block — monospace numbers for tabular feel #}
+      <dl class="queue-stats">
+
+        <div class="queue-stat-row">
+          <dt class="queue-stat-label">Pending</dt>
+          <dd class="queue-stat-value">
+            <span class="queue-stat-num">{{ row.pending }}</span>
+            {% if row.pending_high > 0 %}
+              <span class="queue-high-badge">{{ row.pending_high }} HIGH</span>
+            {% endif %}
+          </dd>
+        </div>
+
+        <div class="queue-stat-row">
+          <dt class="queue-stat-label">Active</dt>
+          <dd class="queue-stat-value">
+            <span class="queue-stat-num">{{ row.running }}</span>
+          </dd>
+        </div>
+
+        <div class="queue-stat-row">
+          <dt class="queue-stat-label">Failed (24 h)</dt>
+          <dd class="queue-stat-value">
+            <span class="queue-stat-num {% if row.failed_24h > 0 %}queue-stat-num--warn{% endif %}">
+              {{ row.failed_24h }}
+            </span>
+          </dd>
+        </div>
+
+      </dl>
+
+      {# Health footer — visually separated #}
+      <div class="queue-card-footer">
+
+        <div class="queue-health-row">
+          <span class="queue-health-label">RunPod</span>
+          <span class="queue-health-value">
+            {% if row.runpod %}
+              <span class="queue-health-ok">&#x2713; healthy</span>
+              <span class="queue-health-detail">
+                {{ row.runpod.workers_idle }}i / {{ row.runpod.workers_running }}r
+              </span>
+            {% elif row.runpod_error %}
+              <span class="queue-health-err">— {{ row.runpod_error }}</span>
+            {% else %}
+              <span class="queue-health-na">—</span>
+            {% endif %}
+          </span>
+        </div>
+
+        <div class="queue-health-row">
+          <span class="queue-health-label">Worker last seen</span>
+          <span class="queue-health-value">
+            {% if row.worker_last_seen %}
+              <span class="queue-health-ts">{{ row.worker_last_seen }}</span>
+            {% else %}
+              <span class="queue-health-na">no heartbeat</span>
+            {% endif %}
+          </span>
+        </div>
+
+      </div>{# /.queue-card-footer #}
+
+    </a>{# /.queue-engine-card #}
+
+    {% endfor %}
+
+  </div>{# /.grid #}
+
+</div>{# /.pg-section #}
+
+<style>
+/* ── Engine card ── */
+.queue-engine-card {
+  display: block;
+  text-decoration: none;
+  color: var(--color-ebony);
+  background: var(--color-cream);
+  border: 1.5px solid color-mix(in srgb, var(--color-peat) 30%, transparent);
+  border-top: 3.5px solid var(--color-forest);
+  padding: 1.5rem 1.75rem 1.25rem;
+  box-shadow: 3px 3px 0 color-mix(in srgb, var(--color-peat) 12%, transparent);
+  transition: border-top-color 0.15s, box-shadow 0.15s, transform 0.1s;
+  position: relative;
+}
+.queue-engine-card:hover {
+  border-top-color: var(--color-crimson);
+  box-shadow: 5px 5px 0 color-mix(in srgb, var(--color-crimson) 14%, transparent);
+  transform: translateY(-1px);
+}
+
+/* Card head */
+.queue-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 0.65rem;
+}
+.queue-card-title {
+  font-family: var(--font-display);
+  font-size: 1.45rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-forest);
+  line-height: 1;
+  margin: 0;
+}
+.queue-card-arrow {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--color-slate);
+  transition: color 0.15s, transform 0.15s;
+  display: inline-block;
+}
+.queue-engine-card:hover .queue-card-arrow {
+  color: var(--color-crimson);
+  transform: translateX(3px);
+}
+
+/* Section rule */
+.queue-card-rule {
+  border: none;
+  border-top: 2px solid var(--color-ebony);
+  margin-bottom: 1.1rem;
+}
+
+/* Stats */
+.queue-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin: 0 0 0 0;
+}
+.queue-stat-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-ebony) 8%, transparent);
+}
+.queue-stat-row:last-child {
+  border-bottom: none;
+}
+.queue-stat-label {
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-peat);
+}
+.queue-stat-value {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.queue-stat-num {
+  font-family: var(--font-mono);
+  font-size: 1.05rem;
+  font-weight: 500;
+  color: var(--color-ebony);
+  letter-spacing: -0.01em;
+  min-width: 2.5ch;
+  text-align: right;
+}
+.queue-stat-num--warn {
+  color: var(--color-crimson);
+}
+
+/* HIGH priority badge — gold/amber accent */
+.queue-high-badge {
+  font-family: var(--font-mono);
+  font-size: 0.52rem;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-whisky);
+  border: 1px solid var(--color-gold);
+  background: color-mix(in srgb, var(--color-gold) 10%, transparent);
+  padding: 0.1rem 0.35rem;
+  display: inline-block;
+  line-height: 1.5;
+}
+
+/* Health footer */
+.queue-card-footer {
+  margin-top: 1rem;
+  padding-top: 0.85rem;
+  border-top: 1.5px solid color-mix(in srgb, var(--color-peat) 20%, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.queue-health-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.queue-health-label {
+  font-family: var(--font-mono);
+  font-size: 0.56rem;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-slate);
+}
+.queue-health-value {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.queue-health-ok {
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  color: var(--color-moss);
+}
+.queue-health-detail {
+  font-family: var(--font-mono);
+  font-size: 0.56rem;
+  color: var(--color-slate);
+  letter-spacing: 0.05em;
+}
+.queue-health-err {
+  font-family: var(--font-mono);
+  font-size: 0.58rem;
+  color: var(--color-crimson);
+  letter-spacing: 0.04em;
+}
+.queue-health-na {
+  font-family: var(--font-mono);
+  font-size: 0.58rem;
+  color: var(--color-slate);
+}
+.queue-health-ts {
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  color: var(--color-peat);
+  letter-spacing: 0.04em;
+}
+</style>
+
+{% endblock %}

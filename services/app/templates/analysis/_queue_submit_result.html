@@ -1,12 +1,41 @@
-{# analysis/_queue_submit_result.html — Bulk submit result partial for HTMX #}
-<div id="bulk-submit-form">
-  <p class="font-mono text-sm">
-    Submitted {{ submitted }} · Skipped {{ skipped }} · Failed {{ failed }}
-  </p>
+{#
+  Title: _queue_submit_result.html — HTMX response for bulk submit / reorder
+  Description: Returned by queue_submit and queue_reorder as the full swap for
+      #queue-pending-region. Renders a flash summary bar above the pending
+      table partial. Handles both submit (submitted/skipped/failed) and
+      reorder (moved/moved_to) context keys.
+  Changelog:
+      2026-05-10: Initial — shows counts and re-includes _queue_pending.html.
+      2026-05-11: Task 8 — swap target renamed; flash bar added for both submit
+          and reorder contexts; includes new _queue_pending_table.html partial.
+#}
+<div id="queue-pending-region">
+
+  {# ─── Flash bar ──────────────────────────────────────────────────────────── #}
+  {% if moved %}
+  {# Reorder result #}
+  <div class="flash-msg flash-msg--success" style="margin-bottom: 1rem;" role="status">
+    Moved {{ moved }} job{{ moved|pluralize }} to
+    {% if moved_to == "top" %}the <strong>top</strong> (HIGH priority)
+    {% else %}the <strong>bottom</strong> (LOW priority)
+    {% endif %}.
+  </div>
+  {% elif submitted or skipped or failed %}
+  {# Submit result #}
+  <div class="flash-msg {% if failed %}flash-msg--warning{% else %}flash-msg--success{% endif %}"
+       style="margin-bottom: 1rem;" role="status">
+    Submitted {{ submitted }} &middot; Skipped {{ skipped }} &middot; Failed {{ failed }}
+  </div>
   {% if errors %}
-  <ul class="font-mono text-xs text-crimson">
-    {% for e in errors %}<li>job {{ e.id }}: {{ e.error }}</li>{% endfor %}
+  <ul class="font-mono text-xs" style="color: var(--color-crimson); margin-bottom: 1rem; padding-left: 1rem;">
+    {% for e in errors %}
+    <li>job {{ e.id }}: {{ e.error }}</li>
+    {% endfor %}
   </ul>
   {% endif %}
-  {% include "analysis/_queue_pending.html" %}
+  {% endif %}
+
+  {# ─── Refreshed pending table ──────────────────────────────────────────── #}
+  {% include "analysis/_queue_pending_table.html" %}
+
 </div>
