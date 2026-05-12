@@ -190,6 +190,9 @@ class AnalysisJob(models.Model):
         (STATUS_COMPLETED, "Completed"),
         (STATUS_FAILED, "Failed"),
     ]
+    PRIORITY_HIGH = 100
+    PRIORITY_NORMAL = 0
+    PRIORITY_LOW = -100
     game = models.ForeignKey(
         "games.Game", on_delete=models.CASCADE, related_name="analysis_jobs"
     )
