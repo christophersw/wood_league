@@ -78,29 +78,49 @@ class JobCheckoutTests(TestCase):
 
     def test_checkout_respects_batch_size(self):
         """Checkout respects batch_size parameter."""
-        for _ in range(5):
+        # One active job per (game, engine) is permitted by the partial unique
+        # constraint added in issue #15, so each pending job needs its own game.
+        for index in range(5):
+            game = Game.objects.create(
+                id=f'batch-game-{index}',
+                white_username='A',
+                black_username='B',
+                played_at=timezone.now(),
+                time_control='rapid',
+                pgn='1. e4 e5',
+            )
             AnalysisJob.objects.create(
-                game=self.game, engine='stockfish',
+                game=game, engine='stockfish',
                 status=AnalysisJob.STATUS_PENDING,
             )
-        
+
         response = self.client.post('/api/v1/jobs/checkout/', {
             'engine': 'stockfish',
             'batch_size': 2,
             'worker_id': 'worker-1',
         })
-        
+
         data = response.json()
         self.assertEqual(len(data['jobs']), 2)
 
     def test_checkout_priority_order(self):
         """Checkout returns jobs in priority order."""
+        # Each pending job needs its own game to satisfy the partial unique
+        # constraint on (game, engine) for active analysis jobs.
+        game2 = Game.objects.create(
+            id='priority-game-2',
+            white_username='C',
+            black_username='D',
+            played_at=timezone.now(),
+            time_control='rapid',
+            pgn='1. d4 d5',
+        )
         j1 = AnalysisJob.objects.create(
             game=self.game, engine='stockfish',
             priority=1, status=AnalysisJob.STATUS_PENDING,
         )
         j2 = AnalysisJob.objects.create(
-            game=self.game, engine='stockfish',
+            game=game2, engine='stockfish',
             priority=2, status=AnalysisJob.STATUS_PENDING,
         )
         

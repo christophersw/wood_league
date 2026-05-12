@@ -95,6 +95,16 @@ class ClaimJobsTests(TestCase):
 
     def test_claim_pending_jobs(self):
         """claim_jobs returns pending jobs in priority order."""
+        # Each pending job needs its own game to satisfy the partial unique
+        # constraint on (game, engine) for active analysis jobs (issue #15).
+        game2 = Game.objects.create(
+            id='test-game-3',
+            white_username='Carol',
+            black_username='Dave',
+            played_at='2026-05-06T00:00:00Z',
+            time_control='rapid',
+            pgn='1. d4 d5',
+        )
         j1 = AnalysisJob.objects.create(
             game=self.game,
             engine='stockfish',
@@ -102,7 +112,7 @@ class ClaimJobsTests(TestCase):
             status=AnalysisJob.STATUS_PENDING,
         )
         j2 = AnalysisJob.objects.create(
-            game=self.game,
+            game=game2,
             engine='stockfish',
             priority=2,
             status=AnalysisJob.STATUS_PENDING,
@@ -121,9 +131,19 @@ class ClaimJobsTests(TestCase):
 
     def test_claim_respects_batch_size(self):
         """claim_jobs claims only up to batch_size."""
+        # One active job per (game, engine) is permitted by the partial unique
+        # constraint (issue #15), so each pending job needs its own game.
         for i in range(5):
+            game = Game.objects.create(
+                id=f'batch-claim-game-{i}',
+                white_username='A',
+                black_username='B',
+                played_at='2026-05-06T00:00:00Z',
+                time_control='rapid',
+                pgn='1. e4 e5',
+            )
             AnalysisJob.objects.create(
-                game=self.game,
+                game=game,
                 engine='stockfish',
                 priority=0,
                 status=AnalysisJob.STATUS_PENDING,
