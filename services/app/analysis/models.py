@@ -230,6 +230,13 @@ class AnalysisJob(models.Model):
             models.Index(fields=["status", "engine"]),
             models.Index(fields=["status", "priority"]),
         ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["game", "engine"],
+                condition=models.Q(status__in=["pending", "running", "submitted"]),
+                name="analysis_jobs_active_engine_unique",
+            ),
+        ]
         verbose_name = "Analysis Job"
         verbose_name_plural = "Analysis Jobs"
 
