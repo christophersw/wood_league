@@ -10,6 +10,8 @@ Description:
     queue+recent-jobs view has been replaced (Task C1, scrap-dispatchers plan).
 
 Changelog:
+    2026-05-11: Task 5 — rename status() → queues_summary(); add backward-compat
+        alias status = queues_summary; point at analysis/queues_summary.html.
     2026-05-10: Task C1 — refactor status() to overview cards; drop recent_jobs;
         rename queue_partial to overview_partial serving _overview_cards.html.
     2026-05-08: Added file header to meet documentation standards
@@ -87,16 +89,25 @@ def _queue_context() -> dict:
 
 @_admin_login_required
 @require_GET
-def status(request: HttpRequest) -> HttpResponse:
-    """Render the analysis overview: engine summary cards + worker status.
+def queues_summary(request: HttpRequest) -> HttpResponse:
+    """Render the analysis queues summary: per-engine cards + worker status.
+
+    This is the renamed version of the former ``status`` view, pointing at the
+    new ``analysis/queues_summary.html`` template. The module-level alias
+    ``status = queues_summary`` below maintains backward compatibility until
+    Task 4 renames the URL route.
 
     Args:
         request: The incoming HTTP GET request.
 
     Returns:
-        HttpResponse: Rendered ``analysis/status.html`` with overview context.
+        HttpResponse: Rendered ``analysis/queues_summary.html`` with overview context.
     """
-    return render(request, "analysis/status.html", _queue_context())
+    return render(request, "analysis/queues_summary.html", _queue_context())
+
+
+#: Backward-compat alias — Task 4 will remove this once the URL route is renamed.
+status = queues_summary
 
 
 @_admin_login_required

@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Analysis Queues — Wood League Chess{% endblock %}
+{% block content %}
+<div class="page-hero">
+  <div>
+    <h1>Analysis Queues</h1>
+    <p class="page-hero-sub">Per-engine queue summary and dispatch health.</p>
+  </div>
+</div>
+
+<div class="pg-section">
+  {% for row in engine_rows %}
+  <a href="{% if row.name == 'stockfish' %}{% url 'analysis:queue_stockfish' %}{% else %}{% url 'analysis:queue_lc0' %}{% endif %}"
+     class="block">
+    <div class="pg-head">
+      <span class="pg-title">{{ row.name|title }}</span>
+      <span class="pg-caption">
+        Pending: {{ row.pending }} · Active: {{ row.running }}
+      </span>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% endblock %}
