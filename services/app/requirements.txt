@@ -39,5 +39,5 @@ pygments>=2.20.0
 validators>=0.21.0
 numpy>=1.22.2
 h11>=0.16.0 # not directly required, pinned by Snyk to avoid a vulnerability
-sqlparse>=0.5.0 # not directly required, pinned by Snyk to avoid a vulnerability
+sqlparse>=0.5.4 # not directly required, pinned by Snyk to avoid a vulnerability
 anyio>=4.4.0 # not directly required, pinned by Snyk to avoid a vulnerability
