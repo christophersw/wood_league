@@ -1,31 +1,58 @@
 {% extends "base.html" %}
+{#
+  Title: queue.html — Per-engine analysis queue page
+  Description: Per-engine queue detail page with sticky toolbar, tab strip,
+      paginated pending table (HTMX), and read-only active/recent sections.
+      Uses W.E.B. Du Bois-inspired design system (parchment/ebony palette,
+      EB Garamond body, Playfair Display SC headings, DM Mono labels).
+  Changelog:
+      2026-05-10: Initial render of pending/active/recent sections.
+      2026-05-11: Task 8 — full visual rebuild: sticky toolbar, tabs,
+          HTMX-paginated pending table, priority badges, per-row reorder.
+#}
 
-{% block title %}{{ engine|title }} Queue — Wood League Chess{% endblock %}
+{% block title %}{{ engine|title }} Queue · Wood League Chess{% endblock %}
 
 {% block content %}
+
+{# ── Hero ──────────────────────────────────────────────────────────────────── #}
 <div class="page-hero">
   <div>
+    {# Breadcrumb #}
+    <p class="page-hero-sub" style="margin-bottom: 0.4rem;">
+      <a href="{% url 'analysis:queues_summary' %}"
+         style="color: var(--color-peat); text-decoration: underline; text-underline-offset: 3px;">
+        ← Analysis Queues
+      </a>
+    </p>
     <h1>{{ engine|title }} Queue</h1>
-    <p class="page-hero-sub">Per-engine analysis queue and dispatch controls.</p>
+    <p class="page-hero-sub">
+      {{ pending_count }} pending job{{ pending_count|pluralize }} &middot;
+      per-engine dispatch &amp; priority controls
+    </p>
   </div>
 </div>
 
-<div class="pg-section">
-  <div class="pg-head">
-    <span class="pg-title">Pending ({{ pending|length }})</span>
-    <span class="pg-caption">Select rows and submit to RunPod, or wait for a local worker to claim.</span>
-  </div>
-  {% include "analysis/_queue_pending.html" %}
+{# ── Sticky toolbar (wraps the whole form so all buttons share job_ids) ─────── #}
+{#
+  The <form> begins here and wraps the toolbar + pending table region.
+  All three action buttons POST to their respective endpoints via HTMX,
+  including job_ids from the checkboxes in the table.
+#}
+<div id="queue-pending-region">
+  {% include "analysis/_queue_pending_table.html" %}
 </div>
 
+{# ── Active tab (read-only) ────────────────────────────────────────────────── #}
 <div class="pg-section">
   <div class="pg-head">
     <span class="pg-title">Active ({{ active|length }})</span>
-    <span class="pg-caption">Running + submitted</span>
+    <span class="pg-caption">Running &amp; submitted to RunPod</span>
   </div>
   {% include "analysis/_queue_active.html" %}
 </div>
 
+{# ── Recent tab (read-only) ────────────────────────────────────────────────── #}
 <div class="pg-section">
   <div class="pg-head">
     <span class="pg-title">Recent</span>
@@ -33,4 +60,5 @@
   </div>
   {% include "analysis/_queue_recent.html" %}
 </div>
+
 {% endblock %}

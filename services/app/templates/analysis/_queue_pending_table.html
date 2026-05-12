@@ -1,0 +1,327 @@
+{#
+  Title: _queue_pending_table.html — Pending queue table partial
+  Description: HTMX swap target for the pending tab. Contains sticky toolbar
+      with bulk-action form, tab strip, paginated table with checkboxes and
+      per-row reorder icons, and pagination controls.
+      This partial is also what pagination and tab links swap in.
+  Changelog:
+      2026-05-11: Task 8 — created as replacement for _queue_pending.html;
+          adds sticky toolbar, tabs, priority badges, per-row reorder,
+          pagination, select-all + selected counter.
+#}
+
+{# ─── Sticky toolbar + form ────────────────────────────────────────────────── #}
+{#
+  The form wraps the toolbar and the table so all three action buttons
+  (Submit, ↑ Top, ↓ Bottom) can include the same job_ids checkboxes.
+#}
+<form id="bulk-submit-form">
+  {% csrf_token %}
+
+  {# Sticky toolbar shell #}
+  <div class="sticky top-0 z-10"
+       style="background: var(--color-parchment); border-bottom: 2px solid var(--color-ebony); padding: 0.6rem 0; margin-bottom: 0;">
+
+    {# Row 1: select-all + selected counter + action buttons #}
+    <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; padding-bottom: 0.5rem; border-bottom: 1px solid color-mix(in srgb, var(--color-ebony) 14%, transparent); margin-bottom: 0.45rem;">
+
+      {# Select-page checkbox #}
+      <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer;">
+        <input type="checkbox" id="select-all"
+               style="width: 1rem; height: 1rem; accent-color: var(--color-forest); cursor: pointer;"
+               title="Select all on this page">
+        <span class="font-mono text-xs" style="color: var(--color-peat); letter-spacing: 0.1em; text-transform: uppercase;">
+          Page
+        </span>
+      </label>
+
+      {# Selected counter — updated by inline script below #}
+      <span id="selected-count"
+            class="font-mono text-xs"
+            style="color: var(--color-slate); letter-spacing: 0.08em; min-width: 5rem;">
+        0 selected
+      </span>
+
+      {# Action buttons #}
+      <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-left: auto;">
+        <button type="button" class="wc-btn wc-btn-solid"
+                hx-post="{% url 'analysis:queue_submit' engine=engine %}"
+                hx-include="#bulk-submit-form"
+                hx-target="#queue-pending-region"
+                hx-swap="outerHTML"
+                hx-indicator="#htmx-indicator">
+          Submit to RunPod
+        </button>
+        <button type="button" class="wc-btn"
+                hx-post="{% url 'analysis:queue_reorder' engine=engine %}?action=top"
+                hx-include="#bulk-submit-form"
+                hx-target="#queue-pending-region"
+                hx-swap="outerHTML"
+                hx-indicator="#htmx-indicator">
+          ↑ Top
+        </button>
+        <button type="button" class="wc-btn"
+                hx-post="{% url 'analysis:queue_reorder' engine=engine %}?action=bottom"
+                hx-include="#bulk-submit-form"
+                hx-target="#queue-pending-region"
+                hx-swap="outerHTML"
+                hx-indicator="#htmx-indicator">
+          ↓ Bottom
+        </button>
+      </div>
+
+    </div>
+
+    {# Row 2: Tab strip #}
+    {#
+      TODO: wire HTMX tab swaps for Active and Recent in a follow-up task.
+      The view does not honour ?tab= yet; Active and Recent are rendered as
+      full-page anchor links below the pending region for now.
+    #}
+    <div class="tab-bar" style="margin-bottom: 0; border-bottom: 2px solid var(--color-ebony);">
+      <span class="tab-btn tab-btn--active">
+        Pending ({{ pending_count }})
+      </span>
+      <a href="?tab=active" class="tab-btn" style="text-decoration: none;">
+        Active ({{ active|length }})
+      </a>
+      <a href="?tab=recent" class="tab-btn" style="text-decoration: none;">
+        Recent
+      </a>
+    </div>
+
+  </div>{# /sticky toolbar #}
+
+  {# ─── Pending table ────────────────────────────────────────────────────── #}
+  {% if pending_page.object_list %}
+  <table class="wc-table" style="margin-top: 0.5rem;">
+    <thead>
+      <tr>
+        <th style="width: 2.2rem;">
+          {# Thead select-all mirrors the toolbar checkbox #}
+          <input type="checkbox" id="select-all-thead"
+                 style="width: 1rem; height: 1rem; accent-color: var(--color-forest); cursor: pointer;"
+                 title="Select all on this page">
+        </th>
+        <th>Game</th>
+        <th>Played</th>
+        <th>Depth</th>
+        <th>Priority</th>
+        <th>Created</th>
+        <th>Last Error</th>
+        <th style="width: 4rem; text-align: center;">Move</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for job in pending_page %}
+      <tr>
+        {# Row checkbox #}
+        <td>
+          <input type="checkbox" name="job_ids" value="{{ job.id }}"
+                 style="width: 1rem; height: 1rem; accent-color: var(--color-forest); cursor: pointer;">
+        </td>
+
+        {# Game ID #}
+        <td class="font-mono text-xs">{{ job.game.id|truncatechars:20 }}</td>
+
+        {# Played date #}
+        <td class="font-mono text-xs">
+          {% if job.game.played_at %}{{ job.game.played_at|date:"d M Y" }}{% else %}—{% endif %}
+        </td>
+
+        {# Depth / nodes #}
+        <td class="font-mono text-xs">{{ job.depth }}</td>
+
+        {# Priority badge #}
+        <td>
+          {% if job.priority >= 100 %}
+          <span class="wc-badge"
+                style="color: var(--color-whisky); border-color: var(--color-gold);
+                       background: color-mix(in srgb, var(--color-gold) 12%, transparent);">
+            HIGH
+          </span>
+          {% elif job.priority <= -100 %}
+          <span class="wc-badge"
+                style="color: var(--color-slate); border-color: color-mix(in srgb, var(--color-slate) 50%, transparent);
+                       background: color-mix(in srgb, var(--color-slate) 8%, transparent);">
+            LOW
+          </span>
+          {% else %}
+          <span class="font-mono text-xs" style="color: var(--color-slate);">—</span>
+          {% endif %}
+        </td>
+
+        {# Created date #}
+        <td class="font-mono text-xs">{{ job.created_at|date:"d M H:i" }}</td>
+
+        {# Last error (crimson if present) #}
+        <td class="font-mono text-xs"
+            {% if job.last_error %}style="color: var(--color-crimson);"{% else %}style="color: var(--color-slate);"{% endif %}>
+          {{ job.last_error|default:"—"|truncatechars:50 }}
+        </td>
+
+        {# Per-row inline reorder buttons #}
+        <td style="text-align: center; white-space: nowrap;">
+          <button type="button"
+                  class="wc-btn wc-btn-ghost"
+                  style="padding: 0.2rem 0.45rem; font-size: 0.7rem; border-width: 1px;"
+                  hx-post="{% url 'analysis:queue_reorder' engine=engine %}?action=top"
+                  hx-vals='{"job_ids": "{{ job.id }}"}'
+                  hx-target="#queue-pending-region"
+                  hx-swap="outerHTML"
+                  hx-indicator="#htmx-indicator"
+                  title="Move to top">
+            ↑
+          </button>
+          <button type="button"
+                  class="wc-btn wc-btn-ghost"
+                  style="padding: 0.2rem 0.45rem; font-size: 0.7rem; border-width: 1px;"
+                  hx-post="{% url 'analysis:queue_reorder' engine=engine %}?action=bottom"
+                  hx-vals='{"job_ids": "{{ job.id }}"}'
+                  hx-target="#queue-pending-region"
+                  hx-swap="outerHTML"
+                  hx-indicator="#htmx-indicator"
+                  title="Move to bottom">
+            ↓
+          </button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {# ─── Pagination ────────────────────────────────────────────────────────── #}
+  <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap;
+              gap: 0.75rem; margin-top: 1.25rem; padding-top: 0.75rem;
+              border-top: 1px solid color-mix(in srgb, var(--color-ebony) 14%, transparent);">
+
+    {# Page links #}
+    <div style="display: flex; align-items: center; gap: 0.25rem;">
+      {# Previous #}
+      {% if pending_page.has_previous %}
+      <a class="wc-btn"
+         style="padding: 0.3rem 0.6rem;"
+         hx-get="?page={{ pending_page.previous_page_number }}&per_page={{ per_page }}"
+         hx-target="#queue-pending-region"
+         hx-swap="outerHTML"
+         hx-indicator="#htmx-indicator"
+         href="?page={{ pending_page.previous_page_number }}&per_page={{ per_page }}">
+        ‹
+      </a>
+      {% else %}
+      <span class="wc-btn" style="padding: 0.3rem 0.6rem; opacity: 0.3; cursor: default;">‹</span>
+      {% endif %}
+
+      {# Page numbers (show up to 7; ellipsis for large sets) #}
+      {% with current=pending_page.number total=pending_page.paginator.num_pages %}
+      {% for p in pending_page.paginator.page_range %}
+        {% if p == current %}
+        <span class="wc-btn wc-btn-solid" style="padding: 0.3rem 0.6rem;">{{ p }}</span>
+        {% elif p == 1 or p == total or p >= current|add:"-2" and p <= current|add:"2" %}
+        <a class="wc-btn"
+           style="padding: 0.3rem 0.6rem;"
+           hx-get="?page={{ p }}&per_page={{ per_page }}"
+           hx-target="#queue-pending-region"
+           hx-swap="outerHTML"
+           hx-indicator="#htmx-indicator"
+           href="?page={{ p }}&per_page={{ per_page }}">
+          {{ p }}
+        </a>
+        {% elif p == current|add:"-3" or p == current|add:"3" %}
+        <span class="font-mono text-xs" style="color: var(--color-slate); padding: 0.3rem 0.2rem;">…</span>
+        {% endif %}
+      {% endfor %}
+      {% endwith %}
+
+      {# Next #}
+      {% if pending_page.has_next %}
+      <a class="wc-btn"
+         style="padding: 0.3rem 0.6rem;"
+         hx-get="?page={{ pending_page.next_page_number }}&per_page={{ per_page }}"
+         hx-target="#queue-pending-region"
+         hx-swap="outerHTML"
+         hx-indicator="#htmx-indicator"
+         href="?page={{ pending_page.next_page_number }}&per_page={{ per_page }}">
+        ›
+      </a>
+      {% else %}
+      <span class="wc-btn" style="padding: 0.3rem 0.6rem; opacity: 0.3; cursor: default;">›</span>
+      {% endif %}
+    </div>
+
+    {# Page info + per-page selector #}
+    <div style="display: flex; align-items: center; gap: 0.75rem;">
+      <span class="font-mono text-xs" style="color: var(--color-slate);">
+        Page {{ pending_page.number }} of {{ pending_page.paginator.num_pages }}
+        &middot; {{ pending_count }} total
+      </span>
+      <label style="display: flex; align-items: center; gap: 0.4rem;">
+        <span class="font-mono text-xs" style="color: var(--color-peat); text-transform: uppercase; letter-spacing: 0.1em;">Show</span>
+        <select class="wc-select"
+                style="width: auto; padding: 0.3rem 1.75rem 0.3rem 0.5rem; font-size: 0.72rem;"
+                onchange="window.location.href='?page=1&per_page=' + this.value">
+          <option value="25" {% if per_page == 25 %}selected{% endif %}>25</option>
+          <option value="50" {% if per_page == 50 %}selected{% endif %}>50</option>
+          <option value="100" {% if per_page == 100 %}selected{% endif %}>100</option>
+        </select>
+      </label>
+    </div>
+
+  </div>{# /pagination #}
+
+  {% else %}
+  <p class="font-mono text-sm" style="color: var(--color-slate); margin-top: 1rem;">
+    No pending jobs.
+  </p>
+  {% endif %}
+
+</form>{# /bulk-submit-form #}
+
+{# ─── Inline scripts ────────────────────────────────────────────────────────── #}
+<script>
+(function () {
+  'use strict';
+
+  /* ── Select-all: sync toolbar checkbox ↔ thead checkbox ↔ row checkboxes ── */
+  function syncSelectAll(sourceId) {
+    var source = document.getElementById(sourceId);
+    if (!source) return;
+    var form = source.closest('form') || document.getElementById('bulk-submit-form');
+    if (!form) return;
+    var boxes = form.querySelectorAll('input[name=job_ids]');
+    boxes.forEach(function (cb) { cb.checked = source.checked; });
+    // mirror the other select-all
+    var otherId = sourceId === 'select-all' ? 'select-all-thead' : 'select-all';
+    var other = document.getElementById(otherId);
+    if (other) other.checked = source.checked;
+    updateCount(form);
+  }
+
+  /* ── Selected counter ────────────────────────────────────────────────────── */
+  function updateCount(form) {
+    if (!form) form = document.getElementById('bulk-submit-form');
+    var n = form ? form.querySelectorAll('input[name=job_ids]:checked').length : 0;
+    var counter = document.getElementById('selected-count');
+    if (counter) counter.textContent = n + ' selected';
+  }
+
+  /* ── Event delegation on document ───────────────────────────────────────── */
+  document.addEventListener('change', function (e) {
+    if (!e.target) return;
+    var id = e.target.id;
+    if (id === 'select-all' || id === 'select-all-thead') {
+      syncSelectAll(id);
+    } else if (e.target.name === 'job_ids') {
+      var form = e.target.closest('form') || document.getElementById('bulk-submit-form');
+      updateCount(form);
+      // un-tick both select-alls if any row unchecked
+      if (!e.target.checked) {
+        var sa = document.getElementById('select-all');
+        var saTh = document.getElementById('select-all-thead');
+        if (sa) sa.checked = false;
+        if (saTh) saTh.checked = false;
+      }
+    }
+  });
+})();
+</script>
