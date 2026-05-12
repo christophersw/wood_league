@@ -6,7 +6,6 @@ Description: Verifies HIGH/NORMAL/LOW priority constants and that pending jobs
 Changelog:
     2026-05-11: Initial — Task 1 of analysis-queue-ui-overhaul plan.
 """
-import pytest
 from analysis.models import AnalysisJob
 
 
