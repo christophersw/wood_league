@@ -149,16 +149,20 @@ _BT4_URL = (
 )
 _BT4_FILENAME = "BT4-1024x15x32h-swa-6147500-policytune-332.pb.gz"
 
-_SYZYGY_BASE_URL = "https://tablebase.lichess.ovh/tables/standard/3-4-5-wdl/"
+_SYZYGY_BASE_URL = "https://tablebase.lichess.ovh/tables/standard/"
+_SYZYGY_SUBDIRS = {"rtbw": "3-4-5-wdl", "rtbz": "3-4-5-dtz"}
+_SYZYGY_345_POSITIONS = [
+    "KBBvK", "KBNvK", "KBPvK", "KBvK", "KBvKB",
+    "KBvKN", "KBvKP", "KNNvK", "KNPvK", "KNvK",
+    "KNvKN", "KNvKP", "KPPvK", "KPvK", "KPvKP",
+    "KQBvK", "KQNvK", "KQPvK", "KQQvK",
+    "KQRvK", "KQvK", "KQvKB", "KQvKN", "KQvKP",
+    "KQvKQ", "KQvKR", "KRBvK", "KRNvK", "KRPvK",
+    "KRRvK", "KRvK", "KRvKB", "KRvKN", "KRvKP",
+    "KRvKR",
+]
 _SYZYGY_345_FILES = [
-    "KBBvK.rtbw", "KBNvK.rtbw", "KBPvK.rtbw", "KBvK.rtbw", "KBvKB.rtbw",
-    "KBvKN.rtbw", "KBvKP.rtbw", "KNNvK.rtbw", "KNPvK.rtbw", "KNvK.rtbw",
-    "KNvKN.rtbw", "KNvKP.rtbw", "KPPvK.rtbw", "KPvK.rtbw", "KPvKP.rtbw",
-    "KQBvK.rtbw", "KQNvK.rtbw", "KQPvK.rtbw", "KQQvK.rtbw",
-    "KQRvK.rtbw", "KQvK.rtbw", "KQvKB.rtbw", "KQvKN.rtbw", "KQvKP.rtbw",
-    "KQvKQ.rtbw", "KQvKR.rtbw", "KRBvK.rtbw", "KRNvK.rtbw", "KRPvK.rtbw",
-    "KRRvK.rtbw", "KRvK.rtbw", "KRvKB.rtbw", "KRvKN.rtbw", "KRvKP.rtbw",
-    "KRvKR.rtbw",
+    f"{position}.{ext}" for position in _SYZYGY_345_POSITIONS for ext in ("rtbw", "rtbz")
 ]
 
 
@@ -237,7 +241,7 @@ def _offer_download_bt4(current_path: str) -> str:
 
 
 def _offer_download_syzygy(current_path: str) -> str:
-    """Offer to download 3-4-5 piece Syzygy WDL tablebases if none are configured.
+    """Offer to download 3-4-5 piece Syzygy WDL+DTZ tablebases if none are configured.
 
     Args:
         current_path: Currently configured syzygy_path (may be empty).
@@ -249,7 +253,7 @@ def _offer_download_syzygy(current_path: str) -> str:
         return current_path
 
     console.print("\n[yellow]No Syzygy tablebase path configured.")
-    console.print("  3-4-5 piece WDL files (~150 MB) will be downloaded from tablebase.lichess.ovh")
+    console.print("  3-4-5 piece WDL+DTZ files (~290 MB) will be downloaded from tablebase.lichess.ovh")
     if not questionary.confirm("Download 3-4-5 piece Syzygy tablebases now?", default=False).ask():
         return questionary.text("Enter path to existing Syzygy directory (or leave blank):").ask() or ""
 
@@ -257,7 +261,8 @@ def _offer_download_syzygy(current_path: str) -> str:
     dest_dir.mkdir(parents=True, exist_ok=True)
     failed = 0
     for filename in _SYZYGY_345_FILES:
-        url = f"{_SYZYGY_BASE_URL}{filename}"
+        ext = filename.rsplit(".", 1)[1]
+        url = f"{_SYZYGY_BASE_URL}{_SYZYGY_SUBDIRS[ext]}/{filename}"
         dest = dest_dir / filename
         if dest.exists():
             continue
