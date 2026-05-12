@@ -113,7 +113,7 @@ def claim_jobs(
             jobs = list(
                 jobs_for_game
                 .filter(status=AnalysisJob.STATUS_PENDING)
-                .order_by('-priority', 'created_at')[:1]
+                .order_by('-priority', '-game__played_at')[:1]
             )
             if not jobs:
                 raise JobCheckoutDenied('No pending job exists for requested game')
@@ -122,7 +122,7 @@ def claim_jobs(
                 AnalysisJob.objects
                 .select_for_update(skip_locked=True)
                 .filter(engine=engine, status=AnalysisJob.STATUS_PENDING)
-                .order_by('-priority', 'created_at')
+                .order_by('-priority', '-game__played_at')
                 [:batch_size]
             )
         if not jobs:
