@@ -176,65 +176,6 @@ def _hash_worker_id(worker_id: str) -> str:
     return sha256(worker_id.encode("utf-8", errors="ignore")).hexdigest()[:12]
 
 
-class _SentryLogsBridge(logging.Handler):
-    """Forward stdlib ``logging`` records to :data:`sentry_sdk.logger`.
-
-    Sentry's experimental ``enable_logs`` transport ships records that go
-    through ``sentry_sdk.logger`` as structured log entries visible in the
-    Logs view. Existing worker code uses ``logging.getLogger(__name__)``;
-    this bridge translates each record to the equivalent
-    ``sentry_sdk.logger`` call without touching callsites.
-    """
-
-    _LEVEL_MAP = {
-        logging.DEBUG: "debug",
-        logging.INFO: "info",
-        logging.WARNING: "warning",
-        logging.ERROR: "error",
-        logging.CRITICAL: "fatal",
-    }
-
-    def emit(self, record: logging.LogRecord) -> None:  # noqa: D401 - stdlib API
-        """Send one record to ``sentry_sdk.logger`` at the matching level.
-
-        Args:
-            record: The stdlib record produced anywhere in the process.
-        """
-        try:
-            import sentry_sdk
-        except ImportError:  # pragma: no cover - sentry-sdk is a hard dep
-            return
-        level_name = self._LEVEL_MAP.get(record.levelno, "info")
-        method = getattr(sentry_sdk.logger, level_name, None)
-        if method is None:  # pragma: no cover - level map covers stdlib levels
-            return
-        try:
-            method(record.getMessage(), logger=record.name)
-        except Exception:  # noqa: BLE001 - never let logging crash the worker
-            return
-
-
-def _install_structured_logs_bridge(level: int = logging.INFO) -> None:
-    """Attach :class:`_SentryLogsBridge` to the stdlib root logger once.
-
-    Idempotent: re-running init_telemetry updates the existing bridge's
-    threshold in place instead of duplicating handlers.
-
-    Args:
-        level: Minimum stdlib level to forward to ``sentry_sdk.logger``.
-    """
-    root = logging.getLogger()
-    existing = next(
-        (h for h in root.handlers if isinstance(h, _SentryLogsBridge)), None
-    )
-    if existing is not None:
-        existing.setLevel(level)
-        return
-    handler = _SentryLogsBridge()
-    handler.setLevel(level)
-    root.addHandler(handler)
-
-
 def _normalize_level(level: str | int) -> int:
     """Translate a level name or number to the stdlib int.
 
@@ -263,12 +204,10 @@ def init_telemetry(
 
     No-op when ``consent`` is ``False`` or when the resolved DSN is empty.
     Wires up :class:`sentry_sdk.integrations.logging.LoggingIntegration`
-    so ``INFO`` records become breadcrumbs and ``WARNING``+ records are
-    reported as events. Also enables the experimental ``enable_logs``
-    transport and attaches a stdlib-logging bridge that forwards every
-    record to :data:`sentry_sdk.logger` so ordinary
-    ``logging.getLogger(__name__).info(...)`` calls show up in the
-    GlitchTip log explorer during normal (no-error) operation.
+    with the experimental ``enable_logs`` transport so that ordinary
+    ``logging.getLogger(__name__).{info,warning,error}(...)`` calls show
+    up in the GlitchTip log explorer during normal operation. The same
+    integration also produces an event at ``WARNING`` and above.
 
     Args:
         consent: Whether the user has opted in. ``False`` short-circuits
@@ -302,16 +241,14 @@ def init_telemetry(
         dsn=resolved,
         release=release,
         integrations=[
-            # Breadcrumb floor follows --log-level; events still fire at
-            # WARNING+. Breadcrumbs alone aren't transmitted; the bridge
-            # below ships records as structured logs.
+            # Floor for both breadcrumbs and structured logs follows
+            # --log-level; events still fire at WARNING+.
             LoggingIntegration(level=threshold, event_level=logging.WARNING),
         ],
         send_default_pii=False,
         traces_sample_rate=0.0,
         _experiments={"enable_logs": True},
     )
-    _install_structured_logs_bridge(level=threshold)
 
     sentry_sdk.set_tag("worker_id", _hash_worker_id(worker_id))
     if environment_info:
