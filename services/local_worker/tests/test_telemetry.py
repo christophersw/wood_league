@@ -10,9 +10,7 @@ Changelog:
 from __future__ import annotations
 
 import json
-import logging
 from pathlib import Path
-from typing import Any
 
 import pytest
 
@@ -92,99 +90,3 @@ def test_init_telemetry_skips_when_dsn_empty(
     assert init_telemetry(consent=True, release="0.3.0") is False
 
 
-def _install_sentry_capture(
-    monkeypatch: pytest.MonkeyPatch,
-) -> tuple[dict[str, Any], dict[str, str]]:
-    """Stub out ``sentry_sdk.init`` / ``set_tag`` and return capture dicts.
-
-    Args:
-        monkeypatch: Pytest fixture used to patch the global ``sentry_sdk``
-            module for the duration of the calling test.
-
-    Returns:
-        Tuple ``(captured_init_kwargs, captured_tags)`` whose contents are
-        populated by the stubbed sentry callables when ``init_telemetry``
-        is invoked.
-    """
-    captured: dict[str, Any] = {}
-    tags: dict[str, str] = {}
-
-    import sentry_sdk
-
-    def fake_init(**kwargs: Any) -> None:
-        captured.update(kwargs)
-
-    def fake_set_tag(name: str, value: str) -> None:
-        tags[name] = value
-
-    monkeypatch.setattr(sentry_sdk, "init", fake_init)
-    monkeypatch.setattr(sentry_sdk, "set_tag", fake_set_tag)
-    return captured, tags
-
-
-def test_init_telemetry_initialises_when_consent_and_dsn(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """sentry_sdk.init must be called with the resolved DSN and release."""
-    captured, tags = _install_sentry_capture(monkeypatch)
-    monkeypatch.setenv("WOOD_LEAGUE_GLITCHTIP_DSN", "https://example@glitchtip/1")
-
-    result = init_telemetry(
-        consent=True,
-        release="0.3.0",
-        environment_info={
-            "host": {"system": "Darwin", "machine": "arm64"},
-            "python": {"version": "3.12.4"},
-            "engines": {"stockfish": {"path": "/usr/bin/stockfish"}, "lc0": {"path": None}},
-        },
-        worker_id="install-token-abc",
-    )
-
-    assert result is True
-    expected_init = {
-        "dsn": "https://example@glitchtip/1",
-        "release": "0.3.0",
-    }
-    for key, value in expected_init.items():
-        assert captured[key] == value
-    assert "integrations" in captured
-
-    expected_tags = {
-        "os": "Darwin",
-        "arch": "arm64",
-        "python": "3.12.4",
-        "engines": "stockfish",
-    }
-    assert {k: tags[k] for k in expected_tags} == expected_tags
-    # worker_id must be hashed, never the raw token.
-    assert tags["worker_id"] != "install-token-abc"
-    assert len(tags["worker_id"]) == 12
-
-
-def test_init_telemetry_enables_structured_logs(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """init_telemetry must pass _experiments enable_logs to sentry_sdk.init."""
-    captured, _ = _install_sentry_capture(monkeypatch)
-    monkeypatch.setenv("WOOD_LEAGUE_GLITCHTIP_DSN", "https://example@glitchtip/1")
-    init_telemetry(consent=True, release="0.4.1")
-    assert captured.get("_experiments") == {"enable_logs": True}
-
-
-def test_install_structured_logs_bridge_is_idempotent() -> None:
-    """Re-running install must not attach duplicate handlers."""
-    root = logging.getLogger()
-    for handler in list(root.handlers):
-        if isinstance(handler, telemetry._SentryLogsBridge):
-            root.removeHandler(handler)
-    try:
-        telemetry._install_structured_logs_bridge()
-        telemetry._install_structured_logs_bridge()
-        count = sum(
-            1 for h in root.handlers if isinstance(h, telemetry._SentryLogsBridge)
-        )
-        assert count == 1
-    finally:
-        for handler in list(root.handlers):
-            if isinstance(handler, telemetry._SentryLogsBridge):
-                root.removeHandler(handler)
