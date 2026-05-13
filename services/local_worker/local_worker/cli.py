@@ -16,6 +16,9 @@ Changelog:
         ``telemetry`` sub-app.
     2026-05-12: Split per-command code into ``local_worker.commands.*``
         modules; this file is now just construction + wiring.
+    2026-05-13 (#52): Replaced GlitchTip telemetry init with the new
+        log-upload consent prompt + crash-hook installer; registered
+        the ``submit-log`` subcommand.
 """
 from __future__ import annotations
 
@@ -25,23 +28,22 @@ from typing import Optional
 
 import typer
 
-from local_worker._shared import LONG_RUNNING_COMMANDS, current_release
+from local_worker._shared import LONG_RUNNING_COMMANDS
 from local_worker.commands import analyze as analyze_cmd
 from local_worker.commands import info as info_cmd
 from local_worker.commands import logs as logs_cmd
 from local_worker.commands import run as run_cmd
 from local_worker.commands import setup as setup_cmd
+from local_worker.commands import submit_log as submit_log_cmd
 from local_worker.commands.logs import _tail_lines  # re-exported for tests
 from local_worker.commands.telemetry import telemetry_app
-from local_worker.config import load_settings
-from local_worker.environment import detect_environment
-from local_worker.logging_setup import configure_logging, log_session_banner
-from local_worker.telemetry import (
-    default_config_path as _telemetry_config_path,
+from local_worker.consent import (
+    default_config_path as _consent_config_path,
     get_consent,
-    init_telemetry,
     prompt_for_consent,
 )
+from local_worker.log_upload import install_crash_hook
+from local_worker.logging_setup import configure_logging, log_session_banner
 
 app = typer.Typer(
     name="wood-league-worker",
@@ -51,16 +53,16 @@ app = typer.Typer(
 app.add_typer(telemetry_app, name="telemetry")
 
 
-def _effective_telemetry(override: Optional[bool], config_path: Path) -> bool:
-    """Resolve effective telemetry state given the CLI override and config.
+def _effective_consent(override: Optional[bool], config_path: Path) -> bool:
+    """Resolve effective log-upload consent for this invocation.
 
     Args:
         override: ``True`` from ``--telemetry``, ``False`` from
             ``--no-telemetry``, or ``None`` if neither flag was passed.
-        config_path: Path to the worker config file.
+        config_path: Path to the worker consent config file.
 
     Returns:
-        Effective consent value to feed into :func:`init_telemetry`.
+        Effective consent value to use for crash-hook installation.
     """
     if override is not None:
         return override
@@ -82,7 +84,7 @@ def _startup(
     telemetry: Optional[bool] = typer.Option(
         None,
         "--telemetry/--no-telemetry",
-        help="Override persisted telemetry consent for this invocation.",
+        help="Override persisted log-upload consent for this invocation.",
     ),
     log_dir: str = typer.Option(
         "",
@@ -91,7 +93,7 @@ def _startup(
         hidden=True,
     ),
 ) -> None:
-    """Configure logging and optional telemetry on every invocation."""
+    """Configure logging and (optionally) install the crash-upload hook."""
     if log_dir:
         os.environ["WLW_LOG_DIR"] = log_dir
 
@@ -99,15 +101,9 @@ def _startup(
     log_file = configure_logging(level=log_level, reset_file=is_long_running)
     if is_long_running:
         log_session_banner(log_file)
-        config_path = _telemetry_config_path()
-        consent = _effective_telemetry(telemetry, config_path)
-        init_telemetry(
-            consent=consent,
-            release=current_release(),
-            environment_info=detect_environment(),
-            worker_id=load_settings().worker_id,
-            log_level=log_level,
-        )
+        config_path = _consent_config_path()
+        if _effective_consent(telemetry, config_path):
+            install_crash_hook()
 
 
 # Register subcommands from sibling modules.
@@ -117,6 +113,7 @@ app.command()(analyze_cmd.analyze)
 app.command()(logs_cmd.logs)
 app.command()(info_cmd.version)
 app.command()(info_cmd.status)
+app.command("submit-log")(submit_log_cmd.submit_log)
 
 
 __all__ = ["app", "_tail_lines"]

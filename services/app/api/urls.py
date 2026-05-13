@@ -11,6 +11,7 @@ Changelog:
 """
 from django.urls import path
 from . import views
+from .log_upload_view import WorkerLogUploadView
 
 urlpatterns = [
     path('health/', views.HealthView.as_view()),
@@ -20,4 +21,5 @@ urlpatterns = [
     path('jobs/<int:job_id>/submit/', views.JobSubmitView.as_view()),
     path('jobs/status/', views.QueueStatusView.as_view()),
     path('heartbeat/', views.HeartbeatView.as_view()),
+    path('worker/logs/', WorkerLogUploadView.as_view()),
 ]
