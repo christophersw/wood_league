@@ -158,7 +158,7 @@ class WorkerLogUploadAdminTests(TestCase):
         """Create a staff user, an API key, and a WorkerLogUpload row."""
         self.client = APIClient()
         self.staff = User.objects.create_user(
-            email='admin@test.local', password='pass', is_staff=True, is_superuser=True
+            email='admin@test.local', password='pass', role='admin'
         )
         self.client.force_authenticate(user=self.staff)
         self.api_key, _ = WorkerAPIKey.objects.create_key(
@@ -183,7 +183,7 @@ class WorkerLogUploadAdminTests(TestCase):
             )
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response['Location'], fake_url)
-        stub.assert_called_once_with('hashprefix/2026-05-13.log', ttl_seconds=900)
+        stub.assert_called_once_with('hashprefix/2026-05-13.log', ttl_seconds=None)
 
     def test_retention_command_deletes_old_rows_and_objects(self) -> None:
         """``prune_worker_logs`` removes rows older than the threshold."""
