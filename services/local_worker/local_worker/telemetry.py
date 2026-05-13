@@ -13,6 +13,7 @@ Description:
 Changelog:
     2026-05-12: Initial creation. Closes #43.
 """
+
 from __future__ import annotations
 
 import json
@@ -27,8 +28,9 @@ import platformdirs
 # Baked-in default DSN, intentionally empty until GlitchTip is provisioned.
 # Override at runtime via ``WOOD_LEAGUE_GLITCHTIP_DSN`` or by editing the
 # constant in a release build. An empty value disables telemetry entirely.
-_DEFAULT_GLITCHTIP_DSN: str = ""  # TODO: set before tagging release
-
+_DEFAULT_GLITCHTIP_DSN: str = (
+    "https://9c91de7f2d714cb38c232a9947261f82@glitchtip-web-production-944c.up.railway.app/1"
+)
 _CONSENT_PROMPT = (
     "Help debug worker issues by sending anonymous diagnostics "
     "(errors, hardware info) to GlitchTip? [y/N]: "
@@ -233,9 +235,7 @@ def init_telemetry(
         sentry_sdk.set_tag("os", str(host.get("system", "unknown")))
         sentry_sdk.set_tag("arch", str(host.get("machine", "unknown")))
         sentry_sdk.set_tag("python", str(python_info.get("version", "unknown")))
-        installed = sorted(
-            name for name, info in engines.items() if info.get("path")
-        )
+        installed = sorted(name for name, info in engines.items() if info.get("path"))
         sentry_sdk.set_tag("engines", ",".join(installed) or "none")
 
     return True
