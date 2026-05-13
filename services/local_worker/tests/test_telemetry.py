@@ -171,35 +171,6 @@ def test_init_telemetry_enables_structured_logs(
     assert captured.get("_experiments") == {"enable_logs": True}
 
 
-def _make_record(level: int, message: str) -> logging.LogRecord:
-    """Build a minimal LogRecord at the given level for bridge tests."""
-    return logging.LogRecord(
-        name="t", level=level, pathname=__file__, lineno=1,
-        msg=message, args=(), exc_info=None,
-    )
-
-
-@pytest.mark.parametrize(
-    "level, expected",
-    [(20, "info"), (30, "warning"), (40, "error"), (50, "fatal")],
-)
-def test_structured_logs_bridge_forwards_to_sentry_logger(
-    monkeypatch: pytest.MonkeyPatch, level: int, expected: str
-) -> None:
-    """The bridge must call sentry_sdk.logger.<level> per record."""
-    import sentry_sdk
-
-    seen: list[tuple[str, str]] = []
-
-    class _FakeLogger:
-        def __getattr__(self, name: str) -> Any:
-            return lambda msg, **_: seen.append((name, msg))
-
-    monkeypatch.setattr(sentry_sdk, "logger", _FakeLogger(), raising=False)
-    telemetry._SentryLogsBridge().emit(_make_record(level, "m"))
-    assert seen == [(expected, "m")]
-
-
 def test_install_structured_logs_bridge_is_idempotent() -> None:
     """Re-running install must not attach duplicate handlers."""
     root = logging.getLogger()

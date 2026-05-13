@@ -214,17 +214,41 @@ class _SentryLogsBridge(logging.Handler):
             return
 
 
-def _install_structured_logs_bridge() -> None:
+def _install_structured_logs_bridge(level: int = logging.INFO) -> None:
     """Attach :class:`_SentryLogsBridge` to the stdlib root logger once.
 
-    Idempotent: re-running init_telemetry does not duplicate handlers.
+    Idempotent: re-running init_telemetry updates the existing bridge's
+    threshold in place instead of duplicating handlers.
+
+    Args:
+        level: Minimum stdlib level to forward to ``sentry_sdk.logger``.
     """
     root = logging.getLogger()
-    if any(isinstance(h, _SentryLogsBridge) for h in root.handlers):
+    existing = next(
+        (h for h in root.handlers if isinstance(h, _SentryLogsBridge)), None
+    )
+    if existing is not None:
+        existing.setLevel(level)
         return
     handler = _SentryLogsBridge()
-    handler.setLevel(logging.INFO)
+    handler.setLevel(level)
     root.addHandler(handler)
+
+
+def _normalize_level(level: str | int) -> int:
+    """Translate a level name or number to the stdlib int.
+
+    Args:
+        level: Either a stdlib level number, or a name like
+            ``"debug"``/``"info"``/``"warning"`` (case-insensitive).
+
+    Returns:
+        The matching ``logging`` level integer, defaulting to ``INFO``.
+    """
+    if isinstance(level, int):
+        return level
+    resolved = logging.getLevelName(level.upper())
+    return resolved if isinstance(resolved, int) else logging.INFO
 
 
 def init_telemetry(
@@ -233,6 +257,7 @@ def init_telemetry(
     dsn: Optional[str] = None,
     environment_info: Optional[dict[str, Any]] = None,
     worker_id: str = "",
+    log_level: str | int = "INFO",
 ) -> bool:
     """Initialise ``sentry-sdk`` against GlitchTip.
 
@@ -272,19 +297,21 @@ def init_telemetry(
     import sentry_sdk
     from sentry_sdk.integrations.logging import LoggingIntegration
 
+    threshold = _normalize_level(log_level)
     sentry_sdk.init(
         dsn=resolved,
         release=release,
         integrations=[
-            # INFO breadcrumbs, WARNING+ events. Breadcrumbs alone aren't
-            # transmitted; the bridge below ships INFO+ as structured logs.
-            LoggingIntegration(level=20, event_level=30),
+            # Breadcrumb floor follows --log-level; events still fire at
+            # WARNING+. Breadcrumbs alone aren't transmitted; the bridge
+            # below ships records as structured logs.
+            LoggingIntegration(level=threshold, event_level=logging.WARNING),
         ],
         send_default_pii=False,
         traces_sample_rate=0.0,
         _experiments={"enable_logs": True},
     )
-    _install_structured_logs_bridge()
+    _install_structured_logs_bridge(level=threshold)
 
     sentry_sdk.set_tag("worker_id", _hash_worker_id(worker_id))
     if environment_info:
