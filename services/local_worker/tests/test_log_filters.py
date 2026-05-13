@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 
 from local_worker._log_filters import (
+    ChessEngineCleanExitFilter,
     ChessEngineStderrFilter,
     install_library_log_filters,
 )
@@ -82,3 +83,32 @@ def test_install_library_log_filters_is_idempotent() -> None:
         if isinstance(f, ChessEngineStderrFilter)
     ]
     assert len(chess_filters) == 1
+
+
+def test_clean_exit_filter_downgrades_minus_two() -> None:
+    """A clean engine.quit() shutdown must drop from WARNING to DEBUG."""
+    record = _make_record(
+        logging.WARNING,
+        "<UciProtocol (pid=999)>: Closing analysis because engine has been "
+        "terminated (error: engine process died unexpectedly (exit code: -2))",
+    )
+    assert ChessEngineCleanExitFilter().filter(record) is True
+    assert record.levelno == logging.DEBUG
+    assert record.levelname == "DEBUG"
+
+
+def test_clean_exit_filter_keeps_unknown_exit_code() -> None:
+    """An actual crash exit code (e.g. SIGSEGV) must remain at WARNING."""
+    record = _make_record(
+        logging.WARNING,
+        "<UciProtocol (pid=999)>: Connection lost (exit code: -11, error: None)",
+    )
+    assert ChessEngineCleanExitFilter().filter(record) is True
+    assert record.levelno == logging.WARNING
+
+
+def test_install_library_log_filters_silences_asyncio_debug() -> None:
+    """install_library_log_filters must raise asyncio's logger to INFO."""
+    logging.getLogger("asyncio").setLevel(logging.DEBUG)
+    install_library_log_filters()
+    assert logging.getLogger("asyncio").level == logging.INFO
