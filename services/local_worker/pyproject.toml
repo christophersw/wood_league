@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "wood-league-worker"
-version = "0.3.2"
+version = "0.4.0"
 description = "Local analysis worker for the Wood League chess platform"
 requires-python = ">=3.11"
 dependencies = [
@@ -14,6 +14,8 @@ dependencies = [
     "python-chess>=1.11",
     "httpx>=0.27",
     "platformdirs>=4",
+    "loguru>=0.7",
+    "sentry-sdk>=2.0",
 ]
 
 [project.scripts]

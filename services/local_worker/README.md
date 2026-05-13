@@ -150,11 +150,56 @@ Settings are stored as JSON. All fields can also be set by re-running `setup`. T
 | `stockfish_hash_mb` | `512` | Hash table size for Stockfish in MB (setup auto-suggests based on RAM) |
 | `lc0_nodes` | `10000` | Nodes per move for Lc0 |
 
+### `logs`
+
+Show worker log output. Implemented in pure Python — works the same on Windows, macOS, and Linux without needing an external `tail` binary.
+
+```bash
+wood-league-worker logs [--tail N] [--follow]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--tail N`, `-n N` | Print the last N lines (default 50). |
+| `--follow`, `-f` | Print the tail and then poll for new lines until interrupted. |
+
+The primary log file is overwritten at the start of every `run`, so it always reflects the most recent session. Read-only commands (`logs`, `status`, `version`, `telemetry *`) leave it untouched and instead write any warnings they raise to a separate `worker.diagnostics.log` in the same directory.
+
+---
+
+### `telemetry`
+
+Manage opt-in remote diagnostics. The worker can optionally send anonymous error reports (with hardware info and engine versions) to a self-hosted **GlitchTip** instance to help debug crashes that are otherwise hard to reproduce. Telemetry is **off** by default; the first `run` will prompt you once, and the answer is persisted to `~/.config/wood-league-worker/config.json` (or the platform-equivalent) forever.
+
+```bash
+wood-league-worker telemetry status     # show current state
+wood-league-worker telemetry enable     # opt in
+wood-league-worker telemetry disable    # opt out
+```
+
+You can also override the persisted choice for a single invocation:
+
+```bash
+wood-league-worker --telemetry run       # force on for this run
+wood-league-worker --no-telemetry run    # force off for this run
+```
+
+---
+
+## Global Options
+
+| Option | Env var | Description |
+|--------|---------|-------------|
+| `--log-level` | `WOOD_LEAGUE_LOG_LEVEL` | Logging threshold for the file sink. Accepts `TRACE`, `DEBUG`, `INFO` (default), `WARNING`, `ERROR`, `CRITICAL`. |
+| `--telemetry` / `--no-telemetry` | — | Override persisted telemetry consent for one invocation. |
+
 ## Environment Variables
 
 | Variable | Description |
 |----------|-------------|
 | `WLW_LOG_DIR` | Override the directory where log files are written |
+| `WOOD_LEAGUE_LOG_LEVEL` | Default logging threshold (same as `--log-level`). |
+| `WOOD_LEAGUE_GLITCHTIP_DSN` | Override the baked-in GlitchTip DSN. Empty disables telemetry entirely. |
 
 ## Development
 
