@@ -11,10 +11,7 @@ Changelog:
 """
 from __future__ import annotations
 
-import json
 import logging
-from datetime import timedelta
-from hashlib import sha256
 from typing import Any
 
 from django.conf import settings
@@ -28,6 +25,7 @@ from rest_framework.views import APIView
 
 from api.authentication import HasWorkerAPIKey
 from api.log_storage import upload_stream
+from api.log_upload_helpers import build_bucket_key, parse_metadata, too_soon
 from api.models import WorkerLogUpload
 
 log = logging.getLogger(__name__)
@@ -37,70 +35,59 @@ _REASON_MANUAL = WorkerLogUpload.REASON_MANUAL
 _NOTE_MAX_BYTES = 4 * 1024
 
 
-def _hash_worker_id(prefix: str) -> str:
-    """Return a 12-char hex prefix of the SHA-256 of ``prefix``.
+def _validate_upload(request: Request) -> Any:
+    """Return the file part of the multipart request, or a 4xx response.
 
     Args:
-        prefix: Non-secret 8-char API-key prefix from the authenticated key.
+        request: Incoming DRF request.
 
     Returns:
-        Short hex string used as the per-worker bucket directory.
+        The uploaded file object on success, or a :class:`Response`
+        carrying the appropriate ``400``/``413``/``503`` status when the
+        request cannot be served.
     """
-    if not prefix:
-        return 'anonymous'
-    return sha256(prefix.encode('utf-8', errors='ignore')).hexdigest()[:12]
+    if not settings.WORKER_LOG_BUCKET:
+        return Response(
+            {'error': 'log upload not configured on this server'},
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+    uploaded = request.FILES.get('log')
+    if uploaded is None:
+        return Response(
+            {'error': 'missing "log" file part'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if uploaded.size is not None and uploaded.size > settings.WORKER_LOG_MAX_BYTES:
+        return Response(
+            {'error': 'log file exceeds maximum size'},
+            status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+        )
+    return uploaded
 
 
-def _parse_metadata(raw: str) -> dict[str, Any]:
-    """Parse the ``metadata`` form field; return ``{}`` on any failure.
+def _normalize_reason(metadata: dict[str, Any]) -> str:
+    """Return a valid reason string from the metadata block.
 
     Args:
-        raw: UTF-8 string from the multipart ``metadata`` part.
+        metadata: Parsed metadata dict.
 
     Returns:
-        Parsed dict, or an empty dict if the value is missing/invalid.
+        Either ``"crash"`` or ``"manual"``; falls back to ``"manual"``.
     """
-    if not raw:
-        return {}
-    try:
-        parsed = json.loads(raw)
-    except (TypeError, ValueError):
-        return {}
-    return parsed if isinstance(parsed, dict) else {}
+    reason = metadata.get('reason', _REASON_MANUAL)
+    return reason if reason in {_REASON_CRASH, _REASON_MANUAL} else _REASON_MANUAL
 
 
-def _too_soon(worker: Any, force: bool) -> bool:
-    """Return ``True`` if the worker uploaded within the cooldown window.
+def _is_force(request: Request) -> bool:
+    """Return ``True`` when the request opts into the rate-limit bypass.
 
     Args:
-        worker: Authenticated ``WorkerAPIKey`` instance.
-        force: When True, bypass the cooldown unconditionally.
+        request: Incoming DRF request.
 
     Returns:
-        ``True`` when the request should be rejected for rate limiting.
+        ``True`` if ``?force=true|1|yes`` is set.
     """
-    if force:
-        return False
-    cooldown = settings.WORKER_LOG_RATE_LIMIT_SECONDS
-    if cooldown <= 0:
-        return False
-    threshold = timezone.now() - timedelta(seconds=cooldown)
-    return WorkerLogUpload.objects.filter(
-        worker=worker, uploaded_at__gte=threshold
-    ).exists()
-
-
-def _build_bucket_key(worker_prefix: str) -> str:
-    """Render the bucket key under which the worker's log will be stored.
-
-    Args:
-        worker_prefix: Non-secret API-key prefix of the authenticated worker.
-
-    Returns:
-        ``<hash>/<iso-timestamp>.log`` path inside the bucket.
-    """
-    stamp = timezone.now().strftime('%Y%m%dT%H%M%SZ')
-    return f'{_hash_worker_id(worker_prefix)}/{stamp}.log'
+    return str(request.query_params.get('force', '')).lower() in {'1', 'true', 'yes'}
 
 
 class WorkerLogUploadView(APIView):
@@ -121,43 +108,25 @@ class WorkerLogUploadView(APIView):
             for missing fields, ``413`` when too large, ``429`` when rate
             limited, or ``503`` when the bucket is not configured.
         """
-        if not settings.WORKER_LOG_BUCKET:
-            return Response(
-                {'error': 'log upload not configured on this server'},
-                status=status.HTTP_503_SERVICE_UNAVAILABLE,
-            )
-
-        uploaded = request.FILES.get('log')
-        if uploaded is None:
-            return Response(
-                {'error': 'missing "log" file part'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        if uploaded.size is not None and uploaded.size > settings.WORKER_LOG_MAX_BYTES:
-            return Response(
-                {'error': 'log file exceeds maximum size'},
-                status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            )
+        uploaded = _validate_upload(request)
+        if isinstance(uploaded, Response):
+            return uploaded
 
         note = (request.data.get('note') or '')[:_NOTE_MAX_BYTES]
-        metadata = _parse_metadata(request.data.get('metadata') or '')
-
-        reason = metadata.get('reason', _REASON_MANUAL)
-        if reason not in {_REASON_CRASH, _REASON_MANUAL}:
-            reason = _REASON_MANUAL
-
-        force = str(request.query_params.get('force', '')).lower() in {'1', 'true', 'yes'}
+        metadata = parse_metadata(request.data.get('metadata') or '')
+        reason = _normalize_reason(metadata)
+        force = _is_force(request)
         worker = request.auth
-        if _too_soon(worker, force):
+        if too_soon(worker, force):
             return Response(
                 {'error': 'too many uploads — try again shortly'},
                 status=status.HTTP_429_TOO_MANY_REQUESTS,
             )
 
-        bucket_key = _build_bucket_key(worker.prefix)
+        bucket_key = build_bucket_key(worker.prefix)
         try:
             upload_stream(uploaded.file, bucket_key)
-        except Exception as exc:  # noqa: BLE001 - boto3 raises ClientError, BotoCoreError, etc.
+        except Exception as exc:  # noqa: BLE001 - boto3 raises many subclasses
             log.exception('worker log upload to bucket failed: %s', exc)
             return Response(
                 {'error': 'bucket upload failed'},

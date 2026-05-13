@@ -17,7 +17,7 @@ from typing import Any
 import httpx
 import pytest
 
-from local_worker import log_upload
+from local_worker import _log_upload_meta, log_upload
 from local_worker.config import Settings
 
 
@@ -31,7 +31,7 @@ def _seed_log(tmp_path: Path, body: bytes = b'session log line\n') -> Path:
 def _stub_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     """Replace ``detect_environment`` with a deterministic dict."""
     monkeypatch.setattr(
-        log_upload,
+        _log_upload_meta,
         'detect_environment',
         lambda: {
             'host': {'system': 'Darwin', 'machine': 'arm64'},
