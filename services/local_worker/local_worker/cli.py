@@ -10,10 +10,15 @@ Description:
 Changelog:
     2026-05-09: Initial creation
     2026-05-10: Added BT4 network and Syzygy download helpers in setup; fix Syzygy URL (3-4-5-wdl subdir)
+    2026-05-12: Rewrote ``logs`` as a Python-native tail (closes #43);
+        wired loguru-based logging, --log-level, telemetry flags and
+        ``telemetry`` sub-app.
 """
 from __future__ import annotations
 
 import threading
+import time
+from collections import deque
 from pathlib import Path
 from typing import Optional
 
@@ -37,8 +42,24 @@ from local_worker.detector import (
 )
 from local_worker.display import worker_display
 from local_worker.game_meta import parse_game_meta
-from local_worker.logging_setup import configure_logging
+from local_worker.logging_setup import (
+    _detect_environment,
+    configure_logging,
+    log_session_banner,
+)
 from local_worker.loop import WorkerStats, run_batch
+from local_worker.telemetry import (
+    default_config_path as _telemetry_config_path,
+    get_consent,
+    init_telemetry,
+    prompt_for_consent,
+    set_consent,
+)
+
+# Subcommand names that produce long-running worker sessions. These are the
+# only commands that (a) truncate ``worker.log`` and emit a fresh session
+# banner, and (b) initialise telemetry when consent is on.
+LONG_RUNNING_COMMANDS: set[str] = {"run"}
 
 app = typer.Typer(
     name="wood-league-worker",
@@ -47,13 +68,89 @@ app = typer.Typer(
 )
 console = Console()
 
+telemetry_app = typer.Typer(
+    name="telemetry",
+    help="Manage opt-in remote diagnostics (GlitchTip).",
+    no_args_is_help=True,
+)
+app.add_typer(telemetry_app, name="telemetry")
+
+
+def _effective_telemetry(override: Optional[bool], config_path: Path) -> bool:
+    """Resolve effective telemetry state given the CLI override and config.
+
+    Args:
+        override: ``True`` from ``--telemetry``, ``False`` from
+            ``--no-telemetry``, or ``None`` if neither flag was passed.
+        config_path: Path to the worker config file.
+
+    Returns:
+        Effective consent value to feed into :func:`init_telemetry`.
+    """
+    if override is not None:
+        return override
+    persisted = get_consent(config_path)
+    if persisted is None:
+        # Only prompt during long-running commands; everywhere else
+        # default to off so read-only invocations stay silent.
+        return prompt_for_consent(config_path)
+    return persisted
+
+
+def _current_release() -> str:
+    """Return the installed package version, or ``"source"`` when editable.
+
+    Returns:
+        Release tag string used by Sentry/GlitchTip ``release`` filtering.
+    """
+    try:
+        return _pkg_version("wood-league-worker")
+    except PackageNotFoundError:
+        return "source"
+
 
 @app.callback()
 def _startup(
-    log_dir: str = typer.Option("", envvar="WLW_LOG_DIR", help="Override log file directory", hidden=True),
+    ctx: typer.Context,
+    log_level: str = typer.Option(
+        "INFO",
+        "--log-level",
+        envvar="WOOD_LEAGUE_LOG_LEVEL",
+        help="Logging threshold (TRACE/DEBUG/INFO/WARNING/ERROR/CRITICAL).",
+    ),
+    telemetry: Optional[bool] = typer.Option(
+        None,
+        "--telemetry/--no-telemetry",
+        help="Override persisted telemetry consent for this invocation.",
+    ),
+    log_dir: str = typer.Option(
+        "",
+        envvar="WLW_LOG_DIR",
+        help="Override log file directory (hidden, intended for tests).",
+        hidden=True,
+    ),
 ) -> None:
-    """Configure file logging on every invocation."""
-    configure_logging(log_dir)
+    """Configure logging and optional telemetry on every invocation."""
+    # ``log_dir`` is honoured via the WLW_LOG_DIR env var read inside
+    # logging_setup; reflect the CLI override back into the environment so
+    # both code paths converge.
+    if log_dir:
+        import os
+
+        os.environ["WLW_LOG_DIR"] = log_dir
+
+    is_long_running = ctx.invoked_subcommand in LONG_RUNNING_COMMANDS
+    log_file = configure_logging(level=log_level, reset_file=is_long_running)
+    if is_long_running:
+        log_session_banner(log_file)
+        config_path = _telemetry_config_path()
+        consent = _effective_telemetry(telemetry, config_path)
+        init_telemetry(
+            consent=consent,
+            release=_current_release(),
+            environment_info=_detect_environment(),
+            worker_id=load_settings().worker_id,
+        )
 
 
 def _prompt_api_credentials(settings: Settings) -> tuple[str, str]:
@@ -488,6 +585,107 @@ def analyze(
         console.print(f"[green]Done! Analysed in {result.total_seconds:.1f}s")
 
 
+def _resolve_log_path() -> Path:
+    """Return the path to ``worker.log`` honouring ``WLW_LOG_DIR``.
+
+    Returns:
+        Absolute path; existence is not guaranteed.
+    """
+    import os
+
+    override = os.environ.get("WLW_LOG_DIR", "").strip()
+    base = Path(override) if override else Path(
+        platformdirs.user_log_dir("wood-league-worker", "WoodLeague")
+    )
+    return base / "worker.log"
+
+
+def _tail_lines(log_path: Path, count: int) -> list[str]:
+    """Return the last ``count`` lines of ``log_path`` without a subprocess.
+
+    Uses :class:`collections.deque` so memory usage is bounded by
+    ``count`` regardless of file size. Works on Windows, macOS, and Linux
+    because no external ``tail`` binary is required.
+
+    Args:
+        log_path: Path to the log file. Caller must ensure it exists.
+        count: Number of trailing lines to retain.
+
+    Returns:
+        List of up to ``count`` lines, in original order, each retaining
+        any trailing newline so callers can write them verbatim.
+    """
+    if count <= 0:
+        return []
+    with log_path.open("r", encoding="utf-8", errors="replace") as handle:
+        return list(deque(handle, maxlen=count))
+
+
+def _follow_log(log_path: Path, initial_tail: int) -> None:
+    """Print the last ``initial_tail`` lines, then stream new ones forever.
+
+    A polling loop with ``time.sleep(0.5)`` and ``seek`` replaces ``tail
+    -f`` so this works on Windows. Stops cleanly on ``KeyboardInterrupt``.
+
+    Args:
+        log_path: Path to the log file. Re-opened each poll cycle so the
+            primary ``worker.log`` is picked up after a ``run`` truncates
+            and recreates it.
+        initial_tail: Number of lines to print up front (the same number
+            ``tail -n N -f`` would print before streaming).
+    """
+    import sys
+
+    for line in _tail_lines(log_path, initial_tail):
+        sys.stdout.write(line)
+    sys.stdout.flush()
+
+    # Track current file identity and position so we can detect truncation
+    # or replacement (e.g. when ``run`` resets the file mid-follow).
+    try:
+        handle = log_path.open("r", encoding="utf-8", errors="replace")
+    except FileNotFoundError:
+        handle = None
+    if handle is not None:
+        handle.seek(0, 2)  # jump to EOF
+
+    try:
+        while True:
+            if handle is None:
+                if log_path.exists():
+                    handle = log_path.open("r", encoding="utf-8", errors="replace")
+                else:
+                    time.sleep(0.5)
+                    continue
+
+            chunk = handle.read()
+            if chunk:
+                sys.stdout.write(chunk)
+                sys.stdout.flush()
+                continue
+
+            # No new bytes — check for truncation/rotation.
+            try:
+                size = log_path.stat().st_size
+            except FileNotFoundError:
+                handle.close()
+                handle = None
+                time.sleep(0.5)
+                continue
+            if size < handle.tell():
+                # File was truncated; re-open from the beginning.
+                handle.close()
+                handle = log_path.open("r", encoding="utf-8", errors="replace")
+                continue
+
+            time.sleep(0.5)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        if handle is not None:
+            handle.close()
+
+
 @app.command()
 def logs(
     follow: bool = typer.Option(
@@ -499,37 +697,60 @@ def logs(
 ) -> None:
     """Show worker log output.
 
-    With no flags, prints the log file path and the last `--tail` lines.
-    With `--follow`, streams new lines as the worker writes them (useful in
-    a second terminal while `run` is going).
+    With no flags, prints the log file path and the last ``--tail`` lines.
+    With ``--follow``, streams new lines as the worker writes them (useful
+    in a second terminal while ``run`` is going). Implemented in pure
+    Python — no dependency on a Unix ``tail`` binary, so it works on
+    Windows too.
     """
-    import platformdirs
-    import subprocess
     import sys
-    from pathlib import Path
 
-    log_path = Path(platformdirs.user_log_dir("wood-league-worker", "WoodLeague")) / "worker.log"
+    log_path = _resolve_log_path()
     console.print(f"[cyan]Log file:[/] {log_path}")
     if not log_path.exists():
         console.print("[yellow]Log file does not exist yet — run the worker first.")
         return
 
     if follow:
-        try:
-            subprocess.run(["tail", "-n", str(tail), "-f", str(log_path)], check=False)  # noqa: S603, S607
-        except KeyboardInterrupt:
-            pass
+        _follow_log(log_path, tail)
         return
 
     try:
-        # Read just the tail to avoid loading huge files into memory.
-        result = subprocess.run(  # noqa: S603, S607
-            ["tail", "-n", str(tail), str(log_path)],
-            capture_output=True, text=True, check=False,
-        )
-        sys.stdout.write(result.stdout)
-    except Exception as exc:
+        for line in _tail_lines(log_path, tail):
+            sys.stdout.write(line)
+        sys.stdout.flush()
+    except OSError as exc:
         console.print(f"[red]Could not read log: {exc}")
+
+
+@telemetry_app.command("status")
+def telemetry_status() -> None:
+    """Show the current telemetry consent state."""
+    config_path = _telemetry_config_path()
+    consent = get_consent(config_path)
+    if consent is None:
+        console.print("[yellow]Telemetry: not configured (will prompt on next `run`).")
+    elif consent:
+        console.print("[green]Telemetry: enabled.")
+    else:
+        console.print("[red]Telemetry: disabled.")
+    console.print(f"[dim]Config file: {config_path}")
+
+
+@telemetry_app.command("enable")
+def telemetry_enable() -> None:
+    """Opt in to sending anonymous diagnostics to GlitchTip."""
+    config_path = _telemetry_config_path()
+    set_consent(config_path, True)
+    console.print("[green]Telemetry enabled.")
+
+
+@telemetry_app.command("disable")
+def telemetry_disable() -> None:
+    """Opt out of sending diagnostics to GlitchTip."""
+    config_path = _telemetry_config_path()
+    set_consent(config_path, False)
+    console.print("[yellow]Telemetry disabled.")
 
 
 @app.command()
