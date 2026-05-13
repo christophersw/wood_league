@@ -178,6 +178,19 @@ REST_FRAMEWORK = {
 # Workers send: X-Api-Key: <key>
 API_KEY_CUSTOM_HEADER = 'HTTP_X_API_KEY'
 
+# Worker log upload (issue #52). When ``WORKER_LOG_BUCKET`` is empty the
+# upload endpoint is effectively disabled and returns 503; tests stub the
+# bucket interactions out, so the values can be safely blank in dev/test.
+WORKER_LOG_BUCKET = os.environ.get('BUCKET_NAME', '')
+WORKER_LOG_S3_ENDPOINT = os.environ.get('AWS_ENDPOINT_URL_S3', '')
+WORKER_LOG_S3_REGION = os.environ.get('AWS_REGION', 'us-east-1')
+WORKER_LOG_PRESIGN_TTL_SECONDS = int(
+    os.environ.get('WORKER_LOG_PRESIGN_TTL_SECONDS', '900')
+)
+WORKER_LOG_MAX_BYTES = int(os.environ.get('WORKER_LOG_MAX_BYTES', str(100 * 1024 * 1024)))
+WORKER_LOG_RETENTION_DAYS = int(os.environ.get('WORKER_LOG_RETENTION_DAYS', '30'))
+WORKER_LOG_RATE_LIMIT_SECONDS = int(os.environ.get('WORKER_LOG_RATE_LIMIT_SECONDS', '60'))
+
 # Tunable fault-tolerance constants (override in .env)
 STALE_JOB_TIMEOUT_MINUTES = int(os.environ.get('STALE_JOB_TIMEOUT_MINUTES', 15))
 MAX_JOB_RETRIES = int(os.environ.get('MAX_JOB_RETRIES', 3))
