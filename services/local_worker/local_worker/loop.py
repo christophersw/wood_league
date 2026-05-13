@@ -77,7 +77,7 @@ def run_one_job(
     settings: Settings,
     stats: WorkerStats,
     client: WorkerClient,
-    progress_callback: Optional[Callable[[int, int, str, str], None]] = None,
+    progress_callback: Optional[Callable[..., None]] = None,
 ) -> bool:
     """Claim, analyse, and submit a single job.
 
@@ -101,13 +101,15 @@ def run_one_job(
     # Wrap caller's progress callback to log each move so the log file shows
     # which ply was just analysed (visible feedback even when the rich display
     # is masking stdout).
-    def _logging_progress(ply: int, total: int, san: str = "", fen: str = "") -> None:
+    def _logging_progress(
+        ply: int, total: int, san: str = "", fen: str = "", **extras
+    ) -> None:
         log.info(
             "  job %s — move %d/%d %s",
             job.id, ply, total, san or "?",
         )
         if progress_callback:
-            progress_callback(ply, total, san, fen)
+            progress_callback(ply, total, san, fen, **extras)
 
     try:
         if job.engine == "stockfish":
@@ -165,7 +167,7 @@ def run_batch(
     game_id: Optional[str] = None,
     on_job_start: Optional[Callable] = None,
     on_job_done: Optional[Callable] = None,
-    on_progress: Optional[Callable[[int, int, str, str], None]] = None,
+    on_progress: Optional[Callable[..., None]] = None,
     on_jobs_claimed: Optional[Callable[[list], None]] = None,
     stop_event=None,
 ) -> WorkerStats:

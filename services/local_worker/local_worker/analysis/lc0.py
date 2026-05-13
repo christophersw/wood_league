@@ -15,6 +15,7 @@ from __future__ import annotations
 import io
 import json
 import logging
+import time
 from typing import Callable, Optional
 
 import chess
@@ -269,7 +270,7 @@ def analyze_pgn(
     weights_path: str = "",
     syzygy_path: str = "",
     backend: str = "cpu",
-    progress_callback: Optional[Callable[[int, int, str, str], None]] = None,
+    progress_callback: Optional[Callable[..., None]] = None,
 ) -> Lc0GameResult:
     """Analyse a PGN game with Lc0 and return per-move WDL results.
 
@@ -342,9 +343,11 @@ def analyze_pgn(
 
         for ply_index, move in enumerate(moves_list, start=1):
             log.info("lc0: analysing ply %d/%d", ply_index, total_plies)
+            ply_started = time.monotonic()
             move_result, mover, wdl_white = _analyze_one_move(
                 board, move, ply_index, engine, limit
             )
+            ply_seconds = time.monotonic() - ply_started
             move_results.append(move_result)
 
             side = "white" if mover == chess.WHITE else "black"
@@ -362,8 +365,12 @@ def analyze_pgn(
 
             if progress_callback:
                 # Pass move SAN + post-move FEN so the CLI can show which move
-                # just finished and render the resulting board.
-                progress_callback(ply_index, total_plies, move_result.san, board.fen())
+                # just finished and render the resulting board. nodes/seconds
+                # feed the issue-#44 per-ply readouts.
+                progress_callback(
+                    ply_index, total_plies, move_result.san, board.fen(),
+                    nodes=nodes, seconds=ply_seconds,
+                )
 
         def _avg(lst: list[float]) -> float:
             """Return average of a list, or 0.0 if empty."""

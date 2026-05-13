@@ -23,6 +23,7 @@ from local_worker._shared import console
 from local_worker.commands._run_callbacks import make_display_callbacks
 from local_worker.config import Settings, load_settings
 from local_worker.display import worker_display
+from local_worker.logging_setup import is_debug_logging
 from local_worker.loop import WorkerStats, run_batch
 
 
@@ -120,7 +121,7 @@ def run(
     result_stats: Optional[WorkerStats] = None
 
     try:
-        with worker_display(stats) as display:
+        with worker_display(stats, debug=is_debug_logging()) as display:
             callbacks = make_display_callbacks(display, stats)
             result_stats = run_batch(
                 settings=settings,

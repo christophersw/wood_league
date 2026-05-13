@@ -37,8 +37,8 @@ def make_display_callbacks(display, stats: WorkerStats) -> dict:
             event=meta.event,
         )
 
-    def on_progress(ply, total, san="", fen=""):
-        display.advance_move(ply, total, san=san, fen=fen)
+    def on_progress(ply, total, san="", fen="", **extras):
+        display.advance_move(ply, total, san=san, fen=fen, **extras)
 
     def on_job_done(job, success, elapsed):
         if success:

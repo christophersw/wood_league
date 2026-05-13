@@ -125,6 +125,18 @@ def _add_diagnostics_sink(diagnostics_file: Path) -> None:
     )
 
 
+_current_level: str = "INFO"
+
+
+def is_debug_logging() -> bool:
+    """Return True if the active session is configured for DEBUG/TRACE output.
+
+    Used by the live display to decide whether to render the "last debug log
+    line" panel introduced for issue #44.
+    """
+    return _current_level in ("DEBUG", "TRACE")
+
+
 def configure_logging(level: str = "INFO", reset_file: bool = False) -> Path:
     """Install loguru sinks for this CLI invocation.
 
@@ -140,7 +152,9 @@ def configure_logging(level: str = "INFO", reset_file: bool = False) -> Path:
     Returns:
         Path to ``worker.log`` (the primary, human-readable session log).
     """
+    global _current_level
     normalized = _normalize_level(level)
+    _current_level = normalized
     log_dir = _log_directory()
     log_file = log_dir / "worker.log"
     diagnostics_file = log_dir / "worker.diagnostics.log"
@@ -176,6 +190,7 @@ _detect_environment = detect_environment
 
 __all__ = [
     "configure_logging",
+    "is_debug_logging",
     "log_session_banner",
     "_detect_environment",
     "_InterceptHandler",
