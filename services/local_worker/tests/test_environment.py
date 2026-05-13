@@ -9,6 +9,8 @@ Changelog:
     2026-05-12: Extracted from test_logging_setup.py (issue #43 follow-up).
     2026-05-12: Coverage added for Apple Silicon detection and the lc0
         backend probe (issue #54).
+    2026-05-12: Added coverage for ANSI stripping and the UCI ``id name``
+        preference applied to engine version probes (issue #54).
 """
 from __future__ import annotations
 
@@ -115,3 +117,48 @@ def test_lc0_backend_default_parsed_from_help(
 def test_lc0_backend_default_none_when_binary_missing() -> None:
     """No binary means no backend, never a crash."""
     assert environment._lc0_backend_default(None) is None
+
+
+def test_strip_ansi_removes_color_codes() -> None:
+    """The ANSI helper must drop CSI colour sequences."""
+    sample = "\x1b[1m\x1b[31m       _\x1b[0m v0.32.1 built today"
+    assert environment._strip_ansi(sample) == "       _ v0.32.1 built today"
+
+
+def test_probe_engine_version_prefers_id_name(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The UCI ``id name`` line should win over the binary's banner."""
+
+    def fake_uci_id_name(binary: str) -> str | None:
+        assert binary == "/fake/stockfish"
+        return "Stockfish 16.1"
+
+    def fake_run(*args, **kwargs):  # pragma: no cover - guards against use
+        raise AssertionError("fallback should not be needed when id name works")
+
+    monkeypatch.setattr(environment, "_uci_id_name", fake_uci_id_name)
+    monkeypatch.setattr(environment.subprocess, "run", fake_run)
+    assert (
+        environment._probe_engine_version("/fake/stockfish", ("--help",))
+        == "Stockfish 16.1"
+    )
+
+
+def test_probe_engine_version_strips_ansi_from_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If UCI handshake fails, ANSI escapes must not leak into the banner."""
+
+    class FakeResult:
+        stdout = "\x1b[1m\x1b[31m       _\x1b[0m\nlc0 v0.32.1+git.dirty\n"
+        stderr = ""
+
+    monkeypatch.setattr(environment, "_uci_id_name", lambda _b: None)
+    monkeypatch.setattr(
+        environment.subprocess, "run", lambda *a, **k: FakeResult()
+    )
+    result = environment._probe_engine_version("/fake/lc0", ("--version",))
+    assert "\x1b" not in result
+    # The first non-blank line after ANSI stripping is used.
+    assert result.startswith("_") or "lc0" in result
