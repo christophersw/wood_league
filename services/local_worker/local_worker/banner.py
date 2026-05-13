@@ -8,6 +8,7 @@ Description:
 
 Changelog:
     2026-05-12: Extracted from logging_setup.py (issue #43 follow-up).
+    2026-05-12: lc0 backend default surfaced in the engines line (issue #54).
 """
 from __future__ import annotations
 
@@ -111,8 +112,10 @@ def _engines_line(engines: dict[str, Any]) -> str:
     engine_bits: list[str] = []
     for name, info in engines.items():
         if info.get("path"):
+            backend = info.get("backend")
+            suffix = f" backend={backend}" if backend else ""
             engine_bits.append(
-                f"{name} {info.get('version', 'unknown')} @ {info['path']}"
+                f"{name} {info.get('version', 'unknown')} @ {info['path']}{suffix}"
             )
         else:
             engine_bits.append(f"{name} not found")
