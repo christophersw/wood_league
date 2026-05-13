@@ -17,6 +17,7 @@ Changelog:
 from __future__ import annotations
 
 import json
+import logging
 import os
 from datetime import datetime, timezone
 from hashlib import sha256
@@ -175,6 +176,57 @@ def _hash_worker_id(worker_id: str) -> str:
     return sha256(worker_id.encode("utf-8", errors="ignore")).hexdigest()[:12]
 
 
+class _SentryLogsBridge(logging.Handler):
+    """Forward stdlib ``logging`` records to :data:`sentry_sdk.logger`.
+
+    Sentry's experimental ``enable_logs`` transport ships records that go
+    through ``sentry_sdk.logger`` as structured log entries visible in the
+    Logs view. Existing worker code uses ``logging.getLogger(__name__)``;
+    this bridge translates each record to the equivalent
+    ``sentry_sdk.logger`` call without touching callsites.
+    """
+
+    _LEVEL_MAP = {
+        logging.DEBUG: "debug",
+        logging.INFO: "info",
+        logging.WARNING: "warning",
+        logging.ERROR: "error",
+        logging.CRITICAL: "fatal",
+    }
+
+    def emit(self, record: logging.LogRecord) -> None:  # noqa: D401 - stdlib API
+        """Send one record to ``sentry_sdk.logger`` at the matching level.
+
+        Args:
+            record: The stdlib record produced anywhere in the process.
+        """
+        try:
+            import sentry_sdk
+        except ImportError:  # pragma: no cover - sentry-sdk is a hard dep
+            return
+        level_name = self._LEVEL_MAP.get(record.levelno, "info")
+        method = getattr(sentry_sdk.logger, level_name, None)
+        if method is None:  # pragma: no cover - level map covers stdlib levels
+            return
+        try:
+            method(record.getMessage(), logger=record.name)
+        except Exception:  # noqa: BLE001 - never let logging crash the worker
+            return
+
+
+def _install_structured_logs_bridge() -> None:
+    """Attach :class:`_SentryLogsBridge` to the stdlib root logger once.
+
+    Idempotent: re-running init_telemetry does not duplicate handlers.
+    """
+    root = logging.getLogger()
+    if any(isinstance(h, _SentryLogsBridge) for h in root.handlers):
+        return
+    handler = _SentryLogsBridge()
+    handler.setLevel(logging.INFO)
+    root.addHandler(handler)
+
+
 def init_telemetry(
     consent: bool,
     release: str,
@@ -186,9 +238,12 @@ def init_telemetry(
 
     No-op when ``consent`` is ``False`` or when the resolved DSN is empty.
     Wires up :class:`sentry_sdk.integrations.logging.LoggingIntegration`
-    so ``WARNING`` log records become breadcrumbs and ``ERROR``+ records
-    are reported as events — both for our own loguru-routed messages and
-    for any stdlib-emitting third-party library.
+    so ``INFO`` records become breadcrumbs and ``WARNING``+ records are
+    reported as events. Also enables the experimental ``enable_logs``
+    transport and attaches a stdlib-logging bridge that forwards every
+    record to :data:`sentry_sdk.logger` so ordinary
+    ``logging.getLogger(__name__).info(...)`` calls show up in the
+    GlitchTip log explorer during normal (no-error) operation.
 
     Args:
         consent: Whether the user has opted in. ``False`` short-circuits
@@ -221,11 +276,15 @@ def init_telemetry(
         dsn=resolved,
         release=release,
         integrations=[
-            LoggingIntegration(level=20, event_level=40),  # INFO breadcrumbs, ERROR events
+            # INFO breadcrumbs, WARNING+ events. Breadcrumbs alone aren't
+            # transmitted; the bridge below ships INFO+ as structured logs.
+            LoggingIntegration(level=20, event_level=30),
         ],
         send_default_pii=False,
         traces_sample_rate=0.0,
+        _experiments={"enable_logs": True},
     )
+    _install_structured_logs_bridge()
 
     sentry_sdk.set_tag("worker_id", _hash_worker_id(worker_id))
     if environment_info:

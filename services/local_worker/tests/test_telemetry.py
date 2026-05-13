@@ -10,6 +10,7 @@ Changelog:
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -158,3 +159,61 @@ def test_init_telemetry_initialises_when_consent_and_dsn(
     # worker_id must be hashed, never the raw token.
     assert tags["worker_id"] != "install-token-abc"
     assert len(tags["worker_id"]) == 12
+
+
+def test_init_telemetry_enables_structured_logs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """init_telemetry must pass _experiments enable_logs to sentry_sdk.init."""
+    captured, _ = _install_sentry_capture(monkeypatch)
+    monkeypatch.setenv("WOOD_LEAGUE_GLITCHTIP_DSN", "https://example@glitchtip/1")
+    init_telemetry(consent=True, release="0.4.1")
+    assert captured.get("_experiments") == {"enable_logs": True}
+
+
+def _make_record(level: int, message: str) -> logging.LogRecord:
+    """Build a minimal LogRecord at the given level for bridge tests."""
+    return logging.LogRecord(
+        name="t", level=level, pathname=__file__, lineno=1,
+        msg=message, args=(), exc_info=None,
+    )
+
+
+@pytest.mark.parametrize(
+    "level, expected",
+    [(20, "info"), (30, "warning"), (40, "error"), (50, "fatal")],
+)
+def test_structured_logs_bridge_forwards_to_sentry_logger(
+    monkeypatch: pytest.MonkeyPatch, level: int, expected: str
+) -> None:
+    """The bridge must call sentry_sdk.logger.<level> per record."""
+    import sentry_sdk
+
+    seen: list[tuple[str, str]] = []
+
+    class _FakeLogger:
+        def __getattr__(self, name: str) -> Any:
+            return lambda msg, **_: seen.append((name, msg))
+
+    monkeypatch.setattr(sentry_sdk, "logger", _FakeLogger(), raising=False)
+    telemetry._SentryLogsBridge().emit(_make_record(level, "m"))
+    assert seen == [(expected, "m")]
+
+
+def test_install_structured_logs_bridge_is_idempotent() -> None:
+    """Re-running install must not attach duplicate handlers."""
+    root = logging.getLogger()
+    for handler in list(root.handlers):
+        if isinstance(handler, telemetry._SentryLogsBridge):
+            root.removeHandler(handler)
+    try:
+        telemetry._install_structured_logs_bridge()
+        telemetry._install_structured_logs_bridge()
+        count = sum(
+            1 for h in root.handlers if isinstance(h, telemetry._SentryLogsBridge)
+        )
+        assert count == 1
+    finally:
+        for handler in list(root.handlers):
+            if isinstance(handler, telemetry._SentryLogsBridge):
+                root.removeHandler(handler)
