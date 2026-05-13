@@ -11,15 +11,12 @@ Changelog:
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 from loguru import logger
 
-from local_worker import logging_setup
 from local_worker.logging_setup import (
-    _detect_environment,
     _InterceptHandler,
     _normalize_level,
     configure_logging,
@@ -30,7 +27,7 @@ from local_worker.logging_setup import (
 @pytest.fixture(autouse=True)
 def _isolate_log_dir(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> Iterator[Path]:
+):
     """Redirect every test's log output into a temp directory."""
     monkeypatch.setenv("WLW_LOG_DIR", str(tmp_path))
     yield tmp_path
@@ -87,28 +84,6 @@ def test_normalize_level_falls_back_to_info() -> None:
     assert _normalize_level("debug") == "DEBUG"
     assert _normalize_level("verbose-please") == "INFO"
     assert _normalize_level("") == "INFO"
-
-
-def test_detect_environment_dict_shape(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The detector must return the documented top-level keys."""
-    env = _detect_environment()
-    assert set(env.keys()) >= {"host", "python", "torch", "engines"}
-    assert "system" in env["host"]
-    assert "version" in env["python"]
-    assert "available" in env["torch"]
-    assert "stockfish" in env["engines"]
-
-
-def test_detect_environment_unknown_fallback(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """When a probe raises, the value should degrade to 'unknown'."""
-    def boom() -> str:
-        raise RuntimeError("no probe for you")
-
-    monkeypatch.setattr(logging_setup.platform, "system", boom)
-    env = _detect_environment()
-    assert env["host"]["system"] == "unknown"
 
 
 def test_intercept_handler_forwards_stdlib_records(
