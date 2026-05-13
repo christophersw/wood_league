@@ -11,6 +11,7 @@ Changelog:
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -27,7 +28,9 @@ from local_worker.logging_setup import (
 
 
 @pytest.fixture(autouse=True)
-def _isolate_log_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+def _isolate_log_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[Path]:
     """Redirect every test's log output into a temp directory."""
     monkeypatch.setenv("WLW_LOG_DIR", str(tmp_path))
     yield tmp_path

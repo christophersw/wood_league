@@ -91,24 +91,41 @@ def test_init_telemetry_skips_when_dsn_empty(
     assert init_telemetry(consent=True, release="0.3.0") is False
 
 
-def test_init_telemetry_initialises_when_consent_and_dsn(
+def _install_sentry_capture(
     monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """sentry_sdk.init must be called with the resolved DSN and release."""
+) -> tuple[dict[str, Any], dict[str, str]]:
+    """Stub out ``sentry_sdk.init`` / ``set_tag`` and return capture dicts.
+
+    Args:
+        monkeypatch: Pytest fixture used to patch the global ``sentry_sdk``
+            module for the duration of the calling test.
+
+    Returns:
+        Tuple ``(captured_init_kwargs, captured_tags)`` whose contents are
+        populated by the stubbed sentry callables when ``init_telemetry``
+        is invoked.
+    """
     captured: dict[str, Any] = {}
+    tags: dict[str, str] = {}
 
     import sentry_sdk
 
     def fake_init(**kwargs: Any) -> None:
         captured.update(kwargs)
 
-    tags: dict[str, str] = {}
-
     def fake_set_tag(name: str, value: str) -> None:
         tags[name] = value
 
     monkeypatch.setattr(sentry_sdk, "init", fake_init)
     monkeypatch.setattr(sentry_sdk, "set_tag", fake_set_tag)
+    return captured, tags
+
+
+def test_init_telemetry_initialises_when_consent_and_dsn(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """sentry_sdk.init must be called with the resolved DSN and release."""
+    captured, tags = _install_sentry_capture(monkeypatch)
     monkeypatch.setenv("WOOD_LEAGUE_GLITCHTIP_DSN", "https://example@glitchtip/1")
 
     result = init_telemetry(
@@ -123,13 +140,21 @@ def test_init_telemetry_initialises_when_consent_and_dsn(
     )
 
     assert result is True
-    assert captured["dsn"] == "https://example@glitchtip/1"
-    assert captured["release"] == "0.3.0"
+    expected_init = {
+        "dsn": "https://example@glitchtip/1",
+        "release": "0.3.0",
+    }
+    for key, value in expected_init.items():
+        assert captured[key] == value
     assert "integrations" in captured
-    assert tags["os"] == "Darwin"
-    assert tags["arch"] == "arm64"
-    assert tags["python"] == "3.12.4"
-    assert tags["engines"] == "stockfish"
+
+    expected_tags = {
+        "os": "Darwin",
+        "arch": "arm64",
+        "python": "3.12.4",
+        "engines": "stockfish",
+    }
+    assert {k: tags[k] for k in expected_tags} == expected_tags
     # worker_id must be hashed, never the raw token.
     assert tags["worker_id"] != "install-token-abc"
     assert len(tags["worker_id"]) == 12

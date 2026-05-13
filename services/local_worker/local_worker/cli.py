@@ -621,6 +621,54 @@ def _tail_lines(log_path: Path, count: int) -> list[str]:
         return list(deque(handle, maxlen=count))
 
 
+def _open_at_tail(log_path: Path):
+    """Open ``log_path`` for reading and seek to end-of-file.
+
+    Args:
+        log_path: Path to the log file. Missing files yield ``None``.
+
+    Returns:
+        An open text file handle positioned at EOF, or ``None`` when the
+        file does not exist yet.
+    """
+    try:
+        handle = log_path.open("r", encoding="utf-8", errors="replace")
+    except FileNotFoundError:
+        return None
+    handle.seek(0, 2)  # jump to EOF
+    return handle
+
+
+def _poll_for_new_data(handle, log_path: Path):
+    """Read pending bytes, handling rotation/truncation between polls.
+
+    Args:
+        handle: Open file handle previously returned by
+            :func:`_open_at_tail`. May be re-opened if the file rotated.
+        log_path: Path used to stat the file and detect truncation.
+
+    Returns:
+        Tuple of ``(chunk, handle)`` where ``chunk`` is the newly read
+        text (possibly empty) and ``handle`` is the live (possibly
+        replaced) file handle, or ``None`` if the file vanished.
+    """
+    chunk = handle.read()
+    if chunk:
+        return chunk, handle
+
+    # No new bytes — check for truncation/rotation.
+    try:
+        size = log_path.stat().st_size
+    except FileNotFoundError:
+        handle.close()
+        return "", None
+    if size < handle.tell():
+        # File was truncated; re-open from the beginning.
+        handle.close()
+        handle = log_path.open("r", encoding="utf-8", errors="replace")
+    return "", handle
+
+
 def _follow_log(log_path: Path, initial_tail: int) -> None:
     """Print the last ``initial_tail`` lines, then stream new ones forever.
 
@@ -640,44 +688,20 @@ def _follow_log(log_path: Path, initial_tail: int) -> None:
         sys.stdout.write(line)
     sys.stdout.flush()
 
-    # Track current file identity and position so we can detect truncation
-    # or replacement (e.g. when ``run`` resets the file mid-follow).
-    try:
-        handle = log_path.open("r", encoding="utf-8", errors="replace")
-    except FileNotFoundError:
-        handle = None
-    if handle is not None:
-        handle.seek(0, 2)  # jump to EOF
-
+    handle = _open_at_tail(log_path)
     try:
         while True:
             if handle is None:
-                if log_path.exists():
-                    handle = log_path.open("r", encoding="utf-8", errors="replace")
-                else:
+                if not log_path.exists():
                     time.sleep(0.5)
                     continue
+                handle = log_path.open("r", encoding="utf-8", errors="replace")
 
-            chunk = handle.read()
+            chunk, handle = _poll_for_new_data(handle, log_path)
             if chunk:
                 sys.stdout.write(chunk)
                 sys.stdout.flush()
                 continue
-
-            # No new bytes — check for truncation/rotation.
-            try:
-                size = log_path.stat().st_size
-            except FileNotFoundError:
-                handle.close()
-                handle = None
-                time.sleep(0.5)
-                continue
-            if size < handle.tell():
-                # File was truncated; re-open from the beginning.
-                handle.close()
-                handle = log_path.open("r", encoding="utf-8", errors="replace")
-                continue
-
             time.sleep(0.5)
     except KeyboardInterrupt:
         pass

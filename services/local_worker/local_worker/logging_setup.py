@@ -309,8 +309,142 @@ def _detect_environment() -> dict[str, Any]:
     }
 
 
+def _resolve_release() -> str:
+    """Look up the installed package version for the banner header.
+
+    Returns:
+        The PyPI release string, ``"source"`` for editable installs, or
+        ``"unknown"`` if even the metadata import machinery fails.
+    """
+    try:
+        from importlib.metadata import PackageNotFoundError, version as _pkg_version
+
+        try:
+            return _pkg_version("wood-league-worker")
+        except PackageNotFoundError:
+            return "source"
+    except Exception:  # noqa: BLE001
+        return "unknown"
+
+
+def _header_line(release: str) -> str:
+    """Render the top ``=== wood-league-worker ... ===`` banner line.
+
+    Args:
+        release: Release string from :func:`_resolve_release`.
+
+    Returns:
+        Single header line containing release and current UTC timestamp.
+    """
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return f"=== wood-league-worker {release} — session {now} ==="
+
+
+def _host_line(host: dict[str, Any], python_info: dict[str, Any]) -> str:
+    """Render the host/python identification banner line.
+
+    Args:
+        host: ``env['host']`` mapping (system/machine/release).
+        python_info: ``env['python']`` mapping (version/implementation).
+
+    Returns:
+        A single ``host: ...`` banner line.
+    """
+    return (
+        f"host: {host.get('system', 'unknown')} "
+        f"{host.get('machine', 'unknown')} "
+        f"{host.get('release', 'unknown')} / "
+        f"Python {python_info.get('version', 'unknown')}"
+    )
+
+
+def _torch_line(torch_info: dict[str, Any]) -> str:
+    """Render the ``torch:`` banner line.
+
+    Args:
+        torch_info: ``env['torch']`` mapping from :func:`_detect_torch`.
+
+    Returns:
+        Either a populated ``torch: <ver> cuda=... mps=...`` line or
+        ``"torch: not installed"`` when PyTorch is missing.
+    """
+    if not torch_info.get("available"):
+        return "torch: not installed"
+    return (
+        f"torch: {torch_info.get('version', 'unknown')}  "
+        f"cuda={torch_info.get('cuda', False)}  "
+        f"mps={torch_info.get('mps', False)}"
+    )
+
+
+def _gpus_line(torch_info: dict[str, Any]) -> str:
+    """Render the GPU summary banner line.
+
+    Args:
+        torch_info: ``env['torch']`` mapping from :func:`_detect_torch`.
+
+    Returns:
+        A single ``gpus: ...`` banner line including an MPS/no-GPU note.
+    """
+    gpus = torch_info.get("gpus", []) or []
+    mps_note = "mps available" if torch_info.get("mps") else "no gpu"
+    return f"gpus: {gpus or '[]'}  ({mps_note})"
+
+
+def _engines_line(engines: dict[str, Any]) -> str:
+    """Render the chess-engine inventory banner line.
+
+    Args:
+        engines: ``env['engines']`` mapping; each value has ``path`` and
+            ``version`` keys (or ``path is None`` when not found).
+
+    Returns:
+        A single ``engines: ...`` line joining each engine summary with
+        ``"; "``.
+    """
+    engine_bits: list[str] = []
+    for name, info in engines.items():
+        if info.get("path"):
+            engine_bits.append(
+                f"{name} {info.get('version', 'unknown')} @ {info['path']}"
+            )
+        else:
+            engine_bits.append(f"{name} not found")
+    return "engines: " + "; ".join(engine_bits)
+
+
+def _syzygy_line(log_file: Path) -> str:
+    """Render the Syzygy tablebase summary banner line.
+
+    Probes a conventional install location adjacent to the log directory.
+    Failures degrade to a textual marker rather than raising.
+
+    Args:
+        log_file: The primary log file path; its grandparent is searched
+            for a sibling ``syzygy`` directory.
+
+    Returns:
+        A single ``syzygy: ...`` banner line describing presence and
+        WDL/DTZ counts, or a ``not configured`` / ``unreadable`` marker.
+    """
+    syzygy_dir = log_file.parent.parent / "syzygy"
+    if not (syzygy_dir.exists() and syzygy_dir.is_dir()):
+        return "syzygy: not configured"
+    try:
+        files = list(syzygy_dir.iterdir())
+        wdl = sum(1 for f in files if f.suffix == ".rtbw")
+        dtz = sum(1 for f in files if f.suffix == ".rtbz")
+        return f"syzygy: wdl={wdl} dtz={dtz} files at {syzygy_dir}"
+    except OSError:
+        return f"syzygy: present at {syzygy_dir} (unreadable)"
+
+
 def _format_banner_lines(env: dict[str, Any], log_file: Path) -> list[str]:
     """Render :func:`_detect_environment` output into human-readable lines.
+
+    Each banner section is delegated to a dedicated helper so this
+    function stays a thin concatenator and individual sections can be
+    tested in isolation.
 
     Args:
         env: Mapping returned by :func:`_detect_environment`.
@@ -320,73 +454,14 @@ def _format_banner_lines(env: dict[str, Any], log_file: Path) -> list[str]:
     Returns:
         List of banner lines, ready to be emitted one per ``logger.info``.
     """
-    try:
-        from importlib.metadata import PackageNotFoundError, version as _pkg_version
-
-        try:
-            release = _pkg_version("wood-league-worker")
-        except PackageNotFoundError:
-            release = "source"
-    except Exception:  # noqa: BLE001
-        release = "unknown"
-
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    host = env.get("host", {})
-    python_info = env.get("python", {})
     torch_info = env.get("torch", {})
-    engines = env.get("engines", {})
-
-    if torch_info.get("available"):
-        torch_line = (
-            f"torch: {torch_info.get('version', 'unknown')}  "
-            f"cuda={torch_info.get('cuda', False)}  "
-            f"mps={torch_info.get('mps', False)}"
-        )
-    else:
-        torch_line = "torch: not installed"
-
-    gpus = torch_info.get("gpus", []) or []
-    mps_note = "mps available" if torch_info.get("mps") else "no gpu"
-    gpus_line = f"gpus: {gpus or '[]'}  ({mps_note})"
-
-    engine_bits = []
-    for name, info in engines.items():
-        if info.get("path"):
-            engine_bits.append(
-                f"{name} {info.get('version', 'unknown')} @ {info['path']}"
-            )
-        else:
-            engine_bits.append(f"{name} not found")
-    engines_line = "engines: " + "; ".join(engine_bits)
-
-    # Best-effort Syzygy probe: look adjacent to the log dir's parent for
-    # the conventional install location. Failures degrade to "unknown".
-    syzygy_dir = log_file.parent.parent / "syzygy"
-    if syzygy_dir.exists() and syzygy_dir.is_dir():
-        try:
-            files = list(syzygy_dir.iterdir())
-            wdl = sum(1 for f in files if f.suffix == ".rtbw")
-            dtz = sum(1 for f in files if f.suffix == ".rtbz")
-            syzygy_line = (
-                f"syzygy: wdl={wdl} dtz={dtz} files at {syzygy_dir}"
-            )
-        except OSError:
-            syzygy_line = f"syzygy: present at {syzygy_dir} (unreadable)"
-    else:
-        syzygy_line = "syzygy: not configured"
-
     return [
-        f"=== wood-league-worker {release} — session {now} ===",
-        (
-            f"host: {host.get('system', 'unknown')} "
-            f"{host.get('machine', 'unknown')} "
-            f"{host.get('release', 'unknown')} / "
-            f"Python {python_info.get('version', 'unknown')}"
-        ),
-        torch_line,
-        gpus_line,
-        engines_line,
-        syzygy_line,
+        _header_line(_resolve_release()),
+        _host_line(env.get("host", {}), env.get("python", {})),
+        _torch_line(torch_info),
+        _gpus_line(torch_info),
+        _engines_line(env.get("engines", {})),
+        _syzygy_line(log_file),
     ]
 
 
