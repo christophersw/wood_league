@@ -25,6 +25,7 @@ from __future__ import annotations
 import io
 import json
 import logging
+import time
 from typing import Callable, Optional
 
 import chess
@@ -219,7 +220,7 @@ def analyze_pgn(
     threads: int = 4,
     hash_mb: int = 512,
     syzygy_path: str = "",
-    progress_callback: Optional[Callable[[int, int, str, str], None]] = None,
+    progress_callback: Optional[Callable[..., None]] = None,
 ) -> StockfishGameResult:
     """Analyse a PGN game with Stockfish per analysis-math.md.
 
@@ -283,9 +284,11 @@ def analyze_pgn(
 
         for ply_index, move in enumerate(moves_list, start=1):
             mover = board.turn
+            ply_started = time.monotonic()
             move_result, move_acc, mover_win_pct_before, cpl, wp_after_white = (
                 _analyze_one_move(board, move, mover, engine, limit)
             )
+            ply_seconds = time.monotonic() - ply_started
             move_result.ply = ply_index
             move_results.append(move_result)
 
@@ -306,8 +309,12 @@ def analyze_pgn(
 
             if progress_callback:
                 # Pass move SAN + post-move FEN so the CLI can show which move
-                # just finished and render the resulting board.
-                progress_callback(ply_index, total_plies, move_result.san, board.fen())
+                # just finished and render the resulting board. depth/seconds
+                # feed the issue-#44 per-ply readouts.
+                progress_callback(
+                    ply_index, total_plies, move_result.san, board.fen(),
+                    depth=depth, seconds=ply_seconds,
+                )
 
         def _avg(nums: list) -> float:
             """Return the arithmetic mean of a list, or 0.0 for empty lists."""

@@ -15,6 +15,7 @@ import typer
 from local_worker._shared import console
 from local_worker.config import load_settings
 from local_worker.display import worker_display
+from local_worker.logging_setup import is_debug_logging
 from local_worker.loop import WorkerStats, run_batch
 
 
@@ -31,10 +32,10 @@ def analyze(
     console.print(f"Requesting game [cyan]{game_id}[/] with [bold]{engine}…")
     stats = WorkerStats()
 
-    with worker_display(stats) as display:
+    with worker_display(stats, debug=is_debug_logging()) as display:
 
-        def on_progress(ply, total, san="", fen=""):
-            display.advance_move(ply, total, san=san, fen=fen)
+        def on_progress(ply, total, san="", fen="", **extras):
+            display.advance_move(ply, total, san=san, fen=fen, **extras)
 
         def on_jobs_claimed(jobs):
             display.add_batch_total(len(jobs))
