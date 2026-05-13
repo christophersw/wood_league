@@ -8,12 +8,17 @@ Description:
 
 Changelog:
     2026-05-12: Extracted from logging_setup.py (issue #43 follow-up).
+    2026-05-12: lc0 backend default surfaced in the engines line (issue #54).
+    2026-05-12: Syzygy banner now reads ``Settings.syzygy_path`` from the
+        worker config instead of guessing a sibling directory (issue #54).
 """
 from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from local_worker.config import load_settings
 
 
 def _resolve_release() -> str:
@@ -111,34 +116,71 @@ def _engines_line(engines: dict[str, Any]) -> str:
     engine_bits: list[str] = []
     for name, info in engines.items():
         if info.get("path"):
+            backend = info.get("backend")
+            suffix = f" backend={backend}" if backend else ""
             engine_bits.append(
-                f"{name} {info.get('version', 'unknown')} @ {info['path']}"
+                f"{name} {info.get('version', 'unknown')} @ {info['path']}{suffix}"
             )
         else:
             engine_bits.append(f"{name} not found")
     return "engines: " + "; ".join(engine_bits)
 
 
-def _syzygy_line(log_file: Path) -> str:
+def _resolve_syzygy_dir() -> Path | None:
+    """Return the configured Syzygy directory from worker settings, if any.
+
+    Reads ``Settings.syzygy_path`` (the canonical key written by the
+    ``configure`` command) and returns it as a ``Path`` when both set and
+    existing on disk.
+
+    Returns:
+        The configured directory, or ``None`` when unset, blank, or
+        missing. Returns ``None`` on any settings-load failure so the
+        banner stays total.
+    """
+    try:
+        settings = load_settings()
+    except Exception:  # noqa: BLE001 - banner must never crash startup
+        return None
+    raw = (settings.syzygy_path or "").strip()
+    if not raw:
+        return None
+    try:
+        candidate = Path(raw).expanduser()
+    except Exception:  # noqa: BLE001
+        return None
+    if not (candidate.exists() and candidate.is_dir()):
+        return None
+    return candidate
+
+
+def _syzygy_line(log_file: Path) -> str:  # noqa: ARG001 - kept for API compat
     """Render the Syzygy tablebase summary banner line.
 
+    Reads the canonical ``syzygy_path`` setting from the worker config; if
+    that directory exists and contains any ``.rtbw`` or ``.rtbz`` files,
+    the banner reports those counts. Otherwise the banner says
+    ``not configured``.
+
     Args:
-        log_file: Primary log file path; its grandparent is searched for
-            a sibling ``syzygy`` directory.
+        log_file: Primary log file path. Retained for API compatibility
+            with earlier banner versions; no longer consulted.
 
     Returns:
         A single ``syzygy: ...`` banner line.
     """
-    syzygy_dir = log_file.parent.parent / "syzygy"
-    if not (syzygy_dir.exists() and syzygy_dir.is_dir()):
+    syzygy_dir = _resolve_syzygy_dir()
+    if syzygy_dir is None:
         return "syzygy: not configured"
     try:
         files = list(syzygy_dir.iterdir())
-        wdl = sum(1 for f in files if f.suffix == ".rtbw")
-        dtz = sum(1 for f in files if f.suffix == ".rtbz")
-        return f"syzygy: wdl={wdl} dtz={dtz} files at {syzygy_dir}"
     except OSError:
         return f"syzygy: present at {syzygy_dir} (unreadable)"
+    wdl = sum(1 for f in files if f.suffix == ".rtbw")
+    dtz = sum(1 for f in files if f.suffix == ".rtbz")
+    if wdl == 0 and dtz == 0:
+        return f"syzygy: not configured (no .rtbw/.rtbz at {syzygy_dir})"
+    return f"syzygy: wdl={wdl} dtz={dtz} files at {syzygy_dir}"
 
 
 def format_banner_lines(env: dict[str, Any], log_file: Path) -> list[str]:

@@ -22,6 +22,10 @@ Changelog:
     2026-05-12: Environment detection and banner formatting moved to
         ``environment.py`` and ``banner.py`` to satisfy the Halstead-
         effort quality gate.
+    2026-05-12: Library log filters wired up so routine python-chess
+        ``stderr >>`` noise is downgraded to INFO, clean ``engine.quit``
+        shutdowns no longer surface as WARNING, and asyncio selector
+        DEBUG spam is silenced (issue #54).
 """
 from __future__ import annotations
 
@@ -33,6 +37,7 @@ import platformdirs
 from loguru import logger
 
 from local_worker._intercept import _InterceptHandler, install_intercept_handler
+from local_worker._log_filters import install_library_log_filters
 from local_worker.banner import format_banner_lines
 from local_worker.environment import detect_environment
 
@@ -147,6 +152,7 @@ def configure_logging(level: str = "INFO", reset_file: bool = False) -> Path:
         _add_diagnostics_sink(diagnostics_file)
 
     install_intercept_handler(normalized)
+    install_library_log_filters()
     return log_file
 
 
