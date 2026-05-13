@@ -181,9 +181,11 @@ API_KEY_CUSTOM_HEADER = 'HTTP_X_API_KEY'
 # Worker log upload (issue #52). When ``WORKER_LOG_BUCKET`` is empty the
 # upload endpoint is effectively disabled and returns 503; tests stub the
 # bucket interactions out, so the values can be safely blank in dev/test.
-WORKER_LOG_BUCKET = os.environ.get('BUCKET_NAME', '')
-WORKER_LOG_S3_ENDPOINT = os.environ.get('AWS_ENDPOINT_URL_S3', '')
-WORKER_LOG_S3_REGION = os.environ.get('AWS_REGION', 'us-east-1')
+WORKER_LOG_BUCKET = os.environ.get('RAILWAY_BUCKET_NAME', '')
+WORKER_LOG_S3_ENDPOINT = os.environ.get('ENDPOINT', '')
+WORKER_LOG_S3_REGION = os.environ.get('REGION', 'us-east-1')
+WORKER_LOG_S3_ACCESS_KEY = os.environ.get('ACCESS_KEY_ID', '')
+WORKER_LOG_S3_SECRET_KEY = os.environ.get('SECRET_ACCESS_KEY', '')
 WORKER_LOG_PRESIGN_TTL_SECONDS = int(
     os.environ.get('WORKER_LOG_PRESIGN_TTL_SECONDS', '900')
 )

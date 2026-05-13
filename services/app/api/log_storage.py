@@ -28,6 +28,8 @@ def _client() -> Any:
         's3',
         endpoint_url=settings.WORKER_LOG_S3_ENDPOINT or None,
         region_name=settings.WORKER_LOG_S3_REGION,
+        aws_access_key_id=settings.WORKER_LOG_S3_ACCESS_KEY or None,
+        aws_secret_access_key=settings.WORKER_LOG_S3_SECRET_KEY or None,
         config=Config(signature_version='s3v4'),
     )
 
