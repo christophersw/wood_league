@@ -106,6 +106,7 @@ def _startup(
             release=current_release(),
             environment_info=detect_environment(),
             worker_id=load_settings().worker_id,
+            log_level=log_level,
         )
 
 
