@@ -8,6 +8,7 @@ Description:
 
 Changelog:
     2026-05-13: Initial creation (issue #62).
+    2026-05-13: Add regression for first-batch timeout short-circuit (issue #74).
 """
 from __future__ import annotations
 
@@ -183,6 +184,44 @@ def test_calibrate_cpu_backend_returns_none():
         raise AssertionError("runner must not be invoked for CPU backend")
 
     assert calibrate("/fake/lc0", "/fake/net.pb.gz", "eigen", runner=runner) is None
+
+
+def test_calibrate_aborts_when_first_batch_times_out():
+    """Issue #74: a timeout on the first batch size aborts the sweep entirely.
+
+    Large nets (e.g. BT4-1024x15x32h) on modest GPUs may exceed the hard
+    benchmark timeout even at the smallest MinibatchSize in the sweep. When
+    that happens, larger batch sizes will only be slower, so we short-circuit
+    the rest of the sweep instead of burning the full timeout for each one.
+    """
+    call_count = {"n": 0}
+
+    def runner(cmd: list[str]) -> "subprocess.CompletedProcess[str]":
+        call_count["n"] += 1
+        raise subprocess.TimeoutExpired(cmd=cmd, timeout=300)
+
+    result = calibrate("/fake/lc0", "/fake/net.pb.gz", "cuda-fp16", runner=runner)
+
+    assert result is None
+    assert call_count["n"] == 1
+
+
+def test_calibrate_continues_when_non_first_batch_times_out():
+    """A timeout on a later batch is tolerated; earlier successes still win."""
+    call_count = {"n": 0}
+
+    def runner(cmd: list[str]) -> "subprocess.CompletedProcess[str]":
+        call_count["n"] += 1
+        mb = next(int(c.split("=", 1)[1]) for c in cmd if c.startswith("--minibatch-size="))
+        if mb == 128:
+            return _fake_completed("Total: 12000 nps\n")
+        raise subprocess.TimeoutExpired(cmd=cmd, timeout=300)
+
+    result = calibrate("/fake/lc0", "/fake/net.pb.gz", "cuda-fp16", runner=runner)
+
+    assert result is not None
+    assert result["minibatch_size"] == 128
+    assert call_count["n"] == 4
 
 
 def test_calibrate_skips_batches_with_unparseable_output():

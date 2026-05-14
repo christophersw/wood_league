@@ -18,6 +18,9 @@ Description:
 
 Changelog:
     2026-05-13: Initial creation (issue #62).
+    2026-05-13: Lower benchmark nodes to 50_000, raise timeout to 300s, and
+        short-circuit the calibration sweep when the first batch size times
+        out (issue #74).
 """
 from __future__ import annotations
 
@@ -54,8 +57,8 @@ _BATCH_SWEEPS: dict[str, tuple[int, ...]] = {
     "metal": (64, 128, 256),
 }
 
-_BENCHMARK_NODES_PER_POSITION = 200_000
-_BENCHMARK_TIMEOUT_SECONDS = 180
+_BENCHMARK_NODES_PER_POSITION = 50_000
+_BENCHMARK_TIMEOUT_SECONDS = 300
 
 
 @dataclass(frozen=True)
@@ -245,28 +248,59 @@ def _build_benchmark_cmd(
     return cmd
 
 
+@dataclass(frozen=True)
+class BenchmarkResult:
+    """Outcome of one `lc0 benchmark` invocation.
+
+    Attributes:
+        nps: Parsed nodes-per-second reading, or None when the run failed
+            or produced no nps reading.
+        timed_out: True when the benchmark exceeded `_BENCHMARK_TIMEOUT_SECONDS`.
+            Used by `calibrate()` to short-circuit the sweep when the very
+            first batch size already times out (issue #74).
+    """
+
+    nps: Optional[float]
+    timed_out: bool
+
+
 def _measure_one_batch_size(
     lc0_path: str,
     weights_path: str,
     backend: str,
     minibatch_size: int,
     run: BenchmarkRunner,
-) -> Optional[float]:
-    """Run lc0 benchmark at a single MinibatchSize; return nps or None."""
+) -> BenchmarkResult:
+    """Run lc0 benchmark at a single MinibatchSize.
+
+    Args:
+        lc0_path: Absolute path to lc0 binary.
+        weights_path: Path to weights file (may be empty).
+        backend: Lc0 backend string.
+        minibatch_size: MinibatchSize to pass via --minibatch-size=N.
+        run: Benchmark runner callable (subprocess.run by default).
+
+    Returns:
+        BenchmarkResult with parsed nps (or None) and a `timed_out` flag so
+        the caller can distinguish a hard timeout from other failure modes.
+    """
     cmd = _build_benchmark_cmd(lc0_path, weights_path, backend, minibatch_size)
     try:
         completed = run(cmd)
-    except (subprocess.TimeoutExpired, OSError) as exc:
+    except subprocess.TimeoutExpired as exc:
+        log.warning("lc0_tuning: benchmark mb=%d timed out: %s", minibatch_size, exc)
+        return BenchmarkResult(nps=None, timed_out=True)
+    except OSError as exc:
         log.warning("lc0_tuning: benchmark mb=%d failed: %s", minibatch_size, exc)
-        return None
+        return BenchmarkResult(nps=None, timed_out=False)
     combined = (completed.stdout or "") + (completed.stderr or "")
     nps = parse_benchmark_nps(combined)
     if nps is None:
         log.warning("lc0_tuning: benchmark mb=%d produced no nps reading",
                     minibatch_size)
-        return None
-    log.info("lc0_tuning: mb=%d → %.0f nps", minibatch_size, nps)
-    return nps
+        return BenchmarkResult(nps=None, timed_out=False)
+    log.info("lc0_tuning: mb=%d -> %.0f nps", minibatch_size, nps)
+    return BenchmarkResult(nps=nps, timed_out=False)
 
 
 def calibrate(
@@ -298,12 +332,22 @@ def calibrate(
     run = runner or _default_benchmark_runner
 
     best: Optional[tuple[int, float]] = None
-    for minibatch_size in _BATCH_SWEEPS[family]:
-        nps = _measure_one_batch_size(
+    for index, minibatch_size in enumerate(_BATCH_SWEEPS[family]):
+        outcome = _measure_one_batch_size(
             lc0_path, weights_path, backend, minibatch_size, run
         )
-        if nps is not None and (best is None or nps > best[1]):
-            best = (minibatch_size, nps)
+        # If the very first batch size already exceeds the hard timeout, the
+        # net + GPU combination cannot complete a benchmark in any reasonable
+        # window — abort the sweep instead of burning more time (issue #74).
+        if outcome.timed_out and index == 0:
+            log.warning(
+                "lc0_tuning: first sweep entry mb=%d timed out; "
+                "aborting calibration",
+                minibatch_size,
+            )
+            return None
+        if outcome.nps is not None and (best is None or outcome.nps > best[1]):
+            best = (minibatch_size, outcome.nps)
 
     if best is None:
         return None
