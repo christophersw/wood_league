@@ -223,6 +223,14 @@ RUNPOD_STOCKFISH_ENDPOINT_ID = (
     or os.environ.get("RUNPOD_ENDPOINT_ID", "")
 )
 RUNPOD_LC0_ENDPOINT_ID = os.environ.get("RUNPOD_LC0_ENDPOINT_ID", "")
+
+# RunPod admin start-pod endpoint (issue #83). RUNPOD_WORKER_POD_ID is the
+# specific pod id that the admin "Start worker pod" button targets via
+# POST https://rest.runpod.io/v1/pods/{pod_id}/start. RUNPOD_ENABLED gates
+# both the URL route and the dashboard surfacing — when False the endpoint
+# returns 404 and the UI section is hidden.
+RUNPOD_WORKER_POD_ID = os.environ.get("RUNPOD_WORKER_POD_ID", "")
+RUNPOD_ENABLED = os.environ.get("RUNPOD_ENABLED", "").lower() in {"1", "true", "yes", "on"}
 ANALYSIS_THREADS = int(os.environ.get("ANALYSIS_THREADS", "8"))
 ANALYSIS_HASH_MB = int(os.environ.get("ANALYSIS_HASH_MB", "2048"))
 

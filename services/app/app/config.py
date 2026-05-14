@@ -7,6 +7,8 @@ Description:
 
 Changelog:
     2026-05-08: Added file header to meet documentation standards
+    2026-05-14: Added RUNPOD_API_KEY / RUNPOD_WORKER_POD_ID / RUNPOD_ENABLED
+        fields for the admin start-pod endpoint (issue #83).
 """
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -34,6 +36,9 @@ class Settings(BaseSettings):
     lc0_path: str = ""
     lc0_nodes: int = 800
     lc0_network: str = ""
+    runpod_api_key: str = ""
+    runpod_worker_pod_id: str = ""
+    runpod_enabled: bool = False
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

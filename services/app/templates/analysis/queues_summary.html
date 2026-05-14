@@ -104,6 +104,53 @@
 
 </div>{# /.pg-section #}
 
+{% if runpod_enabled %}
+<div class="pg-section">
+  <div class="runpod-panel">
+    <div class="runpod-panel-head">
+      <h2>RunPod worker</h2>
+      <span class="runpod-panel-sub">Pod ID: <code>{{ runpod_worker_pod_id|default:"(not set)" }}</code></span>
+    </div>
+    <p class="runpod-panel-help">
+      Manually start the worker pod when queue depth requires more capacity than the
+      auto-stopper is providing. One click issues a single RunPod start request — no retries.
+    </p>
+    <form id="runpod-start-form"
+          method="post"
+          action="{% url 'analysis:runpod_start' %}"
+          onsubmit="return woodleagueRunpodStart(event);">
+      {% csrf_token %}
+      <button type="submit" class="runpod-start-btn">Start worker pod</button>
+    </form>
+    <div id="runpod-start-result" class="runpod-result" aria-live="polite"></div>
+  </div>
+</div>
+<script>
+  // Inline submit handler — POSTs the CSRF-protected form via fetch so the
+  // admin gets immediate feedback without leaving the queues summary page.
+  function woodleagueRunpodStart(event) {
+    event.preventDefault();
+    var form = event.target;
+    var result = document.getElementById("runpod-start-result");
+    result.textContent = "Starting...";
+    var data = new FormData(form);
+    fetch(form.action, {
+      method: "POST",
+      body: data,
+      headers: { "X-Requested-With": "fetch" },
+      credentials: "same-origin",
+    })
+      .then(function (r) { return r.json().then(function (j) { return { status: r.status, body: j }; }); })
+      .then(function (out) {
+        var prefix = out.body.ok ? "OK" : "Error";
+        result.textContent = prefix + " (" + out.status + "): " + (out.body.message || "");
+      })
+      .catch(function (err) { result.textContent = "Request failed: " + err; });
+    return false;
+  }
+</script>
+{% endif %}
+
 <style>
 /* ── Engine card ── */
 .queue-engine-card {
@@ -275,6 +322,60 @@
   font-size: 0.6rem;
   color: var(--color-peat);
   letter-spacing: 0.04em;
+}
+
+/* ── RunPod admin panel (issue #83) ── */
+.runpod-panel {
+  background: var(--color-cream);
+  border: 1.5px solid color-mix(in srgb, var(--color-peat) 30%, transparent);
+  border-top: 3.5px solid var(--color-whisky);
+  padding: 1.25rem 1.5rem;
+  box-shadow: 3px 3px 0 color-mix(in srgb, var(--color-peat) 12%, transparent);
+}
+.runpod-panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.5rem;
+}
+.runpod-panel-head h2 {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-forest);
+  margin: 0;
+}
+.runpod-panel-sub {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--color-slate);
+}
+.runpod-panel-help {
+  font-size: 0.85rem;
+  color: var(--color-peat);
+  margin: 0 0 0.85rem 0;
+}
+.runpod-start-btn {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0.5rem 1rem;
+  background: var(--color-forest);
+  color: var(--color-cream);
+  border: 1.5px solid var(--color-forest);
+  cursor: pointer;
+}
+.runpod-start-btn:hover { background: var(--color-crimson); border-color: var(--color-crimson); }
+.runpod-result {
+  margin-top: 0.65rem;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--color-ebony);
+  min-height: 1em;
 }
 </style>
 
