@@ -15,6 +15,11 @@ Changelog:
                 only when the move is outside the top-3 (rare). Extracted
                 _build_engine_opts/_accumulate_move_stats/_build_game_result
                 helpers to keep analyze_pgn under cc=10.
+    2026-05-13: analyze_pgn() merges lc0_tuning auto-tuner output (Threads,
+                NNCacheSize, RamLimitMb, SmartPruningFactor, plus calibrated
+                MinibatchSize/MaxPrefetch when available) into the
+                engine.configure() opts. Opt out with auto_tune=False
+                (issue #62).
 """
 from __future__ import annotations
 
@@ -28,6 +33,7 @@ import chess
 import chess.engine
 import chess.pgn
 
+from .lc0_tuning import get_tuned_opts
 from .math import classify_lc0_move, cp_equiv_from_q
 from .models import Lc0MoveResult, Lc0GameResult
 from .see import see_capture_or_sacrifice
@@ -283,6 +289,81 @@ def _analyze_one_move(
     return result, mover, wdl_white
 
 
+def _configure_engine(
+    engine: chess.engine.SimpleEngine,
+    *,
+    lc0_path: str,
+    weights_path: str,
+    syzygy_path: str,
+    backend: str,
+    auto_tune: bool,
+) -> str:
+    """Apply UCI options to a launched lc0 engine and resolve its network name.
+
+    Combines caller-supplied options (Backend/WeightsFile/SyzygyPath) with
+    auto-tuner output when `auto_tune` is True, then reads the engine's
+    `id name` to extract the network identifier for the run.
+
+    Args:
+        engine: Already-popened lc0 engine.
+        lc0_path: Path to lc0 binary (for tuner calibration).
+        weights_path: Network weights path.
+        syzygy_path: Syzygy tablebases path, or empty.
+        backend: Lc0 backend.
+        auto_tune: If True, merge tuner options.
+
+    Returns:
+        Resolved network name string ("" if unavailable).
+    """
+    opts = _build_engine_opts(backend, weights_path, syzygy_path)
+    if auto_tune:
+        _merge_tuned_opts(
+            opts, lc0_path=lc0_path, weights_path=weights_path, backend=backend,
+        )
+    if opts:
+        engine.configure(opts)
+        log.info("lc0: configure complete (opts=%s)", sorted(opts.keys()))
+    try:
+        return _parse_network_name(engine.id.get("name", ""), weights_path)
+    except Exception:
+        return ""
+
+
+def _merge_tuned_opts(
+    base_opts: dict[str, str],
+    *,
+    lc0_path: str,
+    weights_path: str,
+    backend: str,
+) -> dict[str, str]:
+    """Merge auto-tuner UCI options into `base_opts` without overriding it.
+
+    Caller-supplied keys in `base_opts` (Backend/WeightsFile/SyzygyPath) are
+    preserved; tuner keys (Threads, NNCacheSize, RamLimitMb,
+    SmartPruningFactor, MinibatchSize, MaxPrefetch) are added only when not
+    already set.
+
+    Args:
+        base_opts: Starting dict, mutated in place and returned.
+        lc0_path: Path to lc0 binary (used for calibration only).
+        weights_path: Weights path (used for calibration + fingerprint).
+        backend: Lc0 backend string.
+
+    Returns:
+        The same dict, with tuner-supplied keys merged in.
+    """
+    tuned = get_tuned_opts(
+        lc0_path=lc0_path,
+        weights_path=weights_path,
+        backend=backend,
+        gpu_name="",
+        lc0_version="",
+    )
+    for key, value in tuned.items():
+        base_opts.setdefault(key, value)
+    return base_opts
+
+
 def _build_engine_opts(
     backend: str, weights_path: str, syzygy_path: str
 ) -> dict[str, str]:
@@ -391,6 +472,7 @@ def analyze_pgn(
     syzygy_path: str = "",
     backend: str = "cpu",
     progress_callback: Optional[Callable[..., None]] = None,
+    auto_tune: bool = True,
 ) -> Lc0GameResult:
     """Analyse a PGN game with Lc0 and return per-move WDL results.
 
@@ -405,6 +487,10 @@ def analyze_pgn(
             once per analysed move. `san` is the move just played; `fen` is the
             resulting board position. Both are empty strings for legacy callers
             that only inspect ply/total.
+        auto_tune: When True (default), merge auto-tuner UCI options
+            (Threads, NNCacheSize, RamLimitMb, SmartPruningFactor, and — if
+            calibration succeeded — MinibatchSize/MaxPrefetch) into the
+            engine.configure() call. Set False to bypass the tuner entirely.
 
     Returns:
         Lc0GameResult with per-move WDL evaluations and game statistics.
@@ -429,16 +515,14 @@ def analyze_pgn(
     log.info("lc0: engine launched; configuring backend=%s weights=%s syzygy=%s",
              backend or "(default)", weights_path or "(default)", syzygy_path or "(none)")
     try:
-        opts = _build_engine_opts(backend, weights_path, syzygy_path)
-        if opts:
-            engine.configure(opts)
-            log.info("lc0: configure complete")
-
-        try:
-            engine_id_name = engine.id.get("name", "")
-            network_name = _parse_network_name(engine_id_name, weights_path)
-        except Exception:
-            pass
+        network_name = _configure_engine(
+            engine,
+            lc0_path=lc0_path,
+            weights_path=weights_path,
+            syzygy_path=syzygy_path,
+            backend=backend,
+            auto_tune=auto_tune,
+        )
 
         board = game.board()
         move_results: list[Lc0MoveResult] = []
