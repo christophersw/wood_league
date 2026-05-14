@@ -1,11 +1,38 @@
 {% comment %}
-  Title: _dash_recent.html — Worker dashboard recently completed partial (stub)
-  Description: HTMX-polled partial for the worker dashboard. Stub content
-      until slice 4 wires real data.
+  Title: _dash_recent.html — Recently completed games (grouped by game)
   Changelog:
-      2026-05-14 (#106): Stub.
+      2026-05-14 (#106): Initial real implementation.
 {% endcomment %}
 <div class="pg-section">
-  <div class="pg-head"><span class="pg-title">recent</span></div>
-  <span class="pg-caption">stub</span>
+  <div class="pg-head">
+    <span class="pg-title">Recently completed</span>
+    <span class="pg-caption">last 25 games · refresh every 30s</span>
+  </div>
+  {% if rows %}
+    <table class="pg-table">
+      <thead>
+        <tr>
+          <th>Game</th><th>Stockfish</th><th>Lc0</th><th>Completed</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+          <tr>
+            <td>
+              {% if row.game_url %}
+                <a href="{{ row.game_url }}">#{{ row.game_id }}</a>
+              {% else %}
+                #{{ row.game_id }}
+              {% endif %}
+            </td>
+            <td>{% if row.stockfish_seconds %}{{ row.stockfish_seconds|floatformat:0 }}s{% else %}—{% endif %}</td>
+            <td>{% if row.lc0_seconds %}{{ row.lc0_seconds|floatformat:0 }}s{% else %}—{% endif %}</td>
+            <td>{{ row.latest_completed_at|timesince }} ago</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <span class="pg-caption">No games completed yet.</span>
+  {% endif %}
 </div>

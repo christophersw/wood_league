@@ -9,6 +9,7 @@ Changelog:
     2026-05-14 (#106): Initial wire-up — stub partials, no real data yet.
     2026-05-14 (#106): Banner + workers partials now render live data.
     2026-05-14 (#106): Queues + throughput partials now render live data.
+    2026-05-14 (#106): Recent partial now renders live data.
 """
 from __future__ import annotations
 
@@ -17,6 +18,7 @@ from typing import Any
 from django.contrib.admin.views.decorators import staff_member_required
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import render
+from django.urls import reverse
 from django.utils import timezone
 
 
@@ -205,8 +207,27 @@ def dashboard_throughput(request: HttpRequest) -> HttpResponse:
 
 @staff_member_required
 def dashboard_recent(request: HttpRequest) -> HttpResponse:
-    """Render the recently-completed partial (stub)."""
-    return render(request, "analysis/_dash_recent.html", {})
+    """Render the recently-completed partial.
+
+    Groups the most recent completed jobs by game (last 25 games) and
+    shows per-engine runtime side by side, with a link to each game's
+    analysis page.
+
+    Args:
+        request: The incoming Django HTTP request.
+
+    Returns:
+        Rendered HTML for ``analysis/_dash_recent.html``.
+    """
+    from analysis.dashboard_helpers import _group_recent_by_game
+
+    rows = _group_recent_by_game(limit=25)
+    for row in rows:
+        row["game_url"] = (
+            reverse("games:analysis", kwargs={"slug": row["game_slug"]})
+            if row["game_slug"] else None
+        )
+    return render(request, "analysis/_dash_recent.html", {"rows": rows})
 
 
 @staff_member_required

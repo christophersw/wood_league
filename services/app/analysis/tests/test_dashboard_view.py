@@ -183,6 +183,30 @@ def test_queues_partial_lists_both_engines(client):
 
 
 @pytest.mark.django_db
+def test_recent_partial_links_to_game_page(client):
+    """Each row links to the per-game analysis page using the slug."""
+    admin = _make_user("admin")
+    client.force_login(admin)
+
+    game = _make_dash_game("recent")
+    now = timezone.now()
+    AnalysisJob.objects.create(
+        game=game, engine="stockfish",
+        status=AnalysisJob.STATUS_COMPLETED,
+        duration_seconds=252.0,
+        started_at=now - timedelta(minutes=5),
+        completed_at=now - timedelta(minutes=2),
+    )
+
+    response = client.get(reverse("analysis:dash_recent"))
+
+    assert response.status_code == 200
+    body = response.content.decode()
+    assert game.slug in body
+    assert "252s" in body
+
+
+@pytest.mark.django_db
 def test_throughput_partial_lists_engines_and_windows(client):
     """Throughput partial renders one row per engine and 1h/6h/24h columns."""
     admin = _make_user("admin")
