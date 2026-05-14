@@ -43,6 +43,7 @@ from local_worker.consent import (
     prompt_for_consent,
 )
 from local_worker.log_upload import install_crash_hook
+from local_worker.config import load_settings
 from local_worker.logging_setup import configure_logging, log_session_banner
 
 app = typer.Typer(
@@ -51,6 +52,29 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 app.add_typer(telemetry_app, name="telemetry")
+
+
+def _configured_engine_paths() -> dict[str, str]:
+    """Return the stockfish/lc0 paths from persisted settings, if any.
+
+    Used by the session-banner logger so the diagnostic line reflects the
+    engines the run loop will actually launch (issue #60). Errors loading
+    settings are swallowed because the banner must never crash startup.
+
+    Returns:
+        Mapping with optional ``"stockfish"`` and ``"lc0"`` keys. Empty
+        when settings cannot be read or neither path is configured.
+    """
+    try:
+        settings = load_settings()
+    except Exception:  # noqa: BLE001 - banner must be total
+        return {}
+    paths: dict[str, str] = {}
+    if settings.stockfish_path:
+        paths["stockfish"] = settings.stockfish_path
+    if settings.lc0_path:
+        paths["lc0"] = settings.lc0_path
+    return paths
 
 
 def _effective_consent(override: Optional[bool], config_path: Path) -> bool:
@@ -100,7 +124,7 @@ def _startup(
     is_long_running = ctx.invoked_subcommand in LONG_RUNNING_COMMANDS
     log_file = configure_logging(level=log_level, reset_file=is_long_running)
     if is_long_running:
-        log_session_banner(log_file)
+        log_session_banner(log_file, engine_paths=_configured_engine_paths())
         config_path = _consent_config_path()
         if _effective_consent(telemetry, config_path):
             install_crash_hook()

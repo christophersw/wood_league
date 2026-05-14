@@ -16,6 +16,11 @@ Changelog:
     2026-05-12: ANSI escape sequences stripped from engine probe output,
         and the UCI ``id name`` line preferred for the engine name so
         lc0's colour-coded banner no longer leaks (issue #54).
+    2026-05-13: _detect_engines / detect_environment now consult
+        worker-configured engine paths before ``shutil.which`` so the
+        session banner reflects the binaries the run loop will actually
+        launch (issue #60). A configured-but-missing path returns None
+        rather than silently falling back to PATH.
 """
 from __future__ import annotations
 
@@ -216,14 +221,49 @@ def _probe_engine_version(binary: str | None, args: tuple[str, ...]) -> str:
     return "unknown"
 
 
-def _detect_engines() -> dict[str, Any]:
-    """Locate stockfish/lc0 binaries on ``PATH`` and read their versions.
+def _resolve_engine_path(configured: str | None, command: str) -> str | None:
+    """Pick the engine binary path the worker will actually use.
+
+    Configured paths win when present and resolvable — they reflect what
+    the run loop will launch. Falls back to ``shutil.which`` only when no
+    path is configured.
+
+    Args:
+        configured: Path string from worker settings, possibly empty or
+            referring to a non-existent file.
+        command: Bare command name to search via PATH on fallback.
 
     Returns:
-        Mapping of engine name to ``{"path": str|None, "version": str}``.
+        Absolute-ish path string that the engine probe should use, or
+        ``None`` when no usable binary can be located.
     """
-    stockfish_path = shutil.which("stockfish")
-    lc0_path = shutil.which("lc0")
+    import os.path
+
+    if configured:
+        # Honour configured path even if the file is currently missing
+        # (e.g. removable drive): the run loop will surface the real
+        # error, and the banner should reflect the intended target.
+        return configured if os.path.exists(configured) else None
+    return shutil.which(command)
+
+
+def _detect_engines(engine_paths: dict[str, str] | None = None) -> dict[str, Any]:
+    """Locate stockfish/lc0 binaries and read their versions.
+
+    Args:
+        engine_paths: Optional mapping {"stockfish": path, "lc0": path}
+            from worker settings. Configured paths take precedence over
+            ``shutil.which`` so the banner reflects what the run loop
+            will actually launch, fixing issue #60 (banner reporting
+            "not found" while jobs ran from ``D:\\lc0\\lc0.exe``).
+
+    Returns:
+        Mapping of engine name to ``{"path": str|None, "version": str,
+        "backend": str|None}``.
+    """
+    paths = engine_paths or {}
+    stockfish_path = _resolve_engine_path(paths.get("stockfish"), "stockfish")
+    lc0_path = _resolve_engine_path(paths.get("lc0"), "lc0")
     return {
         "stockfish": {
             "path": stockfish_path,
@@ -242,13 +282,20 @@ def _detect_engines() -> dict[str, Any]:
     }
 
 
-def detect_environment() -> dict[str, Any]:
+def detect_environment(
+    engine_paths: dict[str, str] | None = None,
+) -> dict[str, Any]:
     """Probe host OS, runtime, accelerators, engine binaries.
 
     All OS calls go through small helpers so the banner stays total even
     when one probe fails. The result is a flat-ish dict consumed by
     :func:`local_worker.logging_setup.log_session_banner` and (optionally)
     by the telemetry tags.
+
+    Args:
+        engine_paths: Optional mapping of engine name to configured
+            path string. Forwarded to :func:`_detect_engines` so the
+            banner uses the same engine binaries the run loop will.
 
     Returns:
         Dict containing host, python, torch, and engines keys.
@@ -266,7 +313,7 @@ def detect_environment() -> dict[str, Any]:
         "host": host,
         "python": python_info,
         "torch": _detect_torch(),
-        "engines": _detect_engines(),
+        "engines": _detect_engines(engine_paths),
     }
 
 

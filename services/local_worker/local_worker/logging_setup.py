@@ -26,6 +26,9 @@ Changelog:
         ``stderr >>`` noise is downgraded to INFO, clean ``engine.quit``
         shutdowns no longer surface as WARNING, and asyncio selector
         DEBUG spam is silenced (issue #54).
+    2026-05-13: log_session_banner accepts an engine_paths mapping and
+        forwards it to detect_environment so the banner uses configured
+        engine binaries rather than only PATH (issue #60).
 """
 from __future__ import annotations
 
@@ -170,7 +173,10 @@ def configure_logging(level: str = "INFO", reset_file: bool = False) -> Path:
     return log_file
 
 
-def log_session_banner(log_file: Path) -> None:
+def log_session_banner(
+    log_file: Path,
+    engine_paths: dict[str, str] | None = None,
+) -> None:
     """Emit the hardware/driver/engine banner at the top of a fresh session.
 
     Called exactly once, immediately after
@@ -178,8 +184,13 @@ def log_session_banner(log_file: Path) -> None:
 
     Args:
         log_file: The path returned by :func:`configure_logging`.
+        engine_paths: Optional ``{"stockfish": ..., "lc0": ...}`` mapping
+            from worker settings. Forwarded to :func:`detect_environment`
+            so the banner reports the engine binaries the run loop will
+            actually launch instead of "not found" when engines live at
+            non-PATH locations (issue #60).
     """
-    env = detect_environment()
+    env = detect_environment(engine_paths)
     for line in format_banner_lines(env, log_file):
         logger.info(line)
 
