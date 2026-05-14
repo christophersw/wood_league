@@ -10,8 +10,10 @@ Changelog:
     2026-05-08: Added file header to meet documentation standards.
     2026-05-10: A4 — set runpod.api_key in ready() from Django settings.
     2026-05-14: Issue #101 Phase A — docstring updated; the legacy push-
-        dispatch flow has been removed but runpod.api_key is still needed
-        by the RunPod health probe in services_queries.runpod_health().
+        dispatch flow has been removed.
+    2026-05-14 (#106): Drop references to the removed runpod_health probe.
+        runpod.api_key initialisation is retained for any future SDK use
+        (e.g. start_pod in runpod_start_view).
 """
 from django.apps import AppConfig
 
@@ -26,9 +28,9 @@ class AnalysisConfig(AppConfig):
 
         Sets runpod.api_key from Django settings so that the runpod module is
         authenticated before any view or task calls into the RunPod SDK
-        (currently the health probe in services_queries.runpod_health()).
-        Only sets the key when RUNPOD_API_KEY is non-empty to avoid overwriting
-        a key set by test fixtures.
+        (e.g. ``start_pod`` invoked from ``runpod_start_view``). Only sets the
+        key when RUNPOD_API_KEY is non-empty to avoid overwriting a key set by
+        test fixtures.
 
         Returns:
             None

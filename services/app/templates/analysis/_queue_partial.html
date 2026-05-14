@@ -48,19 +48,6 @@
       <div><p class="font-mono text-xs text-slate">Failed</p><p class="font-mono text-lg {% if eng.failed %}text-crimson{% else %}text-ebony{% endif %}">{{ eng.failed }}</p></div>
     </div>
 
-    {# RunPod health #}
-    <div class="pt-3 border-t border-peat/10">
-      <p class="font-mono text-xs text-peat uppercase tracking-wide mb-2">RunPod</p>
-      {% if eng.runpod_error %}
-      <p class="font-mono text-xs text-slate">{{ eng.runpod_error }}</p>
-      {% else %}
-      <div class="grid grid-cols-3 gap-1 text-center">
-        <div><p class="font-mono text-xs text-slate">Workers</p><p class="font-mono text-sm font-bold text-forest">{{ eng.runpod.workers_running }}r / {{ eng.runpod.workers_idle }}i</p></div>
-        <div><p class="font-mono text-xs text-slate">Queued</p><p class="font-mono text-sm font-bold text-ebony">{{ eng.runpod.jobs_in_queue }}</p></div>
-        <div><p class="font-mono text-xs text-slate">Failed</p><p class="font-mono text-sm font-bold {% if eng.runpod.jobs_failed %}text-crimson{% else %}text-ebony{% endif %}">{{ eng.runpod.jobs_failed }}</p></div>
-      </div>
-      {% endif %}
-    </div>
   </div>
   {% endfor %}
 </div>

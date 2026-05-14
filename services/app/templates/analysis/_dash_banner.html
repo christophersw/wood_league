@@ -1,0 +1,27 @@
+{% comment %}
+  Title: _dash_banner.html — Health banner partial
+  Description: One-line horizontal health summary at the top of the worker
+      dashboard. Renders a status dot whose color reflects ``banner_state``
+      (healthy/warning/stale) followed by aggregate counters (workers
+      healthy, pending jobs, completed today). Uses the W.E.B. Du Bois
+      palette via ``.dash-banner`` and ``.dash-dot`` utility classes.
+  Context: ``banner_state``, ``healthy_workers``, ``total_workers``,
+      ``pending``, ``done_today``.
+  Changelog:
+      2026-05-14 (#106): Initial real implementation.
+      2026-05-14 (#106): Visual polish — single horizontal line with leading
+          dot, Du Bois palette, mono labels.
+{% endcomment %}
+<div class="pg-section">
+  <div class="dash-banner dash-banner--{{ banner_state }}" role="status" aria-live="polite">
+    <span class="dash-dot dash-dot--{{ banner_state }}" aria-hidden="true"></span>
+    <span>
+      <strong>{{ healthy_workers }}/{{ total_workers }}</strong>
+      worker{{ total_workers|pluralize }} healthy
+    </span>
+    <span aria-hidden="true" style="color: var(--color-slate);">·</span>
+    <span><strong>{{ pending }}</strong> pending</span>
+    <span aria-hidden="true" style="color: var(--color-slate);">·</span>
+    <span><strong>{{ done_today }}</strong> done today</span>
+  </div>
+</div>

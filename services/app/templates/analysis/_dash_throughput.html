@@ -1,0 +1,46 @@
+{% comment %}
+  Title: _dash_throughput.html — Rolling completion-window throughput
+  Description: pg-table showing, per engine, the number of completed jobs
+      across rolling 1h / 6h / 24h windows, plus p50 and p95 durations
+      computed from the 24-hour bucket. Uses the canonical ``.pg-table``.
+  Context: ``rows`` — list of dicts {engine, h1, h6, h24, p50, p95}.
+  Changelog:
+      2026-05-14 (#106): Initial real implementation.
+      2026-05-14 (#106): Visual polish — pg-table styling, em-dash fallbacks,
+          parchment header.
+{% endcomment %}
+<div class="pg-section">
+  <div class="pg-head">
+    <span class="pg-title">Throughput</span>
+    <span class="pg-caption">completed jobs · rolling windows · p50/p95 from 24h</span>
+  </div>
+
+  {% if rows %}
+    <table class="pg-table">
+      <thead>
+        <tr>
+          <th>Engine</th>
+          <th>1h</th>
+          <th>6h</th>
+          <th>24h</th>
+          <th>p50 (s)</th>
+          <th>p95 (s)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+          <tr>
+            <td>{{ row.engine|title }}</td>
+            <td>{{ row.h1 }}</td>
+            <td>{{ row.h6 }}</td>
+            <td>{{ row.h24 }}</td>
+            <td>{% if row.p50 %}{{ row.p50 }}{% else %}—{% endif %}</td>
+            <td>{% if row.p95 %}{{ row.p95 }}{% else %}—{% endif %}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="dash-empty">No throughput data.</p>
+  {% endif %}
+</div>

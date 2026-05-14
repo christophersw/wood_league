@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% comment %}
+  Title: dashboard.html — Worker dashboard shell
+  Description: Single-page consolidated admin dashboard for worker health,
+      queue depth, throughput, recently completed games, and recent
+      failures. Each section is an HTMX-polled partial that refreshes on
+      its own interval. Replaces the legacy /admin/diagnostics/ page.
+  Changelog:
+      2026-05-14 (#106): Initial wire-up.
+      2026-05-14 (#106): Visual polish — Du Bois loading-pip placeholders,
+          consistent .pg-section wrappers.
+{% endcomment %}
+
+{% block title %}Worker Dashboard · Wood League Chess{% endblock %}
+
+{% block content %}
+<div class="page-hero">
+  <div>
+    <p class="page-hero-sub" style="margin-bottom: 0.4rem;">
+      <a href="{% url 'analysis:queues_summary' %}"
+         style="color: var(--color-peat); text-decoration: underline; text-underline-offset: 3px;">
+        ← Analysis Queues
+      </a>
+    </p>
+    <h1>Worker Dashboard</h1>
+    <p class="page-hero-sub">Live worker health, queue depth, and throughput.</p>
+  </div>
+</div>
+
+<div id="dash-banner"
+     hx-get="{% url 'analysis:dash_banner' %}"
+     hx-trigger="load, every 10s"
+     hx-swap="innerHTML">
+  <div class="pg-section"><span class="loading-pip">Loading banner…</span></div>
+</div>
+
+<div id="dash-workers"
+     hx-get="{% url 'analysis:dash_workers' %}"
+     hx-trigger="load, every 5s"
+     hx-swap="innerHTML">
+  <div class="pg-section"><span class="loading-pip">Loading workers…</span></div>
+</div>
+
+<div id="dash-queues"
+     hx-get="{% url 'analysis:dash_queues' %}"
+     hx-trigger="load, every 10s"
+     hx-swap="innerHTML">
+  <div class="pg-section"><span class="loading-pip">Loading queues…</span></div>
+</div>
+
+<div id="dash-throughput"
+     hx-get="{% url 'analysis:dash_throughput' %}"
+     hx-trigger="load, every 60s"
+     hx-swap="innerHTML">
+  <div class="pg-section"><span class="loading-pip">Loading throughput…</span></div>
+</div>
+
+<div id="dash-recent"
+     hx-get="{% url 'analysis:dash_recent' %}"
+     hx-trigger="load, every 30s"
+     hx-swap="innerHTML">
+  <div class="pg-section"><span class="loading-pip">Loading recently completed…</span></div>
+</div>
+
+<div id="dash-failures"
+     hx-get="{% url 'analysis:dash_failures' %}"
+     hx-trigger="load, every 60s"
+     hx-swap="innerHTML">
+  <div class="pg-section"><span class="loading-pip">Loading failures…</span></div>
+</div>
+{% endblock %}

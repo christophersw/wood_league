@@ -1,0 +1,57 @@
+{% comment %}
+  Title: _dash_failures.html — Recent failures (collapsed by default)
+  Description: HTMX-polled <details> block listing the 10 most-recently
+      failed ``AnalysisJob`` rows. Collapsed by default; the summary row
+      reuses ``.pg-head`` styling and the disclosure caret is rendered via
+      ``.dash-details`` for a calm, parchment-friendly affordance.
+  Context: ``rows`` — list of dicts from
+      ``analysis.dashboard_helpers._build_failure_row``.
+  Changelog:
+      2026-05-14 (#106): Initial implementation — reuses row dict from
+          dashboard_helpers._build_failure_row.
+      2026-05-14 (#106): Visual polish — Du Bois caret, pg-table styling,
+          crimson error code snippets.
+{% endcomment %}
+<details class="pg-section dash-details">
+  <summary class="pg-head">
+    <span class="pg-title">Recent failures ({{ rows|length }})</span>
+    <span class="pg-caption">click to expand · last 10</span>
+  </summary>
+
+  {% if rows %}
+    <table class="pg-table">
+      <thead>
+        <tr>
+          <th>When</th>
+          <th>Engine</th>
+          <th>Game</th>
+          <th>Error</th>
+          <th>Log</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+          <tr>
+            <td>{% if row.completed_at %}{{ row.completed_at|timesince }} ago{% else %}—{% endif %}</td>
+            <td>{{ row.engine|title }}</td>
+            <td>
+              {% if row.game_url %}
+                <a href="{{ row.game_url }}">#{{ row.game_id }}</a>
+              {% else %}
+                #{{ row.game_id }}
+              {% endif %}
+            </td>
+            <td><code>{{ row.error_snippet }}</code></td>
+            <td>
+              {% if row.worker_log_url %}
+                <a href="{{ row.worker_log_url }}">log</a>
+              {% else %}—{% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="dash-empty">No recent failures.</p>
+  {% endif %}
+</details>

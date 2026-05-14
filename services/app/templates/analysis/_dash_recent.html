@@ -1,0 +1,47 @@
+{% comment %}
+  Title: _dash_recent.html — Recently completed games (grouped by game)
+  Description: pg-table of the last 25 games grouped by ``game_id`` with
+      Stockfish duration, Lc0 duration, and "Nm ago" completion time.
+      Uses the canonical ``.pg-table`` styling.
+  Context: ``rows`` — list of dicts from ``_build_recent_game_rows``.
+  Changelog:
+      2026-05-14 (#106): Initial real implementation.
+      2026-05-14 (#106): Visual polish — pg-table styling, em-dash fallbacks.
+{% endcomment %}
+<div class="pg-section">
+  <div class="pg-head">
+    <span class="pg-title">Recently completed</span>
+    <span class="pg-caption">last 25 games · refresh 30s</span>
+  </div>
+
+  {% if rows %}
+    <table class="pg-table">
+      <thead>
+        <tr>
+          <th>Game</th>
+          <th>Stockfish</th>
+          <th>Lc0</th>
+          <th>Completed</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+          <tr>
+            <td>
+              {% if row.game_url %}
+                <a href="{{ row.game_url }}">#{{ row.game_id }}</a>
+              {% else %}
+                #{{ row.game_id }}
+              {% endif %}
+            </td>
+            <td>{% if row.stockfish_seconds %}{{ row.stockfish_seconds|floatformat:0 }}s{% else %}—{% endif %}</td>
+            <td>{% if row.lc0_seconds %}{{ row.lc0_seconds|floatformat:0 }}s{% else %}—{% endif %}</td>
+            <td>{{ row.latest_completed_at|timesince }} ago</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="dash-empty">No games completed yet.</p>
+  {% endif %}
+</div>
