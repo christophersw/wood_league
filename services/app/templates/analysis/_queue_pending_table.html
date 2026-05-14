@@ -1,4 +1,4 @@
-{#
+{% comment %}
   Title: _queue_pending_table.html — Pending queue table partial
   Description: HTMX swap target for the pending tab. Contains sticky toolbar
       with bulk-action form, tab strip, paginated table with checkboxes and
@@ -8,13 +8,13 @@
       2026-05-11: Task 8 — created as replacement for _queue_pending.html;
           adds sticky toolbar, tabs, priority badges, per-row reorder,
           pagination, select-all + selected counter.
-#}
+{% endcomment %}
 
 {# ─── Sticky toolbar + form ────────────────────────────────────────────────── #}
-{#
+{% comment %}
   The form wraps the toolbar and the table so all three action buttons
   (Submit, ↑ Top, ↓ Bottom) can include the same job_ids checkboxes.
-#}
+{% endcomment %}
 <form id="bulk-submit-form">
   {% csrf_token %}
 
