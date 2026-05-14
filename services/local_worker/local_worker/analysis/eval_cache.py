@@ -484,6 +484,20 @@ class EvalCache:
         self._hits = 0
         self._misses = 0
 
+    @property
+    def hits(self) -> int:
+        """Return the in-process count of successful lookups."""
+        return self._hits
+
+    @property
+    def lookups(self) -> int:
+        """Return the in-process total of ``get()`` calls (hits + misses).
+
+        Exposed so the worker loop can record a hit-rate sample before
+        closing the cache between jobs (issue #85).
+        """
+        return self._hits + self._misses
+
     def close(self) -> None:
         """Close the SQLite connection if open."""
         if self._conn is not None:
