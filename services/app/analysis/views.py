@@ -22,17 +22,29 @@ Changelog:
 """
 from __future__ import annotations
 
+import logging
 from datetime import timedelta
 
+from django.conf import settings as django_settings
 from django.contrib.auth.decorators import login_required, user_passes_test
-from django.http import HttpRequest, HttpResponse
+from django.http import (
+    Http404,
+    HttpRequest,
+    HttpResponse,
+    HttpResponseForbidden,
+    JsonResponse,
+)
 from django.shortcuts import render
 from django.utils import timezone
 from django.utils.timesince import timesince
-from django.views.decorators.http import require_GET
+from django.views.decorators.http import require_GET, require_POST
+
+from app.runpod_client import start_pod
 
 from .models import AnalysisJob, WorkerHeartbeat
 from . import services
+
+_LOGGER = logging.getLogger(__name__)
 
 _admin_required = user_passes_test(lambda u: u.role == "admin")
 
@@ -148,7 +160,10 @@ def queues_summary(request: HttpRequest) -> HttpResponse:
     Returns:
         HttpResponse: Rendered ``analysis/queues_summary.html`` with overview context.
     """
-    return render(request, "analysis/queues_summary.html", _queue_context())
+    context = _queue_context()
+    context["runpod_enabled"] = bool(getattr(django_settings, "RUNPOD_ENABLED", False))
+    context["runpod_worker_pod_id"] = getattr(django_settings, "RUNPOD_WORKER_POD_ID", "")
+    return render(request, "analysis/queues_summary.html", context)
 
 
 @_admin_login_required
@@ -166,3 +181,60 @@ def overview_partial(request: HttpRequest) -> HttpResponse:
         HttpResponse: Rendered ``analysis/_overview_cards.html`` fragment.
     """
     return render(request, "analysis/_overview_cards.html", _queue_context())
+
+
+def _runpod_creds() -> tuple[str, str]:
+    """Return the configured RunPod (pod_id, api_key) pair from Django settings.
+
+    Returns:
+        tuple[str, str]: ``(RUNPOD_WORKER_POD_ID, RUNPOD_API_KEY)``. Either
+            may be the empty string when not configured.
+    """
+    pod_id = getattr(django_settings, "RUNPOD_WORKER_POD_ID", "") or ""
+    api_key = getattr(django_settings, "RUNPOD_API_KEY", "") or ""
+    return pod_id, api_key
+
+
+@login_required
+@require_POST
+def runpod_start_view(request: HttpRequest) -> HttpResponse:
+    """Start the configured RunPod worker pod (admin-only).
+
+    Gated by ``settings.RUNPOD_ENABLED`` — returns 404 when False so the
+    endpoint is invisible in non-RunPod deployments. Staff-only:
+    authenticated non-staff users receive 403. Credentials missing
+    (empty pod id or api key) returns a 400 JSON response. On RunPod
+    failure (network or non-2xx) returns 502 with the structured result.
+
+    Args:
+        request: The incoming HTTP POST request. CSRF-protected.
+
+    Returns:
+        JsonResponse: ``{"ok", "status_code", "message"}``. Status code is
+            200 on success, 400 when creds are missing, 502 when RunPod
+            returns a failure.
+
+    Side effects:
+        Logs the attempt at INFO with the requesting username and the
+        target pod id (the api key is never logged).
+    """
+    if not getattr(django_settings, "RUNPOD_ENABLED", False):
+        raise Http404("RunPod start endpoint disabled")
+    if not request.user.is_staff:
+        return HttpResponseForbidden("staff only")
+
+    pod_id, api_key = _runpod_creds()
+    if not pod_id or not api_key:
+        return JsonResponse(
+            {"ok": False, "status_code": 0, "message": "RunPod credentials not configured"},
+            status=400,
+        )
+
+    _LOGGER.info(
+        "runpod start_pod requested by user=%s pod=%s",
+        getattr(request.user, "email", request.user.get_username()),
+        pod_id,
+    )
+    result = start_pod(pod_id, api_key)
+    http_status = 200 if result["ok"] else 502
+    return JsonResponse(result, status=http_status)
