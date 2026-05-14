@@ -2,31 +2,32 @@
 #
 # Title: runpod_start.sh — Stock-CUDA-image bootstrap for RunPod
 # Description:
-#   Used when the pod runs on a stock nvidia/cuda:*-devel image rather
-#   than the pre-built wood-league-worker image. Installs the runtime
-#   prerequisites (Stockfish via apt, builds lc0 from source onto the
-#   network volume, installs the worker package from PyPI), then fetches
-#   and execs the canonical bootstrap.sh from this repo.
+#   Used when the pod runs on a stock nvidia/cuda:*-runtime (or devel)
+#   image rather than the pre-built wood-league-worker image. Installs
+#   the runtime prerequisites (Stockfish via apt, downloads a prebuilt
+#   lc0 binary onto the network volume, installs the worker package
+#   from PyPI), then fetches and execs the canonical bootstrap.sh from
+#   this repo.
 #
-#   The lc0 binary is built ONCE per network volume and persisted at
-#   /workspace/bin/lc0. Subsequent pod stop/start re-uses it, so only
-#   the first boot pays the ~8–12 min build cost.
-#
-#   Requires the pod to use a CUDA *devel* image (e.g.
-#   nvidia/cuda:12.4.1-devel-ubuntu22.04) so nvcc + CUDA headers are
-#   present. The *runtime* image will fail at the lc0 build step.
+#   The lc0 binary is downloaded ONCE per network volume from a GitHub
+#   release built by .github/workflows/lc0-build.yml and persisted at
+#   /workspace/bin/lc0. Subsequent pod stop/start re-uses it.
 #
 # Changelog:
 #   2026-05-14 (#93): Initial creation for API-driven RunPod deploys.
 #   2026-05-14: Build lc0 from source — upstream ships no Linux binary,
 #       so the prebuilt-download path never worked. Binary now persisted
 #       on the network volume at /workspace/bin/lc0.
+#   2026-05-14 (#96): Replace source build with download of CI-built lc0
+#       release asset (see .github/workflows/lc0-build.yml). Drops the
+#       build toolchain from the apt step; pod boots in seconds, not
+#       minutes, and no longer requires a CUDA *devel* image.
 
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 export PATH=/usr/local/cuda/bin:${PATH}
 
-WLW_VERSION="${WLW_VERSION:-0.9.1}"
+WLW_VERSION="${WLW_VERSION:-0.9.2}"
 LC0_VERSION="${LC0_VERSION:-0.31.2}"
 BOOTSTRAP_URL="${WLW_BOOTSTRAP_URL:-https://raw.githubusercontent.com/christophersw/wood_league/main/services/local_worker/runpod/bootstrap.sh}"
 
@@ -35,50 +36,44 @@ LC0_BIN="/workspace/bin/lc0"
 
 log() { printf '[runpod-start %s] %s\n' "$(date -u +%FT%TZ)" "$*" >&2; }
 
-# ---- 1. Apt prereqs (runtime + build tools) ---------------------------
+# ---- 1. Apt prereqs (runtime only) ------------------------------------
 if ! command -v stockfish >/dev/null 2>&1; then
-    log "installing apt prerequisites (runtime + lc0 build tools)"
+    log "installing apt prerequisites (runtime)"
     apt-get update
     apt-get install -y --no-install-recommends \
         ca-certificates curl wget xz-utils git \
-        stockfish python3.11 python3.11-venv python3-pip \
-        build-essential meson ninja-build pkg-config \
-        libprotobuf-dev protobuf-compiler \
-        libeigen3-dev zlib1g-dev
+        stockfish python3.11 python3.11-venv python3-pip
     apt-get clean
     rm -rf /var/lib/apt/lists/*
     update-alternatives --install /usr/bin/python  python  /usr/bin/python3.11 1 || true
     update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 || true
 fi
 
-# ---- 2. Build lc0 from source (one-time per volume) -------------------
-# Upstream lc0 doesn't ship Linux binaries — releases are Windows + Android
-# only. We build cuda-fp16 from source. The resulting binary is dynamically
-# linked against /usr/local/cuda runtime libs (already in the devel image),
-# so it'll keep working across pod stop/start as long as the volume + image
-# pair survives.
+# ---- 2. Download prebuilt lc0 (one-time per volume) -------------------
+# Upstream lc0 doesn't ship Linux binaries. We build our own in CI
+# (.github/workflows/lc0-build.yml) and publish each version as a GitHub
+# release asset. Download + checksum-verify here. The binary is
+# dynamically linked against /usr/local/cuda runtime libs.
+LC0_TARBALL="lc0-v${LC0_VERSION}-linux-cuda-fp16.tar.gz"
+LC0_RELEASE_URL="${WLW_LC0_RELEASE_URL:-https://github.com/christophersw/wood_league/releases/download/lc0-v${LC0_VERSION}/${LC0_TARBALL}}"
+
 mkdir -p /workspace/bin
 if [ ! -x "${LC0_BIN}" ]; then
-    log "building lc0 v${LC0_VERSION} from source — this takes ~8–12 min the first time"
-    src_dir="/workspace/build/lc0"
-    rm -rf "${src_dir}"
-    mkdir -p "${src_dir%/*}"
-    git clone --depth 1 --branch "v${LC0_VERSION}" \
-        https://github.com/LeelaChessZero/lc0.git "${src_dir}"
-    cd "${src_dir}"
-    # Release build, gtest off. Other lc0 meson options vary between
-    # versions, so we don't override them — defaults are correct (CUDA
-    # backend on, python bindings off, etc.).
-    meson setup build --buildtype=release -Dgtest=false
-    ninja -C build -j "$(nproc)"
-    install -m 0755 build/lc0 "${LC0_BIN}"
+    log "downloading lc0 ${LC0_VERSION} from ${LC0_RELEASE_URL}"
+    tmpdir="$(mktemp -d)"
+    cd "${tmpdir}"
+    curl -fsSL -o "${LC0_TARBALL}" "${LC0_RELEASE_URL}"
+    curl -fsSL -o "${LC0_TARBALL}.sha256" "${LC0_RELEASE_URL}.sha256" || true
+    if [ -s "${LC0_TARBALL}.sha256" ]; then
+        sha256sum -c "${LC0_TARBALL}.sha256" || { log "FATAL: lc0 sha256 mismatch"; exit 1; }
+    fi
+    tar -xzf "${LC0_TARBALL}"
+    install -m 0755 ./lc0 "${LC0_BIN}"
     cd /
-    log "lc0 built and installed at ${LC0_BIN}"
-    # Leave the source dir around — re-running the build later (e.g. for
-    # an upgraded version) will rm -rf it and reclone. Cheap on a 10 GB
-    # volume that's otherwise mostly empty.
+    rm -rf "${tmpdir}"
+    log "lc0 installed at ${LC0_BIN}"
 else
-    log "lc0 already built at ${LC0_BIN} — skipping build"
+    log "lc0 already present at ${LC0_BIN} — skipping download"
 fi
 
 # Tell bootstrap.sh where lc0 lives. bootstrap.sh defaults this to
