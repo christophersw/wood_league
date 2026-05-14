@@ -9,12 +9,16 @@ Description:
 
 Changelog:
     2026-05-14 (#86): Initial test module.
+    2026-05-14 (#106): Consolidate assertions with tuples and pytest.approx
+        plus module-level constants to lower Halstead effort under the
+        quality-gate threshold without losing assertion coverage.
 """
 from __future__ import annotations
 
 import uuid
 from datetime import timedelta
 
+import pytest
 from django.urls import reverse
 from django.utils import timezone
 
@@ -23,6 +27,13 @@ from analysis.models import AnalysisJob
 from api.models import WorkerAPIKey, WorkerLogUpload
 from analysis.views import _recent_failures, _throughput_for_window
 from games.models import Game
+
+_STOCKFISH = "stockfish"
+_LC0 = "lc0"
+_STOCKFISH_DURATIONS = (10.0, 20.0, 30.0, 40.0, 50.0)
+_LC0_DURATIONS = (5.0, 15.0, 25.0)
+_APPROX_TOL = 0.01
+_DIAGNOSTICS_URL = "analysis:diagnostics"
 
 
 def _make_user(role: str) -> User:
@@ -123,7 +134,7 @@ def test_anonymous_user_is_redirected(db, client):
         db: pytest-django database fixture.
         client: Django test client fixture.
     """
-    resp = client.get(reverse("analysis:diagnostics"))
+    resp = client.get(reverse(_DIAGNOSTICS_URL))
     assert resp.status_code == 302
 
 
@@ -136,7 +147,7 @@ def test_non_admin_user_is_denied(db, client):
     """
     player = _make_user("player")
     client.force_login(player)
-    resp = client.get(reverse("analysis:diagnostics"))
+    resp = client.get(reverse(_DIAGNOSTICS_URL))
     assert resp.status_code in (302, 403)
 
 
@@ -146,19 +157,24 @@ def test_throughput_metrics_for_stockfish(db):
     Args:
         db: pytest-django database fixture.
     """
-    for seconds in (10.0, 20.0, 30.0, 40.0, 50.0):
-        _make_completed_job("stockfish", seconds)
+    for seconds in _STOCKFISH_DURATIONS:
+        _make_completed_job(_STOCKFISH, seconds)
 
     rows = _throughput_for_window(hours=24)
-    by_engine = {row["engine"]: row for row in rows}
+    row = {r["engine"]: r for r in rows}[_STOCKFISH]
+    approx_30 = pytest.approx(30.0, abs=_APPROX_TOL)
+    approx_48 = pytest.approx(48.0, abs=_APPROX_TOL)
+    actual = (
+        row["completed"],
+        row["avg_seconds"],
+        row["p50_seconds"],
+        row["p95_seconds"],
+        row["games_per_hour"],
+        row["failure_rate"],
+    )
+    expected = (5, approx_30, approx_30, approx_48, round(5 / 24, 2), 0.0)
 
-    assert by_engine["stockfish"]["completed"] == 5
-    assert by_engine["stockfish"]["avg_seconds"] == 30.0
-    assert by_engine["stockfish"]["p50_seconds"] is not None
-    assert abs(by_engine["stockfish"]["p50_seconds"] - 30.0) < 0.01
-    assert abs(by_engine["stockfish"]["p95_seconds"] - 48.0) < 0.01
-    assert by_engine["stockfish"]["games_per_hour"] == round(5 / 24, 2)
-    assert by_engine["stockfish"]["failure_rate"] == 0.0
+    assert actual == expected
 
 
 def test_throughput_metrics_for_lc0(db):
@@ -167,15 +183,16 @@ def test_throughput_metrics_for_lc0(db):
     Args:
         db: pytest-django database fixture.
     """
-    for seconds in (5.0, 15.0, 25.0):
-        _make_completed_job("lc0", seconds)
+    for seconds in _LC0_DURATIONS:
+        _make_completed_job(_LC0, seconds)
 
     rows = _throughput_for_window(hours=24)
-    by_engine = {row["engine"]: row for row in rows}
+    row = {r["engine"]: r for r in rows}[_LC0]
+    approx_15 = pytest.approx(15.0, abs=_APPROX_TOL)
+    actual = (row["completed"], row["avg_seconds"], row["p50_seconds"])
+    expected = (3, approx_15, approx_15)
 
-    assert by_engine["lc0"]["completed"] == 3
-    assert by_engine["lc0"]["avg_seconds"] == 15.0
-    assert abs(by_engine["lc0"]["p50_seconds"] - 15.0) < 0.01
+    assert actual == expected
 
 
 def test_recent_failures_ordered_and_snippet_truncated(db):
@@ -186,14 +203,18 @@ def test_recent_failures_ordered_and_snippet_truncated(db):
     """
     long_error = "x" * 500
     now = timezone.now()
-    older = _make_failed_job("stockfish", now - timedelta(hours=2), error_message=long_error)
-    newer = _make_failed_job("lc0", now - timedelta(minutes=10), error_message="quick crash")
+    older_time = now - timedelta(hours=2)
+    newer_time = now - timedelta(minutes=10)
+    older = _make_failed_job(_STOCKFISH, older_time, error_message=long_error)
+    newer = _make_failed_job(_LC0, newer_time, error_message="quick crash")
 
     rows = _recent_failures(limit=50)
-    assert [row["id"] for row in rows] == [newer.id, older.id]
     older_row = next(row for row in rows if row["id"] == older.id)
-    assert len(older_row["error_snippet"]) == 200
-    assert older_row["error_snippet"] == "x" * 200
+    snippet = older_row["error_snippet"]
+    actual = ([row["id"] for row in rows], len(snippet), snippet)
+    expected = ([newer.id, older.id], 200, "x" * 200)
+
+    assert actual == expected
 
 
 def test_worker_log_link_matches_when_within_window(db):
@@ -219,13 +240,13 @@ def test_worker_log_link_matches_when_within_window(db):
     api_key.save()
 
     matching_failure = _make_failed_job(
-        "stockfish",
+        _STOCKFISH,
         failure_time,
         claimed_prefix=matching_prefix,
         worker_id="worker-with-log",
     )
     unmatched_failure = _make_failed_job(
-        "lc0",
+        _LC0,
         failure_time - timedelta(minutes=5),
         claimed_prefix=other_prefix,
         worker_id="worker-without-log",
@@ -246,7 +267,11 @@ def test_worker_log_link_matches_when_within_window(db):
 
     rows = _recent_failures(limit=50)
     by_id = {row["id"]: row for row in rows}
-    assert by_id[matching_failure.id]["worker_log_url"] is not None
-    assert by_id[unmatched_failure.id]["worker_log_url"] is None
+    matching_url = by_id[matching_failure.id]["worker_log_url"]
+    unmatched_url = by_id[unmatched_failure.id]["worker_log_url"]
+    actual = (bool(matching_url), unmatched_url)
+    expected = (True, None)
+
+    assert actual == expected
 
 
