@@ -639,6 +639,245 @@
     border-bottom: 1px solid color-mix(in srgb, var(--color-ebony) 15%, transparent);
   }
 
+  /* ── pg-table (canonical Du Bois plate table) ─────────────────────────── */
+
+  .pg-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    color: var(--color-ebony);
+  }
+
+  .pg-table thead th {
+    font-family: var(--font-mono);
+    font-size: 0.6rem;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--color-peat);
+    text-align: left;
+    padding: 0.5rem 0.75rem;
+    border-top: 2px solid var(--color-ebony);
+    border-bottom: 1.5px solid var(--color-ebony);
+    background: color-mix(in srgb, var(--color-parchment) 70%, var(--color-cream));
+    white-space: nowrap;
+  }
+
+  .pg-table tbody td {
+    padding: 0.45rem 0.75rem;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-ebony) 10%, transparent);
+    vertical-align: middle;
+    line-height: 1.45;
+    white-space: nowrap;
+  }
+
+  .pg-table tbody tr:nth-child(even) td {
+    background: color-mix(in srgb, var(--color-parchment) 55%, var(--color-cream));
+  }
+
+  .pg-table tbody tr:hover td {
+    background: color-mix(in srgb, var(--color-gold) 7%, var(--color-cream));
+  }
+
+  .pg-table td a,
+  .pg-table th a {
+    color: var(--color-forest);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    text-decoration-color: color-mix(in srgb, var(--color-forest) 35%, transparent);
+  }
+
+  .pg-table td a:hover {
+    color: var(--color-ebony);
+    text-decoration-color: var(--color-ebony);
+  }
+
+  .pg-table td code {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: var(--color-crimson);
+    background: color-mix(in srgb, var(--color-crimson) 7%, transparent);
+    padding: 0.05rem 0.35rem;
+    border-radius: 0;
+    white-space: normal;
+  }
+
+  /* ── Dashboard: status dot ────────────────────────────────────────────── */
+
+  .dash-dot {
+    display: inline-block;
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: var(--color-slate);
+    box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--color-ebony) 20%, transparent);
+    vertical-align: middle;
+  }
+  .dash-dot--healthy {
+    background: var(--color-forest);
+    box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--color-forest) 35%, transparent);
+  }
+  .dash-dot--warning {
+    background: var(--color-gold);
+    box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--color-whisky) 45%, transparent);
+    animation: dash-dot-pulse 1.6s ease-in-out infinite;
+  }
+  .dash-dot--stale {
+    background: var(--color-crimson);
+    box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--color-crimson) 35%, transparent);
+  }
+  @keyframes dash-dot-pulse {
+    0%, 100% { opacity: 1;   }
+    50%      { opacity: 0.35; }
+  }
+
+  /* ── Dashboard: health banner ─────────────────────────────────────────── */
+
+  .dash-banner {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.7rem 1rem;
+    border-top: 2.5px solid var(--color-ebony);
+    border-bottom: 1px solid color-mix(in srgb, var(--color-ebony) 18%, transparent);
+    background: var(--color-cream);
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    letter-spacing: 0.04em;
+    color: var(--color-ebony);
+  }
+
+  .dash-banner strong {
+    font-weight: 600;
+    color: var(--color-forest);
+  }
+
+  .dash-banner--healthy { border-top-color: var(--color-forest); }
+  .dash-banner--warning { border-top-color: var(--color-gold);   }
+  .dash-banner--stale {
+    border-top-color: var(--color-crimson);
+    background: color-mix(in srgb, var(--color-crimson) 5%, var(--color-cream));
+  }
+  .dash-banner--stale strong { color: var(--color-crimson); }
+
+  /* ── Dashboard: worker grid + cards ───────────────────────────────────── */
+
+  .dash-worker-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+    gap: 1rem;
+  }
+
+  .dash-worker-card {
+    border: 1px solid color-mix(in srgb, var(--color-ebony) 14%, transparent);
+    border-top: 3px solid var(--color-slate);
+    background: var(--color-cream);
+    padding: 0.75rem 0.9rem 0.7rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+
+  .dash-worker-card--healthy { border-top-color: var(--color-forest); }
+  .dash-worker-card--warning { border-top-color: var(--color-gold);   }
+  .dash-worker-card--stale {
+    border-top-color: var(--color-crimson);
+    background: color-mix(in srgb, var(--color-crimson) 4%, var(--color-cream));
+  }
+
+  .dash-worker-card__head {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding-bottom: 0.35rem;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-ebony) 10%, transparent);
+  }
+  .dash-worker-card__head strong {
+    font-family: var(--font-display);
+    font-size: 0.95rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: var(--color-ebony);
+    flex: 1 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .dash-worker-card__seen {
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    letter-spacing: 0.08em;
+    color: var(--color-peat);
+    white-space: nowrap;
+  }
+
+  .dash-worker-card__row {
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    color: var(--color-ebony);
+    line-height: 1.4;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    align-items: baseline;
+  }
+  .dash-worker-card__row a {
+    color: var(--color-forest);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .dash-worker-card__row a:hover { color: var(--color-ebony); }
+
+  .dash-worker-card__counters {
+    display: flex;
+    gap: 0.9rem;
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+  }
+  .dash-worker-card__counters .dash-ok   { color: var(--color-forest);  }
+  .dash-worker-card__counters .dash-fail { color: var(--color-crimson); }
+
+  .dash-worker-card__foot {
+    margin-top: 0.3rem;
+    padding-top: 0.4rem;
+    border-top: 1px dotted color-mix(in srgb, var(--color-ebony) 18%, transparent);
+    font-size: 0.58rem;
+    line-height: 1.5;
+  }
+
+  /* ── Dashboard: empty-state ───────────────────────────────────────────── */
+
+  .dash-empty {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-slate);
+    padding: 1rem 0;
+    border-top: 1px dashed color-mix(in srgb, var(--color-ebony) 20%, transparent);
+  }
+
+  /* ── Dashboard: <details> failures section ────────────────────────────── */
+
+  .dash-details > summary {
+    list-style: none;
+    cursor: pointer;
+  }
+  .dash-details > summary::-webkit-details-marker { display: none; }
+  .dash-details > summary::marker { content: ''; }
+  .dash-details > summary::after {
+    content: '▸';
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    color: var(--color-peat);
+    margin-left: 0.5rem;
+    transition: transform 0.15s;
+    display: inline-block;
+  }
+  .dash-details[open] > summary::after { transform: rotate(90deg); }
+
   /* ── Legacy compat ───────────────────────────────────────────────────── */
 
   .analysis-stat-card {

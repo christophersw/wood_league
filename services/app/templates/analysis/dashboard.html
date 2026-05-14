@@ -7,6 +7,8 @@
       its own interval. Replaces the legacy /admin/diagnostics/ page.
   Changelog:
       2026-05-14 (#106): Initial wire-up.
+      2026-05-14 (#106): Visual polish — Du Bois loading-pip placeholders,
+          consistent .pg-section wrappers.
 {% endcomment %}
 
 {% block title %}Worker Dashboard · Wood League Chess{% endblock %}
@@ -29,41 +31,41 @@
      hx-get="{% url 'analysis:dash_banner' %}"
      hx-trigger="load, every 10s"
      hx-swap="innerHTML">
-  <div class="pg-section"><span class="pg-caption">Loading banner…</span></div>
+  <div class="pg-section"><span class="loading-pip">Loading banner…</span></div>
 </div>
 
 <div id="dash-workers"
      hx-get="{% url 'analysis:dash_workers' %}"
      hx-trigger="load, every 5s"
      hx-swap="innerHTML">
-  <div class="pg-section"><span class="pg-caption">Loading workers…</span></div>
+  <div class="pg-section"><span class="loading-pip">Loading workers…</span></div>
 </div>
 
 <div id="dash-queues"
      hx-get="{% url 'analysis:dash_queues' %}"
      hx-trigger="load, every 10s"
      hx-swap="innerHTML">
-  <div class="pg-section"><span class="pg-caption">Loading queues…</span></div>
+  <div class="pg-section"><span class="loading-pip">Loading queues…</span></div>
 </div>
 
 <div id="dash-throughput"
      hx-get="{% url 'analysis:dash_throughput' %}"
      hx-trigger="load, every 60s"
      hx-swap="innerHTML">
-  <div class="pg-section"><span class="pg-caption">Loading throughput…</span></div>
+  <div class="pg-section"><span class="loading-pip">Loading throughput…</span></div>
 </div>
 
 <div id="dash-recent"
      hx-get="{% url 'analysis:dash_recent' %}"
      hx-trigger="load, every 30s"
      hx-swap="innerHTML">
-  <div class="pg-section"><span class="pg-caption">Loading recently completed…</span></div>
+  <div class="pg-section"><span class="loading-pip">Loading recently completed…</span></div>
 </div>
 
 <div id="dash-failures"
      hx-get="{% url 'analysis:dash_failures' %}"
      hx-trigger="load, every 60s"
      hx-swap="innerHTML">
-  <div class="pg-section"><span class="pg-caption">Loading failures…</span></div>
+  <div class="pg-section"><span class="loading-pip">Loading failures…</span></div>
 </div>
 {% endblock %}

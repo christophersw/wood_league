@@ -1,40 +1,56 @@
 {% comment %}
   Title: _dash_workers.html — Worker heartbeat cards
-  Description: One card per WorkerHeartbeat row.
+  Description: Grid of cards (one per ``WorkerHeartbeat`` row) with status
+      dot, worker id, seconds-since-seen, status / status_message line,
+      current-game link, completed / failed counters, and a hardware footer
+      (uptime, engine, cores, memory). Card border-top color encodes
+      liveness (healthy=forest, warning=gold, stale=crimson). Uses the
+      ``.dash-worker-*`` utility classes defined in main.css.
+  Context: ``cards`` — list of dicts from ``_build_worker_cards``.
   Changelog:
       2026-05-14 (#106): Initial real implementation.
+      2026-05-14 (#106): Visual polish — Du Bois palette, mono labels,
+          structured head/body/foot, dot pulses on warning state.
 {% endcomment %}
 <div class="pg-section">
   <div class="pg-head">
     <span class="pg-title">Workers ({{ cards|length }})</span>
-    <span class="pg-caption">live heartbeats — refresh every 5s</span>
+    <span class="pg-caption">live heartbeats · refresh 5s</span>
   </div>
+
   {% if cards %}
     <div class="dash-worker-grid">
       {% for card in cards %}
         <div class="dash-worker-card dash-worker-card--{{ card.liveness }}">
           <div class="dash-worker-card__head">
-            <span class="dash-dot dash-dot--{{ card.liveness }}"></span>
-            <strong>{{ card.worker_id }}</strong>
+            <span class="dash-dot dash-dot--{{ card.liveness }}" aria-hidden="true"></span>
+            <strong title="{{ card.worker_id }}">{{ card.worker_id }}</strong>
             <span class="dash-worker-card__seen">
-              {% if card.seconds_since_seen is not None %}{{ card.seconds_since_seen }}s{% else %}—{% endif %}
+              {% if card.seconds_since_seen is not None %}{{ card.seconds_since_seen }}s ago{% else %}—{% endif %}
             </span>
           </div>
+
           <div class="dash-worker-card__row">
             <span class="pg-caption">{{ card.status }}</span>
-            {% if card.status_message %}<span class="pg-caption">· {{ card.status_message }}</span>{% endif %}
+            {% if card.status_message %}
+              <span style="color: var(--color-peat);">· {{ card.status_message }}</span>
+            {% endif %}
           </div>
+
           <div class="dash-worker-card__row">
-            Game
+            <span class="pg-caption">Game</span>
             {% if card.current_game_url %}
               <a href="{{ card.current_game_url }}">{{ card.current_game_label }}</a>
             {% else %}
-              {{ card.current_game_label }}
+              <span>{{ card.current_game_label }}</span>
             {% endif %}
           </div>
-          <div class="dash-worker-card__row">
-            ✓ {{ card.jobs_completed }} &nbsp;&nbsp; ✗ {{ card.jobs_failed }}
+
+          <div class="dash-worker-card__counters">
+            <span class="dash-ok">&#10003; {{ card.jobs_completed }}</span>
+            <span class="dash-fail">&#10007; {{ card.jobs_failed }}</span>
           </div>
+
           <div class="dash-worker-card__foot pg-caption">
             up {{ card.uptime }} · {{ card.engine }}<br>
             {{ card.cpu_cores|default:"—" }}c · {{ card.memory }}
@@ -43,6 +59,6 @@
       {% endfor %}
     </div>
   {% else %}
-    <span class="pg-caption">No worker heartbeats yet.</span>
+    <p class="dash-empty">No worker heartbeats yet.</p>
   {% endif %}
 </div>
