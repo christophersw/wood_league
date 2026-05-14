@@ -11,6 +11,7 @@ Changelog:
     2026-05-14 (#106): Queues + throughput partials now render live data.
     2026-05-14 (#106): Recent partial now renders live data.
     2026-05-14 (#106): Failures partial now renders live data.
+    2026-05-14 (#106): Coerce naive datetimes in banner + workers views.
 """
 from __future__ import annotations
 
@@ -21,6 +22,26 @@ from django.http import HttpRequest, HttpResponse
 from django.shortcuts import render
 from django.urls import reverse
 from django.utils import timezone
+
+
+def _aware(dt):
+    """Return a TZ-aware datetime; coerce naive inputs to the current TZ.
+
+    Defensive helper for legacy DB rows that pre-date Django ``USE_TZ=True``.
+    Subtracting a naive datetime from a TZ-aware ``timezone.now()`` raises
+    ``TypeError``, so we coerce naive values into the current timezone.
+
+    Args:
+        dt: A ``datetime`` or ``None``.
+
+    Returns:
+        A TZ-aware ``datetime`` (or ``None`` if ``dt`` was ``None``).
+    """
+    if dt is None:
+        return None
+    if timezone.is_naive(dt):
+        return timezone.make_aware(dt, timezone.get_current_timezone())
+    return dt
 
 
 @staff_member_required
@@ -62,7 +83,7 @@ def dashboard_banner(request: HttpRequest) -> HttpResponse:
     midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
     workers = list(WorkerHeartbeat.objects.all())
-    livenesses = [_liveness_for(now - w.last_seen) for w in workers]
+    livenesses = [_liveness_for(now - _aware(w.last_seen)) for w in workers]
     healthy = sum(1 for v in livenesses if v == "healthy")
 
     if not workers or "stale" in livenesses:
@@ -115,8 +136,10 @@ def dashboard_workers(request: HttpRequest) -> HttpResponse:
     now = timezone.now()
     cards: list[dict[str, Any]] = []
     for w in WorkerHeartbeat.objects.order_by("-last_seen"):
-        delta_seen = now - w.last_seen if w.last_seen else None
-        uptime = now - w.started_at if w.started_at else None
+        last_seen = _aware(w.last_seen)
+        started_at = _aware(w.started_at)
+        delta_seen = now - last_seen if last_seen else None
+        uptime = now - started_at if started_at else None
         game_label, game_url = _game_link_for(w.current_game_id)
         cards.append({
             "worker_id": w.worker_id,

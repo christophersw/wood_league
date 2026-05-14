@@ -8,11 +8,12 @@ Description:
 
 Changelog:
     2026-05-14 (#106): Initial smoke tests for the wire-up slice.
+    2026-05-14 (#106): Regression test for naive last_seen TypeError.
 """
 from __future__ import annotations
 
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import pytest
 from django.urls import reverse
@@ -224,6 +225,29 @@ def test_failures_partial_lists_recent_failures(client):
 
     assert response.status_code == 200
     assert "boom" in response.content.decode()
+
+
+@pytest.mark.django_db
+def test_banner_handles_naive_last_seen(client):
+    """Banner must not raise TypeError when ``last_seen`` is TZ-naive.
+
+    Legacy DB rows that pre-date ``USE_TZ=True`` may carry naive datetimes.
+    Subtracting a naive datetime from a TZ-aware ``timezone.now()`` raises
+    TypeError; the view coerces naive values defensively.
+    """
+    admin = _make_user("admin")
+    client.force_login(admin)
+
+    heartbeat = WorkerHeartbeat.objects.create(
+        worker_id="w-legacy-naive", status="working", engine="stockfish",
+    )
+    naive_dt = datetime(2026, 5, 14, 12, 0, 0)  # noqa: DTZ001 — intentionally naive
+    assert naive_dt.tzinfo is None
+    WorkerHeartbeat.objects.filter(pk=heartbeat.pk).update(last_seen=naive_dt)
+
+    response = client.get(reverse("analysis:dash_banner"))
+
+    assert response.status_code == 200
 
 
 @pytest.mark.django_db
