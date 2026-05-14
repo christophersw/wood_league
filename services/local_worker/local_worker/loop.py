@@ -7,6 +7,10 @@ Description:
 
 Changelog:
     2026-05-09: Initial creation
+    2026-05-13: Wired the persistent eval cache into the Stockfish branch
+                (issue #67, builds on #65). Renamed the on-disk file from
+                lc0_eval_cache.sqlite to eval_cache.sqlite and migrate the
+                old name on first open if present.
 """
 from __future__ import annotations
 
@@ -75,11 +79,16 @@ def _worker_id(settings: Settings) -> str:
 
 
 def _open_eval_cache(settings: Settings) -> Optional[EvalCache]:
-    """Construct the lc0 eval cache for this job, honoring config + env flag.
+    """Construct the shared eval cache for this job, honoring config + env flag.
 
-    Returns None when caching is disabled via `settings.eval_cache_enabled`
-    or the `WLW_NO_EVAL_CACHE=1` env override. Errors opening the DB are
+    Used by both the lc0 and Stockfish branches. Returns None when caching
+    is disabled via ``settings.eval_cache_enabled`` or the
+    ``WLW_NO_EVAL_CACHE=1`` env override. Errors opening the DB are
     swallowed (we never want cache failures to kill a job).
+
+    On first call, migrates the legacy ``lc0_eval_cache.sqlite`` filename
+    to ``eval_cache.sqlite`` (the cache now stores both engines, keyed by
+    network/engine prefix — no row-level migration needed).
 
     Args:
         settings: Worker settings.
@@ -92,7 +101,14 @@ def _open_eval_cache(settings: Settings) -> Optional[EvalCache]:
     if os.environ.get("WLW_NO_EVAL_CACHE") == "1":
         return None
     try:
-        return EvalCache(data_dir() / "lc0_eval_cache.sqlite")
+        cache_path = data_dir() / "eval_cache.sqlite"
+        legacy_path = data_dir() / "lc0_eval_cache.sqlite"
+        if legacy_path.exists() and not cache_path.exists():
+            log.info(
+                "eval_cache: migrating %s -> %s", legacy_path.name, cache_path.name,
+            )
+            legacy_path.rename(cache_path)
+        return EvalCache(cache_path)
     except Exception:
         log.warning("eval_cache: failed to open; running without cache", exc_info=True)
         return None
@@ -140,15 +156,22 @@ def run_one_job(
 
     try:
         if job.engine == "stockfish":
-            result = sf_analyze(
-                pgn_text=job.pgn,
-                stockfish_path=settings.stockfish_path,
-                depth=settings.stockfish_depth,
-                threads=settings.stockfish_threads,
-                hash_mb=settings.stockfish_hash_mb,
-                syzygy_path=settings.syzygy_path,
-                progress_callback=_logging_progress,
-            )
+            cache = _open_eval_cache(settings)
+            try:
+                result = sf_analyze(
+                    pgn_text=job.pgn,
+                    stockfish_path=settings.stockfish_path,
+                    depth=settings.stockfish_depth,
+                    threads=settings.stockfish_threads,
+                    hash_mb=settings.stockfish_hash_mb,
+                    syzygy_path=settings.syzygy_path,
+                    progress_callback=_logging_progress,
+                    eval_cache=cache,
+                )
+            finally:
+                if cache is not None:
+                    cache.prune(settings.eval_cache_max_mb * 1024 * 1024)
+                    cache.close()
             payload = build_stockfish_payload(result, worker_id=worker_id)
             client.complete_stockfish(job_id=job.id, worker_id=worker_id, payload=payload)
         elif job.engine == "lc0":
