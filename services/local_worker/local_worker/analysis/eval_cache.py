@@ -24,6 +24,11 @@ Description:
 
 Changelog:
     2026-05-13: Initial creation (issue #65)
+    2026-05-13: Wrap zobrist to signed 64-bit at the SQLite binding layer
+                (issue #77). Polyglot zobrist hashes are 64-bit unsigned and
+                ~half exceed 2**63-1, which Python's sqlite3 driver rejects
+                with OverflowError. Two-complement wrap is reversible so
+                rows whose key fit signed range remain readable.
     2026-05-13: SCHEMA_VERSION=2; CachedPv gained optional cp_white +
                 mate_white. cached_pvs_to_info_list /
                 info_list_to_cached_pvs accept engine='lc0'|'stockfish'.
@@ -259,6 +264,19 @@ def info_list_to_cached_pvs(
     return out
 
 
+def _to_signed64(unsigned: int) -> int:
+    """Wrap a 64-bit unsigned int into a signed int for SQLite storage.
+
+    SQLite's INTEGER affinity stores signed 64-bit values; the Python sqlite3
+    driver raises OverflowError when bound a value >= 2**63. Zobrist hashes
+    are 64-bit unsigned, so half of all positions exceed that bound. The
+    two-complement wrap is reversible (`_to_signed64` is its own inverse for
+    values in [0, 2**64)) so existing rows whose key happened to fit signed
+    range remain readable.
+    """
+    return unsigned - (1 << 64) if unsigned >> 63 else unsigned
+
+
 def zobrist_key(board: chess.Board) -> int:
     """Return the Polyglot Zobrist hash for a position.
 
@@ -355,10 +373,11 @@ class EvalCache:
         """
         if not self.enabled or self._conn is None:
             return None
+        zobrist_signed = _to_signed64(zobrist)
         cur = self._conn.execute(
             "SELECT payload FROM eval_cache "
             "WHERE zobrist=? AND network=? AND nodes=? AND multipv=?",
-            (zobrist, network, nodes, multipv),
+            (zobrist_signed, network, nodes, multipv),
         )
         row = cur.fetchone()
         if row is None:
@@ -372,7 +391,7 @@ class EvalCache:
         self._conn.execute(
             "UPDATE eval_cache SET last_used_at=? "
             "WHERE zobrist=? AND network=? AND nodes=? AND multipv=?",
-            (int(time.time()), zobrist, network, nodes, multipv),
+            (int(time.time()), zobrist_signed, network, nodes, multipv),
         )
         self._conn.commit()
         self._hits += 1
@@ -403,7 +422,7 @@ class EvalCache:
             "INSERT OR REPLACE INTO eval_cache "
             "(zobrist, network, nodes, multipv, payload, created_at, last_used_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (zobrist, network, nodes, multipv, payload, now, now),
+            (_to_signed64(zobrist), network, nodes, multipv, payload, now, now),
         )
         self._conn.commit()
 
