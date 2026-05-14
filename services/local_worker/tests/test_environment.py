@@ -145,6 +145,80 @@ def test_probe_engine_version_prefers_id_name(
     )
 
 
+def test_resolve_engine_path_prefers_configured(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    """Configured paths win over shutil.which when the binary exists (issue #60)."""
+    fake = tmp_path / "lc0"
+    fake.write_text("")  # exists() is what matters
+    called: list[str] = []
+
+    def _track(name: str) -> str:
+        called.append(name)
+        return "/usr/bin/lc0"
+
+    monkeypatch.setattr(environment.shutil, "which", _track)
+    assert environment._resolve_engine_path(str(fake), "lc0") == str(fake)
+    assert called == []  # PATH fallback must not run when configured path exists
+
+
+def test_resolve_engine_path_falls_back_to_path_when_unconfigured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An empty configured path means: try shutil.which (issue #60 acceptance)."""
+    monkeypatch.setattr(environment.shutil, "which", lambda name: f"/usr/bin/{name}")
+    assert environment._resolve_engine_path("", "stockfish") == "/usr/bin/stockfish"
+    assert environment._resolve_engine_path(None, "lc0") == "/usr/bin/lc0"
+
+
+def test_resolve_engine_path_returns_none_when_configured_missing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    """A configured but non-existent path returns None — banner says 'not found'."""
+    monkeypatch.setattr(environment.shutil, "which", lambda _name: "/usr/bin/lc0")
+    missing = tmp_path / "nope" / "lc0.exe"
+    # Do NOT fall back to shutil.which: if the user configured a path, it
+    # is what the run loop will launch; reporting the PATH binary would
+    # be misleading.
+    assert environment._resolve_engine_path(str(missing), "lc0") is None
+
+
+def test_detect_engines_uses_configured_paths(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    """End-to-end: configured paths flow through _detect_engines (issue #60)."""
+    sf = tmp_path / "stockfish.exe"
+    sf.write_text("")
+    lc = tmp_path / "lc0.exe"
+    lc.write_text("")
+    monkeypatch.setattr(environment, "_probe_engine_version", lambda b, _a: f"v@{b}")
+    monkeypatch.setattr(environment, "_lc0_backend_default", lambda _b: "cuda-fp16")
+    monkeypatch.setattr(environment.shutil, "which", lambda _n: None)
+
+    engines = environment._detect_engines(
+        {"stockfish": str(sf), "lc0": str(lc)},
+    )
+    assert engines["stockfish"]["path"] == str(sf)
+    assert engines["stockfish"]["version"] == f"v@{sf}"
+    assert engines["lc0"]["path"] == str(lc)
+    assert engines["lc0"]["backend"] == "cuda-fp16"
+
+
+def test_detect_environment_threads_engine_paths(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    """detect_environment passes engine_paths through to _detect_engines."""
+    sf = tmp_path / "stockfish"
+    sf.write_text("")
+    monkeypatch.setattr(environment, "_probe_engine_version", lambda b, _a: "fake")
+    monkeypatch.setattr(environment, "_lc0_backend_default", lambda _b: None)
+    monkeypatch.setattr(environment.shutil, "which", lambda _n: None)
+
+    env = detect_environment({"stockfish": str(sf)})
+    assert env["engines"]["stockfish"]["path"] == str(sf)
+    assert env["engines"]["lc0"]["path"] is None  # unconfigured + not on PATH
+
+
 def test_probe_engine_version_strips_ansi_from_fallback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

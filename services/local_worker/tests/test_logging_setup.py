@@ -116,3 +116,37 @@ def test_log_session_banner_writes_expected_prefix(
     assert "wood-league-worker" in text
     assert "host:" in text
     assert "engines:" in text
+
+
+def test_log_session_banner_forwards_engine_paths_to_detect(
+    _isolate_log_dir: Path, monkeypatch
+) -> None:
+    """log_session_banner must pass engine_paths through to detect_environment.
+
+    Regression guard for issue #60 — the banner has to consult worker
+    settings, not just PATH, so the diagnostic line matches what the run
+    loop will actually launch.
+    """
+    captured: dict[str, dict[str, str] | None] = {"arg": None}
+
+    def fake_detect(engine_paths=None):
+        captured["arg"] = engine_paths
+        return {
+            "host": {"system": "X", "release": "1", "machine": "x"},
+            "python": {"version": "3", "implementation": "C"},
+            "torch": {"available": False, "version": None, "cuda": False,
+                       "mps": False, "gpus": []},
+            "engines": {
+                "stockfish": {"path": None, "version": "not found", "backend": None},
+                "lc0": {"path": None, "version": "not found", "backend": None},
+            },
+        }
+
+    from local_worker import logging_setup as ls
+
+    monkeypatch.setattr(ls, "detect_environment", fake_detect)
+    log_file = configure_logging(level="INFO", reset_file=True)
+    log_session_banner(log_file, engine_paths={"lc0": "D:/lc0/lc0.exe"})
+    logger.remove()
+
+    assert captured["arg"] == {"lc0": "D:/lc0/lc0.exe"}
