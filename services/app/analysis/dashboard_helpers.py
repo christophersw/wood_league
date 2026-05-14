@@ -23,13 +23,23 @@ from analysis.models import AnalysisJob
 
 
 __all__ = [
+    "LIVENESS_HEALTHY_SECONDS",
+    "LIVENESS_WARNING_SECONDS",
     "_percentile",
     "_engine_throughput_row",
     "_throughput_for_window",
     "_failure_timestamp",
     "_worker_log_url_for",
     "_build_failure_row",
+    "_liveness_for",
+    "_format_uptime",
+    "_format_memory_mb",
+    "_game_link_for",
 ]
+
+
+LIVENESS_HEALTHY_SECONDS = 60
+LIVENESS_WARNING_SECONDS = 120
 
 
 def _percentile(sorted_values: list[float], fraction: float) -> float | None:
@@ -200,3 +210,94 @@ def _build_failure_row(job: AnalysisJob) -> dict[str, Any]:
         "error_snippet": snippet,
         "worker_log_url": _worker_log_url_for(job),
     }
+
+
+def _liveness_for(delta: timedelta | None) -> str:
+    """Classify a "time since last_seen" delta into a liveness bucket.
+
+    Args:
+        delta: ``now - last_seen``, or ``None`` if no heartbeat exists.
+
+    Returns:
+        ``"healthy"`` when below 60s, ``"warning"`` when in [60s, 120s),
+        ``"stale"`` at or above 120s and for ``None``.
+    """
+    if delta is None:
+        return "stale"
+    seconds = delta.total_seconds()
+    if seconds < LIVENESS_HEALTHY_SECONDS:
+        return "healthy"
+    if seconds < LIVENESS_WARNING_SECONDS:
+        return "warning"
+    return "stale"
+
+
+def _format_uptime(delta: timedelta | None) -> str:
+    """Format ``now - started_at`` as a compact human string.
+
+    Args:
+        delta: Worker uptime, or ``None`` if not reported.
+
+    Returns:
+        ``"—"`` for ``None``; ``"Ns"`` under a minute; ``"Nm"`` under an
+        hour; ``"Xh Ym"`` under a day; ``"Xd Yh"`` otherwise.
+    """
+    if delta is None:
+        return "—"
+    total = int(delta.total_seconds())
+    if total < 60:
+        return f"{total}s"
+    if total < 3600:
+        return f"{total // 60}m"
+    if total < 86400:
+        hours, rem = divmod(total, 3600)
+        return f"{hours}h {rem // 60}m"
+    days, rem = divmod(total, 86400)
+    return f"{days}d {rem // 3600}h"
+
+
+def _format_memory_mb(mb: int | None) -> str:
+    """Format a megabyte count as MB or GB depending on magnitude.
+
+    Args:
+        mb: Memory in megabytes, or ``None``.
+
+    Returns:
+        ``"—"`` for ``None``; ``"<N> MB"`` below 1024; ``"<N>.<d> GB"``
+        above.
+    """
+    if mb is None:
+        return "—"
+    if mb < 1024:
+        return f"{mb} MB"
+    return f"{mb / 1024:.1f} GB"
+
+
+def _game_link_for(current_game_id: str | None) -> tuple[str, str | None]:
+    """Resolve a worker's ``current_game_id`` to a (label, URL) tuple.
+
+    Workers store ``current_game_id`` as ``str(Game.pk)``. We look the
+    game up to get its ``slug`` for URL construction; if it is missing
+    we still return a label so the card has something to show.
+
+    Args:
+        current_game_id: The string stored on ``WorkerHeartbeat``.
+
+    Returns:
+        ``(label, url)`` — label is ``"#<id>"`` or ``"—"`` when empty;
+        url is the game analysis page URL when the lookup succeeds,
+        else ``None``.
+    """
+    if not current_game_id:
+        return ("—", None)
+    label = f"#{current_game_id}"
+    from games.models import Game  # local import: avoid app-load cycle
+
+    slug = (
+        Game.objects.filter(pk=current_game_id)
+        .values_list("slug", flat=True)
+        .first()
+    )
+    if slug is None:
+        return (label, None)
+    return (label, reverse("games:analysis", kwargs={"slug": slug}))
