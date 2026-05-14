@@ -20,6 +20,11 @@ Changelog:
                 MinibatchSize/MaxPrefetch when available) into the
                 engine.configure() opts. Opt out with auto_tune=False
                 (issue #62).
+    2026-05-13: Added optional persistent EvalCache plumbing (issue #65).
+                When `eval_cache` is supplied to analyze_pgn(), the
+                multipv=3 "before" call is served from cache on hit and
+                written on miss, keyed by (zobrist, network, nodes).
+                Per-job hit rate is logged.
 """
 from __future__ import annotations
 
@@ -34,6 +39,12 @@ import chess.engine
 import chess.pgn
 
 from .lc0_tuning import get_tuned_opts
+from .eval_cache import (
+    EvalCache,
+    cached_pvs_to_info_list,
+    info_list_to_cached_pvs,
+    zobrist_key,
+)
 from .math import classify_lc0_move, cp_equiv_from_q
 from .models import Lc0MoveResult, Lc0GameResult
 from .see import see_capture_or_sacrifice
@@ -200,12 +211,63 @@ def _build_move_result(
     )
 
 
+def _multipv_before(
+    board: chess.Board,
+    engine: chess.engine.SimpleEngine,
+    limit: chess.engine.Limit,
+    *,
+    cache: Optional[EvalCache],
+    network: str,
+    nodes: int,
+    multipv: int,
+) -> list[dict]:
+    """Return the engine's MultiPV result for `board`, using the cache when warm.
+
+    On cache hit, rebuilds an info-list-shaped structure that the rest of
+    `_analyze_one_move` consumes identically to a live engine result —
+    same `.pov(color).wdl()` interface, same `pv` list of `chess.Move`.
+    On miss (or when cache is disabled or the cache key cannot be formed),
+    the engine is called and the result is written to the cache.
+
+    Args:
+        board: Position to analyse.
+        engine: Running lc0 engine.
+        limit: Node/depth budget for the live call.
+        cache: EvalCache instance, or None to bypass.
+        network: Resolved network name for the cache key.
+        nodes: Node budget for the cache key.
+        multipv: MultiPV count (both for the live call and the cache key).
+
+    Returns:
+        MultiPV info list, live or reconstructed from cache.
+    """
+    if cache is not None and cache.enabled and network:
+        key = zobrist_key(board)
+        cached = cache.get(key, network, nodes, multipv)
+        if cached is not None:
+            log.debug("lc0: eval_cache hit zobrist=%016x", key)
+            return cached_pvs_to_info_list(cached)
+    log.debug("lc0: analyse() multipv=%d starting", multipv)
+    info_list = engine.analyse(board, limit, multipv=multipv)
+    log.debug("lc0: analyse() multipv=%d returned", multipv)
+    if cache is not None and cache.enabled and network:
+        cache.put(
+            zobrist_key(board), network, nodes, multipv,
+            info_list_to_cached_pvs(info_list),
+        )
+    return info_list
+
+
 def _analyze_one_move(
     board: chess.Board,
     move: chess.Move,
     ply_index: int,
     engine: chess.engine.SimpleEngine,
     limit: chess.engine.Limit,
+    *,
+    cache: Optional[EvalCache] = None,
+    network: str = "",
+    nodes: int = 0,
 ) -> tuple[Lc0MoveResult, chess.Color, tuple[int, int, int]]:
     """Analyse a single move: evaluate before/after, classify, and build result.
 
@@ -217,6 +279,12 @@ def _analyze_one_move(
         ply_index: 1-based ply number (1 = White's first move).
         engine: Running Lc0 engine instance.
         limit: Node/depth limit for analysis.
+        cache: Optional eval cache. When set, the multipv=3 lookup is
+            served from cache on hit; misses are written back.
+        network: Resolved network name for the cache key. Empty disables
+            caching for this call.
+        nodes: Node budget used (cache key). Must match `limit.nodes` to
+            avoid mixing budgets in the same cache entry.
 
     Returns:
         Tuple of (Lc0MoveResult, mover_color, wdl_white_after) where
@@ -227,9 +295,10 @@ def _analyze_one_move(
     move_san = board.san(move)
     is_cap_or_sac = see_capture_or_sacrifice(board, move)
 
-    log.debug("lc0: analyse() multipv=3 starting")
-    info_before_list = engine.analyse(board, limit, multipv=3)
-    log.debug("lc0: analyse() multipv=3 returned")
+    info_before_list = _multipv_before(
+        board, engine, limit,
+        cache=cache, network=network, nodes=nodes, multipv=3,
+    )
     wdl_before = info_before_list[0]["score"].pov(mover).wdl()
     mover_win_pct_before = _mover_win_pct_from_wdl(wdl_before)
 
@@ -473,6 +542,7 @@ def analyze_pgn(
     backend: str = "cpu",
     progress_callback: Optional[Callable[..., None]] = None,
     auto_tune: bool = True,
+    eval_cache: Optional[EvalCache] = None,
 ) -> Lc0GameResult:
     """Analyse a PGN game with Lc0 and return per-move WDL results.
 
@@ -543,7 +613,8 @@ def analyze_pgn(
             log.info("lc0: analysing ply %d/%d", ply_index, total_plies)
             ply_started = time.monotonic()
             move_result, mover, wdl_white = _analyze_one_move(
-                board, move, ply_index, engine, limit
+                board, move, ply_index, engine, limit,
+                cache=eval_cache, network=network_name, nodes=nodes,
             )
             ply_seconds = time.monotonic() - ply_started
             move_results.append(move_result)
@@ -564,6 +635,14 @@ def analyze_pgn(
                     nodes=nodes, seconds=ply_seconds,
                 )
 
+        if eval_cache is not None and eval_cache.enabled:
+            stats = eval_cache.stats()
+            log.info(
+                "lc0: eval_cache hits=%d misses=%d (%.1f%% hit rate)",
+                stats.hits, stats.misses,
+                100.0 * stats.hits / max(1, stats.hits + stats.misses),
+            )
+            eval_cache.reset_counters()
         return _build_game_result(
             nodes=nodes,
             network_name=network_name,

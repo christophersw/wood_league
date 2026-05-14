@@ -11,6 +11,7 @@ Changelog:
 from __future__ import annotations
 
 import logging
+import os
 import socket
 import time
 from dataclasses import dataclass
@@ -19,6 +20,8 @@ from typing import Callable, Optional
 from local_worker.worker_client import WorkerClient, WorkerClientError
 from local_worker.analysis.stockfish import analyze_pgn as sf_analyze, build_stockfish_payload
 from local_worker.analysis.lc0 import analyze_pgn as lc0_analyze, build_lc0_payload
+from local_worker.analysis.eval_cache import EvalCache
+from local_worker._shared import data_dir
 from local_worker.config import Settings
 
 log = logging.getLogger(__name__)
@@ -69,6 +72,30 @@ def _worker_id(settings: Settings) -> str:
     if settings.worker_id:
         return settings.worker_id
     return f"local-{socket.gethostname()}"[:64]
+
+
+def _open_eval_cache(settings: Settings) -> Optional[EvalCache]:
+    """Construct the lc0 eval cache for this job, honoring config + env flag.
+
+    Returns None when caching is disabled via `settings.eval_cache_enabled`
+    or the `WLW_NO_EVAL_CACHE=1` env override. Errors opening the DB are
+    swallowed (we never want cache failures to kill a job).
+
+    Args:
+        settings: Worker settings.
+
+    Returns:
+        EvalCache instance, or None when disabled.
+    """
+    if not settings.eval_cache_enabled:
+        return None
+    if os.environ.get("WLW_NO_EVAL_CACHE") == "1":
+        return None
+    try:
+        return EvalCache(data_dir() / "lc0_eval_cache.sqlite")
+    except Exception:
+        log.warning("eval_cache: failed to open; running without cache", exc_info=True)
+        return None
 
 
 def run_one_job(
@@ -126,15 +153,22 @@ def run_one_job(
             client.complete_stockfish(job_id=job.id, worker_id=worker_id, payload=payload)
         elif job.engine == "lc0":
             nodes = job.nodes or settings.lc0_nodes
-            result = lc0_analyze(
-                pgn_text=job.pgn,
-                lc0_path=settings.lc0_path,
-                nodes=nodes,
-                weights_path=settings.lc0_weights_path,
-                syzygy_path=settings.syzygy_path,
-                backend=settings.lc0_backend or "cpu",
-                progress_callback=_logging_progress,
-            )
+            cache = _open_eval_cache(settings)
+            try:
+                result = lc0_analyze(
+                    pgn_text=job.pgn,
+                    lc0_path=settings.lc0_path,
+                    nodes=nodes,
+                    weights_path=settings.lc0_weights_path,
+                    syzygy_path=settings.syzygy_path,
+                    backend=settings.lc0_backend or "cpu",
+                    progress_callback=_logging_progress,
+                    eval_cache=cache,
+                )
+            finally:
+                if cache is not None:
+                    cache.prune(settings.eval_cache_max_mb * 1024 * 1024)
+                    cache.close()
             payload = build_lc0_payload(result, worker_id=worker_id)
             client.complete_lc0(job_id=job.id, worker_id=worker_id, payload=payload)
         else:
