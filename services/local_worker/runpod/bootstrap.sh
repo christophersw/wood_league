@@ -147,12 +147,17 @@ log "launching parallel engines: stockfish + lc0 (batch-size=10 each)"
 # --telemetry is the app-level Typer flag that opts in to log uploads
 # without prompting. Required on a headless pod because the interactive
 # consent prompt has no TTY and would abort the worker.
+# --batch-time is required to skip the second interactive prompt
+# ("Run for how many minutes?") in headless mode. 1440 = 24 hours, a
+# safe ceiling well above the time needed to drain any realistic queue.
+# The worker still exits early via the queue-empty path; this is just
+# the absolute upper bound.
 WLW_WORKER_ID=runpod-stockfish WLW_RUNPOD_SELF_STOP=0 \
-    wood-league-worker --telemetry run --engine stockfish --batch-size 10 &
+    wood-league-worker --telemetry run --engine stockfish --batch-size 10 --batch-time 1440 &
 sf_pid=$!
 
 WLW_WORKER_ID=runpod-lc0 WLW_RUNPOD_SELF_STOP=0 \
-    wood-league-worker --telemetry run --engine lc0 --batch-size 10 &
+    wood-league-worker --telemetry run --engine lc0 --batch-size 10 --batch-time 1440 &
 lc_pid=$!
 
 log "stockfish pid=${sf_pid}  lc0 pid=${lc_pid} — waiting for both to drain"
