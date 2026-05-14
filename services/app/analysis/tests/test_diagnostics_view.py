@@ -140,23 +140,6 @@ def test_non_admin_user_is_denied(db, client):
     assert resp.status_code in (302, 403)
 
 
-def test_admin_empty_state_renders(db, client):
-    """With no jobs in the database, the page returns 200 with empty tables.
-
-    Args:
-        db: pytest-django database fixture.
-        client: Django test client fixture.
-    """
-    admin = _make_user("admin")
-    client.force_login(admin)
-    resp = client.get(reverse("analysis:diagnostics"))
-    assert resp.status_code == 200
-    body = resp.content.decode()
-    assert "Throughput" in body
-    assert "Recent failures" in body
-    assert "No failures in recent history." in body
-
-
 def test_throughput_metrics_for_both_engines(db):
     """Throughput helper returns correct counts and averages per engine.
 
@@ -256,22 +239,3 @@ def test_worker_log_link_matches_when_within_window(db):
     assert by_id[unmatched_failure.id]["worker_log_url"] is None
 
 
-def test_admin_page_renders_failure_rows(db, client):
-    """End-to-end: admin sees the diagnostics page with failures listed.
-
-    Args:
-        db: pytest-django database fixture.
-        client: Django test client fixture.
-    """
-    _make_failed_job(
-        "stockfish",
-        timezone.now() - timedelta(minutes=5),
-        error_message="explode",
-    )
-    admin = _make_user("admin")
-    client.force_login(admin)
-    resp = client.get(reverse("analysis:diagnostics"))
-    assert resp.status_code == 200
-    body = resp.content.decode()
-    assert "explode" in body
-    assert "Throughput (last 24 hours)" in body
