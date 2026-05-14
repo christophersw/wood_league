@@ -33,8 +33,10 @@ WEIGHTS_DIR="${WORKSPACE}/weights"
 SYZYGY_DIR="${WORKSPACE}/syzygy"
 DATA_DIR="${WORKSPACE}/data"
 
-# BT4 768x15smolgen-12 — a well-known strong lc0 net used for analysis.
-BT4_FILENAME="${WLW_BT4_FILENAME:-BT4-1024x15x32h-swa-6147500.pb.gz}"
+# BT4 1024x15x32h smolgen — a well-known strong lc0 net used for analysis.
+# Filename includes the -policytune-332 suffix as published on the mirror;
+# this is the only BT4 .pb.gz currently available at networks-contrib.
+BT4_FILENAME="${WLW_BT4_FILENAME:-BT4-1024x15x32h-swa-6147500-policytune-332.pb.gz}"
 BT4_URL="${WLW_BT4_URL:-https://storage.lczero.org/files/networks-contrib/${BT4_FILENAME}}"
 BT4_PATH="${WEIGHTS_DIR}/${BT4_FILENAME}"
 
