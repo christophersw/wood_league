@@ -125,4 +125,6 @@ if [ -z "${WLW_API_URL:-}" ] || [ -z "${WLW_API_KEY:-}" ]; then
 fi
 
 log "launching wood-league-worker (batch-size=10, engines=${WLW_DEFAULT_ENGINES})"
+mkdir -p /workspace/logs
+export WLW_LOG_DIR=/workspace/logs
 exec wood-league-worker run --engine both --batch-size 10
