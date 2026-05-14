@@ -66,12 +66,10 @@ if [ ! -x "${LC0_BIN}" ]; then
     git clone --depth 1 --branch "v${LC0_VERSION}" \
         https://github.com/LeelaChessZero/lc0.git "${src_dir}"
     cd "${src_dir}"
-    # Disable gtest (we're not running lc0's tests). Everything else
-    # auto-detects from the system; CUDA is picked up from /usr/local/cuda.
-    meson setup build --buildtype=release \
-        -Dgtest=false \
-        -Dpython_bindings=false \
-        -Ddag_classic=false
+    # Release build, gtest off. Other lc0 meson options vary between
+    # versions, so we don't override them — defaults are correct (CUDA
+    # backend on, python bindings off, etc.).
+    meson setup build --buildtype=release -Dgtest=false
     ninja -C build -j "$(nproc)"
     install -m 0755 build/lc0 "${LC0_BIN}"
     cd /
