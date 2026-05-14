@@ -11,6 +11,7 @@ Changelog:
     2026-05-14 (#106): Initial extraction from views.py (#86) + new
         dashboard-specific helpers.
     2026-05-14 (#106): Added _rate_per_min and _eta_for for queues partial.
+    2026-05-14 (#106): Added _group_recent_by_game for recent partial.
 """
 from __future__ import annotations
 
@@ -38,6 +39,7 @@ __all__ = [
     "_game_link_for",
     "_rate_per_min",
     "_eta_for",
+    "_group_recent_by_game",
 ]
 
 
@@ -346,3 +348,53 @@ def _eta_for(pending: int, rate_per_min: float) -> str | None:
         return f"{total_seconds // 60}m"
     hours, rem = divmod(total_seconds, 3600)
     return f"{hours}h {rem // 60}m"
+
+
+def _group_recent_by_game(limit: int = 25) -> list[dict[str, Any]]:
+    """Group recently completed AnalysisJobs by game and pivot engine → column.
+
+    Pulls the most recent ``limit * 4`` completed jobs (a buffer that
+    handles the common 2-engines-per-game case), groups them by
+    ``game_id`` in Python, and produces one row per game with separate
+    columns for each engine's ``duration_seconds`` plus the latest
+    ``completed_at`` and the game's ``slug`` for URL building.
+
+    Args:
+        limit: Maximum number of distinct games to return.
+
+    Returns:
+        List of dicts with keys ``game_id``, ``game_slug``,
+        ``stockfish_seconds``, ``lc0_seconds`` (each ``float | None``),
+        ``latest_completed_at``.
+    """
+    buffer_size = max(limit * 4, 50)
+    recent = list(
+        AnalysisJob.objects
+        .filter(status=AnalysisJob.STATUS_COMPLETED, completed_at__isnull=False)
+        .select_related("game")
+        .order_by("-completed_at")
+        .values(
+            "game_id", "game__slug", "engine", "duration_seconds",
+            "completed_at",
+        )[:buffer_size]
+    )
+
+    by_game: dict[str, dict[str, Any]] = {}
+    for job in recent:
+        gid = str(job["game_id"])
+        row = by_game.setdefault(gid, {
+            "game_id": gid,
+            "game_slug": job["game__slug"],
+            "stockfish_seconds": None,
+            "lc0_seconds": None,
+            "latest_completed_at": job["completed_at"],
+        })
+        if job["completed_at"] > row["latest_completed_at"]:
+            row["latest_completed_at"] = job["completed_at"]
+        if job["engine"] == "stockfish":
+            row["stockfish_seconds"] = job["duration_seconds"]
+        elif job["engine"] == "lc0":
+            row["lc0_seconds"] = job["duration_seconds"]
+
+    rows = sorted(by_game.values(), key=lambda r: r["latest_completed_at"], reverse=True)
+    return rows[:limit]

@@ -22,6 +22,7 @@ from analysis.dashboard_helpers import (
     _format_memory_mb,
     _format_uptime,
     _game_link_for,
+    _group_recent_by_game,
     _liveness_for,
     _rate_per_min,
 )
@@ -176,3 +177,79 @@ def test_eta_for_returns_formatted_string():
     assert _eta_for(pending=60, rate_per_min=1.0) == "1h 0m"
     assert _eta_for(pending=30, rate_per_min=1.0) == "30m"
     assert _eta_for(pending=5, rate_per_min=10.0) == "30s"
+
+
+def _make_completed(game, engine, duration_seconds, completed_at):
+    """Create a completed AnalysisJob for ``game``/``engine`` at ``completed_at``."""
+    return AnalysisJob.objects.create(
+        game=game,
+        engine=engine,
+        status=AnalysisJob.STATUS_COMPLETED,
+        duration_seconds=duration_seconds,
+        started_at=completed_at - timedelta(seconds=duration_seconds),
+        completed_at=completed_at,
+    )
+
+
+@pytest.mark.django_db
+def test_group_recent_returns_empty_when_no_jobs():
+    """Empty DB → empty list."""
+    assert _group_recent_by_game(limit=25) == []
+
+
+@pytest.mark.django_db
+def test_group_recent_groups_by_game_and_pivots_engines():
+    """One game with both engines complete → single row, both columns filled."""
+    game = _make_game_for_link()
+    now = timezone.now()
+    _make_completed(game, "stockfish", 252.0, now - timedelta(minutes=2))
+    _make_completed(game, "lc0", 663.0, now - timedelta(minutes=1))
+
+    rows = _group_recent_by_game(limit=25)
+
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["game_id"] == str(game.pk)
+    assert row["stockfish_seconds"] == 252.0
+    assert row["lc0_seconds"] == 663.0
+    assert row["latest_completed_at"] is not None
+
+
+@pytest.mark.django_db
+def test_group_recent_handles_partial_completion():
+    """A game with only stockfish done → lc0 column is None."""
+    game = _make_game_for_link()
+    now = timezone.now()
+    _make_completed(game, "stockfish", 100.0, now - timedelta(minutes=5))
+
+    rows = _group_recent_by_game(limit=25)
+
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["stockfish_seconds"] == 100.0
+    assert row["lc0_seconds"] is None
+
+
+@pytest.mark.django_db
+def test_group_recent_orders_by_latest_completion_desc():
+    """Most recently completed game appears first."""
+    older = _make_game_for_link()
+    newer = _make_game_for_link()
+    now = timezone.now()
+    _make_completed(older, "stockfish", 60.0, now - timedelta(hours=1))
+    _make_completed(newer, "stockfish", 60.0, now - timedelta(minutes=1))
+
+    rows = _group_recent_by_game(limit=25)
+
+    assert [r["game_id"] for r in rows] == [str(newer.pk), str(older.pk)]
+
+
+@pytest.mark.django_db
+def test_group_recent_respects_limit():
+    """``limit`` caps the number of distinct games returned."""
+    now = timezone.now()
+    for i in range(30):
+        g = _make_game_for_link()
+        _make_completed(g, "stockfish", 60.0, now - timedelta(minutes=i))
+
+    assert len(_group_recent_by_game(limit=25)) == 25
