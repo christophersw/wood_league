@@ -1,4 +1,4 @@
-{#
+{% comment %}
   Title: _queue_submit_result.html — HTMX response for bulk submit / reorder
   Description: Returned by queue_submit and queue_reorder as the full swap for
       #queue-pending-region. Renders a flash summary bar above the pending
@@ -8,7 +8,7 @@
       2026-05-10: Initial — shows counts and re-includes _queue_pending.html.
       2026-05-11: Task 8 — swap target renamed; flash bar added for both submit
           and reorder contexts; includes new _queue_pending_table.html partial.
-#}
+{% endcomment %}
 <div id="queue-pending-region">
 
   {# ─── Flash bar ──────────────────────────────────────────────────────────── #}
