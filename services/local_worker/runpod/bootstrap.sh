@@ -12,6 +12,9 @@
 #
 # Changelog:
 #   2026-05-14: Initial creation for issue #79.
+#   2026-05-14 (#90): Launch Stockfish and Lc0 engines in parallel as
+#       separate worker processes; bootstrap script handles the single
+#       RunPod stop call after both finish.
 
 set -euo pipefail
 
@@ -124,7 +127,52 @@ if [ -z "${WLW_API_URL:-}" ] || [ -z "${WLW_API_KEY:-}" ]; then
     log "WARNING: WLW_API_URL / WLW_API_KEY not set — worker will refuse to run."
 fi
 
-log "launching wood-league-worker (batch-size=10, engines=${WLW_DEFAULT_ENGINES})"
 mkdir -p /workspace/logs
 export WLW_LOG_DIR=/workspace/logs
-exec wood-league-worker run --engine both --batch-size 10
+
+# ---- 5. Launch both engines in parallel --------------------------------
+# Each engine runs as its own worker process so they can saturate the GPU
+# (lc0) and the CPU cores (Stockfish) simultaneously. Distinct WLW_WORKER_ID
+# values keep their heartbeats from overwriting each other on the admin
+# dashboard.
+#
+# Per-process self-stop is suppressed (WLW_RUNPOD_SELF_STOP=0): whichever
+# engine drains its queue first must NOT kill the pod while the other is
+# still working. The bootstrap script issues the single stop call below
+# after both processes have exited.
+log "launching parallel engines: stockfish + lc0 (batch-size=10 each)"
+
+WLW_WORKER_ID=runpod-stockfish WLW_RUNPOD_SELF_STOP=0 \
+    wood-league-worker run --engine stockfish --batch-size 10 &
+sf_pid=$!
+
+WLW_WORKER_ID=runpod-lc0 WLW_RUNPOD_SELF_STOP=0 \
+    wood-league-worker run --engine lc0 --batch-size 10 &
+lc_pid=$!
+
+log "stockfish pid=${sf_pid}  lc0 pid=${lc_pid} — waiting for both to drain"
+wait "${sf_pid}" || log "stockfish process exited non-zero"
+wait "${lc_pid}" || log "lc0 process exited non-zero"
+log "both engines have exited"
+
+# ---- 6. Optional pod auto-stop -----------------------------------------
+# Triggered when the operator sets WLW_RUNPOD_AUTOSTOP=1 on the pod env
+# panel. Uses curl rather than the worker's Python stop_self() because the
+# wrapper outlives both worker processes.
+if [ "${WLW_RUNPOD_AUTOSTOP:-0}" = "1" ]; then
+    pod_id="${RUNPOD_POD_ID:-${WLW_RUNPOD_POD_ID:-}}"
+    api_key="${WLW_RUNPOD_API_KEY:-}"
+    if [ -z "${pod_id}" ] || [ -z "${api_key}" ]; then
+        log "WLW_RUNPOD_AUTOSTOP=1 but RUNPOD_POD_ID or WLW_RUNPOD_API_KEY missing — skipping stop"
+    else
+        log "calling RunPod stop-pod for ${pod_id}"
+        status=$(curl -s -o /dev/null -w '%{http_code}' \
+            -X POST \
+            -H "Authorization: Bearer ${api_key}" \
+            --max-time 10 \
+            "https://rest.runpod.io/v1/pods/${pod_id}/stop" || echo "000")
+        log "RunPod stop-pod returned HTTP ${status}"
+    fi
+else
+    log "WLW_RUNPOD_AUTOSTOP not set — leaving pod running"
+fi
