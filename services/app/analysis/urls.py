@@ -6,6 +6,9 @@ Description:
     information, plus per-engine queue detail and action endpoints.
 
 Changelog:
+    2026-05-14 (#101): Phase A — remove /queues/<engine>/submit/ route; the
+        legacy "Submit to RunPod" push-dispatch flow is gone now that pod
+        workers pull jobs directly from the queue.
     2026-05-14 (#86): Add diagnostics/ route for 24h throughput + recent failures.
     2026-05-14: Issue #83 — added admin/runpod/start/ route for the
         RunPod admin start-pod endpoint.
@@ -22,7 +25,6 @@ urlpatterns = [
     path("queues/", views.queues_summary, name="queues_summary"),
     path("queues/stockfish/", views_queue.queue_stockfish, name="queue_stockfish"),
     path("queues/lc0/", views_queue.queue_lc0, name="queue_lc0"),
-    path("queues/<str:engine>/submit/", views_queue.queue_submit, name="queue_submit"),
     path("queues/<str:engine>/reorder/", views_queue.queue_reorder, name="queue_reorder"),
     path("runpod/start/", views.runpod_start_view, name="runpod_start"),
     path("diagnostics/", views.diagnostics_view, name="diagnostics"),
