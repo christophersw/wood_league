@@ -8,14 +8,19 @@
       2026-05-11: Task 8 — created as replacement for _queue_pending.html;
           adds sticky toolbar, tabs, priority badges, per-row reorder,
           pagination, select-all + selected counter.
+      2026-05-14: Issue #101 Phase A — removed the "Submit to RunPod" bulk
+          button (push-dispatch is gone; pod workers pull jobs directly).
+          The wrapping form is renamed to bulk-actions-form and now scopes
+          only the ↑ Top / ↓ Bottom priority controls and their job_ids
+          checkboxes.
 {% endcomment %}
 
 {# ─── Sticky toolbar + form ────────────────────────────────────────────────── #}
 {% comment %}
-  The form wraps the toolbar and the table so all three action buttons
-  (Submit, ↑ Top, ↓ Bottom) can include the same job_ids checkboxes.
+  The form wraps the toolbar and the table so the ↑ Top / ↓ Bottom priority
+  buttons share the same job_ids checkboxes via hx-include.
 {% endcomment %}
-<form id="bulk-submit-form">
+<form id="bulk-actions-form">
   {% csrf_token %}
 
   {# Sticky toolbar shell #}
@@ -44,17 +49,9 @@
 
       {# Action buttons #}
       <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-left: auto;">
-        <button type="button" class="wc-btn wc-btn-solid"
-                hx-post="{% url 'analysis:queue_submit' engine=engine %}"
-                hx-include="#bulk-submit-form"
-                hx-target="#queue-pending-region"
-                hx-swap="outerHTML"
-                hx-indicator="#htmx-indicator">
-          Submit to RunPod
-        </button>
         <button type="button" class="wc-btn"
                 hx-post="{% url 'analysis:queue_reorder' engine=engine %}?action=top"
-                hx-include="#bulk-submit-form"
+                hx-include="#bulk-actions-form"
                 hx-target="#queue-pending-region"
                 hx-swap="outerHTML"
                 hx-indicator="#htmx-indicator">
@@ -62,7 +59,7 @@
         </button>
         <button type="button" class="wc-btn"
                 hx-post="{% url 'analysis:queue_reorder' engine=engine %}?action=bottom"
-                hx-include="#bulk-submit-form"
+                hx-include="#bulk-actions-form"
                 hx-target="#queue-pending-region"
                 hx-swap="outerHTML"
                 hx-indicator="#htmx-indicator">
@@ -275,7 +272,7 @@
   </p>
   {% endif %}
 
-</form>{# /bulk-submit-form #}
+</form>{# /bulk-actions-form #}
 
 {# ─── Inline scripts ────────────────────────────────────────────────────────── #}
 <script>
@@ -286,7 +283,7 @@
   function syncSelectAll(sourceId) {
     var source = document.getElementById(sourceId);
     if (!source) return;
-    var form = source.closest('form') || document.getElementById('bulk-submit-form');
+    var form = source.closest('form') || document.getElementById('bulk-actions-form');
     if (!form) return;
     var boxes = form.querySelectorAll('input[name=job_ids]');
     boxes.forEach(function (cb) { cb.checked = source.checked; });
@@ -299,7 +296,7 @@
 
   /* ── Selected counter ────────────────────────────────────────────────────── */
   function updateCount(form) {
-    if (!form) form = document.getElementById('bulk-submit-form');
+    if (!form) form = document.getElementById('bulk-actions-form');
     var n = form ? form.querySelectorAll('input[name=job_ids]:checked').length : 0;
     var counter = document.getElementById('selected-count');
     if (counter) counter.textContent = n + ' selected';
@@ -312,7 +309,7 @@
     if (id === 'select-all' || id === 'select-all-thead') {
       syncSelectAll(id);
     } else if (e.target.name === 'job_ids') {
-      var form = e.target.closest('form') || document.getElementById('bulk-submit-form');
+      var form = e.target.closest('form') || document.getElementById('bulk-actions-form');
       updateCount(form);
       // un-tick both select-alls if any row unchecked
       if (!e.target.checked) {
