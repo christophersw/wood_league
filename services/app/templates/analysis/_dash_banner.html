@@ -1,11 +1,15 @@
 {% comment %}
-  Title: _dash_banner.html — Worker dashboard banner partial (stub)
-  Description: HTMX-polled partial for the worker dashboard. Stub content
-      until slice 2 wires real data.
+  Title: _dash_banner.html — Health banner partial
+  Description: One-line summary across the top of the dashboard.
   Changelog:
-      2026-05-14 (#106): Stub.
+      2026-05-14 (#106): Initial real implementation.
 {% endcomment %}
-<div class="pg-section">
-  <div class="pg-head"><span class="pg-title">banner</span></div>
-  <span class="pg-caption">stub</span>
+<div class="pg-section dash-banner dash-banner--{{ banner_state }}">
+  <span class="dash-dot dash-dot--{{ banner_state }}"></span>
+  <strong>{{ healthy_workers }}/{{ total_workers }}</strong>
+  worker{{ total_workers|pluralize }} healthy
+  &middot;
+  <strong>{{ pending }}</strong> pending
+  &middot;
+  <strong>{{ done_today }}</strong> done today
 </div>

@@ -26,22 +26,17 @@ from analysis.dashboard_helpers import (
 from games.models import Game
 
 
-def test_liveness_healthy_under_threshold():
-    """Deltas below 60s return ``'healthy'``."""
-    assert _liveness_for(timedelta(seconds=0)) == "healthy"
-    assert _liveness_for(timedelta(seconds=59)) == "healthy"
-
-
-def test_liveness_warning_between_thresholds():
-    """Deltas in [60s, 120s) return ``'warning'``."""
-    assert _liveness_for(timedelta(seconds=60)) == "warning"
-    assert _liveness_for(timedelta(seconds=119)) == "warning"
-
-
-def test_liveness_stale_at_or_above_warning_ceiling():
-    """Deltas >=120s return ``'stale'``."""
-    assert _liveness_for(timedelta(seconds=120)) == "stale"
-    assert _liveness_for(timedelta(hours=1)) == "stale"
+@pytest.mark.parametrize("seconds, expected", [
+    (0, "healthy"),
+    (59, "healthy"),
+    (60, "warning"),
+    (119, "warning"),
+    (120, "stale"),
+    (3600, "stale"),
+])
+def test_liveness_buckets(seconds, expected):
+    """Liveness classification by delta seconds."""
+    assert _liveness_for(timedelta(seconds=seconds)) == expected
 
 
 def test_liveness_none_treated_as_stale():
@@ -55,25 +50,20 @@ def test_liveness_thresholds_are_constants():
     assert LIVENESS_WARNING_SECONDS == 120
 
 
-def test_format_uptime_seconds():
-    """Sub-minute uptimes are formatted in seconds."""
-    assert _format_uptime(timedelta(seconds=5)) == "5s"
-    assert _format_uptime(timedelta(seconds=59)) == "59s"
-
-
-def test_format_uptime_minutes():
-    """Sub-hour uptimes are formatted in minutes."""
-    assert _format_uptime(timedelta(minutes=1)) == "1m"
-    assert _format_uptime(timedelta(minutes=22, seconds=30)) == "22m"
-    assert _format_uptime(timedelta(minutes=59, seconds=59)) == "59m"
-
-
-def test_format_uptime_hours_and_days():
-    """Long uptimes show hours, then days+hours."""
-    assert _format_uptime(timedelta(hours=1)) == "1h 0m"
-    assert _format_uptime(timedelta(hours=3, minutes=12)) == "3h 12m"
-    assert _format_uptime(timedelta(days=1, hours=4)) == "1d 4h"
-    assert _format_uptime(timedelta(days=10)) == "10d 0h"
+@pytest.mark.parametrize("seconds, expected", [
+    (5, "5s"),
+    (59, "59s"),
+    (60, "1m"),
+    (22 * 60 + 30, "22m"),
+    (59 * 60 + 59, "59m"),
+    (3600, "1h 0m"),
+    (3 * 3600 + 12 * 60, "3h 12m"),
+    (86400 + 4 * 3600, "1d 4h"),
+    (10 * 86400, "10d 0h"),
+])
+def test_format_uptime_buckets(seconds, expected):
+    """Uptime formatting across seconds/minutes/hours/days buckets."""
+    assert _format_uptime(timedelta(seconds=seconds)) == expected
 
 
 def test_format_uptime_none_returns_dash():
@@ -81,15 +71,14 @@ def test_format_uptime_none_returns_dash():
     assert _format_uptime(None) == "—"
 
 
-def test_format_memory_mb_rounds_to_gb_above_1024():
-    """Memory >=1024 MB renders as GB to one decimal."""
-    assert _format_memory_mb(62000) == "60.5 GB"
-    assert _format_memory_mb(1024) == "1.0 GB"
-
-
-def test_format_memory_mb_keeps_megabytes_below_1024():
-    """Memory <1024 MB stays in MB."""
-    assert _format_memory_mb(512) == "512 MB"
+@pytest.mark.parametrize("mb, expected", [
+    (62000, "60.5 GB"),
+    (1024, "1.0 GB"),
+    (512, "512 MB"),
+])
+def test_format_memory_mb_buckets(mb, expected):
+    """Memory formatting in MB and GB."""
+    assert _format_memory_mb(mb) == expected
 
 
 def test_format_memory_mb_none_returns_dash():

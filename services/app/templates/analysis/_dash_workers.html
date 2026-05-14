@@ -1,11 +1,48 @@
 {% comment %}
-  Title: _dash_workers.html — Worker dashboard workers partial (stub)
-  Description: HTMX-polled partial for the worker dashboard. Stub content
-      until slice 2 wires real data.
+  Title: _dash_workers.html — Worker heartbeat cards
+  Description: One card per WorkerHeartbeat row.
   Changelog:
-      2026-05-14 (#106): Stub.
+      2026-05-14 (#106): Initial real implementation.
 {% endcomment %}
 <div class="pg-section">
-  <div class="pg-head"><span class="pg-title">workers</span></div>
-  <span class="pg-caption">stub</span>
+  <div class="pg-head">
+    <span class="pg-title">Workers ({{ cards|length }})</span>
+    <span class="pg-caption">live heartbeats — refresh every 5s</span>
+  </div>
+  {% if cards %}
+    <div class="dash-worker-grid">
+      {% for card in cards %}
+        <div class="dash-worker-card dash-worker-card--{{ card.liveness }}">
+          <div class="dash-worker-card__head">
+            <span class="dash-dot dash-dot--{{ card.liveness }}"></span>
+            <strong>{{ card.worker_id }}</strong>
+            <span class="dash-worker-card__seen">
+              {% if card.seconds_since_seen is not None %}{{ card.seconds_since_seen }}s{% else %}—{% endif %}
+            </span>
+          </div>
+          <div class="dash-worker-card__row">
+            <span class="pg-caption">{{ card.status }}</span>
+            {% if card.status_message %}<span class="pg-caption">· {{ card.status_message }}</span>{% endif %}
+          </div>
+          <div class="dash-worker-card__row">
+            Game
+            {% if card.current_game_url %}
+              <a href="{{ card.current_game_url }}">{{ card.current_game_label }}</a>
+            {% else %}
+              {{ card.current_game_label }}
+            {% endif %}
+          </div>
+          <div class="dash-worker-card__row">
+            ✓ {{ card.jobs_completed }} &nbsp;&nbsp; ✗ {{ card.jobs_failed }}
+          </div>
+          <div class="dash-worker-card__foot pg-caption">
+            up {{ card.uptime }} · {{ card.engine }}<br>
+            {{ card.cpu_cores|default:"—" }}c · {{ card.memory }}
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <span class="pg-caption">No worker heartbeats yet.</span>
+  {% endif %}
 </div>
