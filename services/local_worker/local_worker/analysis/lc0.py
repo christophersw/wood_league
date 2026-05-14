@@ -9,6 +9,12 @@ Changelog:
     2026-05-09: Initial creation
     2026-05-10: Fixed analyze_pgn() to only set Backend/WeightsFile/SyzygyPath
                 when non-empty; empty opts dict skips configure() entirely.
+    2026-05-13: _analyze_one_move() reuses the matching MultiPV entry's score
+                instead of issuing a 2nd analyse() call when the played move
+                appears in the top-3 PV (issue #61). Falls back to a 2nd call
+                only when the move is outside the top-3 (rare). Extracted
+                _build_engine_opts/_accumulate_move_stats/_build_game_result
+                helpers to keep analyze_pgn under cc=10.
 """
 from __future__ import annotations
 
@@ -227,10 +233,24 @@ def _analyze_one_move(
     best_move_uci = arrows[0] if arrows else ""
     best_move_san = board.san(chess.Move.from_uci(best_move_uci)) if best_move_uci else ""
 
+    matched_idx: Optional[int] = None
+    for pv_idx, pv_info in enumerate(info_before_list[:3]):
+        pv = pv_info.get("pv", [])
+        if pv and pv[0] == move:
+            matched_idx = pv_idx
+            break
+
     board.push(move)
 
-    info_after = engine.analyse(board, limit)
-    score_after = info_after["score"]
+    if matched_idx is not None:
+        # Fast path: the engine already evaluated the played move while
+        # producing the top-3 PV result above. Its `score` represents the
+        # value of choosing that move (mover POV), which is exactly the
+        # "after the move is played" score — no second analyse() needed.
+        score_after = info_before_list[matched_idx]["score"]
+    else:
+        info_after = engine.analyse(board, limit)
+        score_after = info_after["score"]
     wdl_after_mover = score_after.pov(mover).wdl()
     mover_win_pct_after = _mover_win_pct_from_wdl(wdl_after_mover)
 
@@ -261,6 +281,106 @@ def _analyze_one_move(
         classification=classification,
     )
     return result, mover, wdl_white
+
+
+def _build_engine_opts(
+    backend: str, weights_path: str, syzygy_path: str
+) -> dict[str, str]:
+    """Build the UCI options dict for lc0.configure().
+
+    Returns an empty dict when no overrides are supplied so callers can skip
+    `engine.configure()` entirely (which would otherwise emit an empty
+    `setoption` line).
+
+    Args:
+        backend: Lc0 backend name (e.g. 'cuda-fp16', 'metal'), or empty.
+        weights_path: Path to network weights, or empty for engine default.
+        syzygy_path: Path to Syzygy tablebases, or empty for none.
+
+    Returns:
+        Dict suitable for `engine.configure()`.
+    """
+    opts: dict[str, str] = {}
+    if backend:
+        opts["Backend"] = backend
+    if weights_path:
+        opts["WeightsFile"] = weights_path
+    if syzygy_path:
+        opts["SyzygyPath"] = syzygy_path
+    return opts
+
+
+def _accumulate_move_stats(
+    move_result: Lc0MoveResult,
+    mover: chess.Color,
+    wdl_white: tuple[int, int, int],
+    *,
+    white_wdl: tuple[list[float], list[float], list[float]],
+    black_wdl: tuple[list[float], list[float], list[float]],
+    cls_counts: dict[str, dict[str, int]],
+) -> None:
+    """Append per-ply WDL probabilities and increment classification counts.
+
+    Args:
+        move_result: The per-move analysis result just produced.
+        mover: Side that played the move.
+        wdl_white: WDL (wins, draws, losses) in permille from White's frame.
+        white_wdl: Per-ply White wins/draws/losses lists (mutated when mover is White).
+        black_wdl: Per-ply Black wins/draws/losses lists (mutated when mover is Black).
+        cls_counts: Nested {"white"|"black": {label: count}} dict (mutated).
+    """
+    side = "white" if mover == chess.WHITE else "black"
+    if move_result.classification in cls_counts[side]:
+        cls_counts[side][move_result.classification] += 1
+
+    wdl_lists = white_wdl if mover == chess.WHITE else black_wdl
+    wdl_lists[0].append(wdl_white[0] / 1000)
+    wdl_lists[1].append(wdl_white[1] / 1000)
+    wdl_lists[2].append(wdl_white[2] / 1000)
+
+
+def _build_game_result(
+    *,
+    nodes: int,
+    network_name: str,
+    move_results: list[Lc0MoveResult],
+    white_wdl: tuple[list[float], list[float], list[float]],
+    black_wdl: tuple[list[float], list[float], list[float]],
+    cls_counts: dict[str, dict[str, int]],
+) -> Lc0GameResult:
+    """Assemble the final Lc0GameResult from per-ply accumulators.
+
+    Args:
+        nodes: Node budget that was used per move.
+        network_name: Resolved lc0 network name string.
+        move_results: List of per-move Lc0MoveResult, in ply order.
+        white_wdl: White wins/draws/losses lists (per White ply, in [0,1]).
+        black_wdl: Black wins/draws/losses lists (per Black ply, in [0,1]).
+        cls_counts: Classification counts keyed by side then label.
+
+    Returns:
+        Fully populated Lc0GameResult.
+    """
+    def _avg(lst: list[float]) -> float:
+        return sum(lst) / len(lst) if lst else 0.0
+
+    return Lc0GameResult(
+        engine_nodes=nodes,
+        network_name=network_name,
+        white_win_prob=_avg(white_wdl[0]),
+        white_draw_prob=_avg(white_wdl[1]),
+        white_loss_prob=_avg(white_wdl[2]),
+        black_win_prob=_avg(black_wdl[0]),
+        black_draw_prob=_avg(black_wdl[1]),
+        black_loss_prob=_avg(black_wdl[2]),
+        white_blunders=cls_counts["white"]["Blunder"],
+        white_mistakes=cls_counts["white"]["Mistake"],
+        white_inaccuracies=cls_counts["white"]["Inaccuracy"],
+        black_blunders=cls_counts["black"]["Blunder"],
+        black_mistakes=cls_counts["black"]["Mistake"],
+        black_inaccuracies=cls_counts["black"]["Inaccuracy"],
+        moves=move_results,
+    )
 
 
 def analyze_pgn(
@@ -309,13 +429,7 @@ def analyze_pgn(
     log.info("lc0: engine launched; configuring backend=%s weights=%s syzygy=%s",
              backend or "(default)", weights_path or "(default)", syzygy_path or "(none)")
     try:
-        opts: dict[str, str] = {}
-        if backend:
-            opts["Backend"] = backend
-        if weights_path:
-            opts["WeightsFile"] = weights_path
-        if syzygy_path:
-            opts["SyzygyPath"] = syzygy_path
+        opts = _build_engine_opts(backend, weights_path, syzygy_path)
         if opts:
             engine.configure(opts)
             log.info("lc0: configure complete")
@@ -350,18 +464,12 @@ def analyze_pgn(
             ply_seconds = time.monotonic() - ply_started
             move_results.append(move_result)
 
-            side = "white" if mover == chess.WHITE else "black"
-            if move_result.classification in cls_counts[side]:
-                cls_counts[side][move_result.classification] += 1
-
-            if mover == chess.WHITE:
-                white_wdl_wins.append(wdl_white[0] / 1000)
-                white_wdl_draws.append(wdl_white[1] / 1000)
-                white_wdl_losses.append(wdl_white[2] / 1000)
-            else:
-                black_wdl_wins.append(wdl_white[0] / 1000)
-                black_wdl_draws.append(wdl_white[1] / 1000)
-                black_wdl_losses.append(wdl_white[2] / 1000)
+            _accumulate_move_stats(
+                move_result, mover, wdl_white,
+                white_wdl=(white_wdl_wins, white_wdl_draws, white_wdl_losses),
+                black_wdl=(black_wdl_wins, black_wdl_draws, black_wdl_losses),
+                cls_counts=cls_counts,
+            )
 
             if progress_callback:
                 # Pass move SAN + post-move FEN so the CLI can show which move
@@ -372,26 +480,13 @@ def analyze_pgn(
                     nodes=nodes, seconds=ply_seconds,
                 )
 
-        def _avg(lst: list[float]) -> float:
-            """Return average of a list, or 0.0 if empty."""
-            return sum(lst) / len(lst) if lst else 0.0
-
-        return Lc0GameResult(
-            engine_nodes=nodes,
+        return _build_game_result(
+            nodes=nodes,
             network_name=network_name,
-            white_win_prob=_avg(white_wdl_wins),
-            white_draw_prob=_avg(white_wdl_draws),
-            white_loss_prob=_avg(white_wdl_losses),
-            black_win_prob=_avg(black_wdl_wins),
-            black_draw_prob=_avg(black_wdl_draws),
-            black_loss_prob=_avg(black_wdl_losses),
-            white_blunders=cls_counts["white"]["Blunder"],
-            white_mistakes=cls_counts["white"]["Mistake"],
-            white_inaccuracies=cls_counts["white"]["Inaccuracy"],
-            black_blunders=cls_counts["black"]["Blunder"],
-            black_mistakes=cls_counts["black"]["Mistake"],
-            black_inaccuracies=cls_counts["black"]["Inaccuracy"],
-            moves=move_results,
+            move_results=move_results,
+            white_wdl=(white_wdl_wins, white_wdl_draws, white_wdl_losses),
+            black_wdl=(black_wdl_wins, black_wdl_draws, black_wdl_losses),
+            cls_counts=cls_counts,
         )
     finally:
         engine.quit()
