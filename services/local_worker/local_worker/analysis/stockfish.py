@@ -29,6 +29,14 @@ Changelog:
     2026-05-13: analyze_pgn() gained auto_tune flag (issue #67); when True,
                 heuristic Threads/Hash from stockfish_tuning.get_tuned_opts()
                 are merged via setdefault so caller-supplied values win.
+    2026-05-13: Added persistent EvalCache plumbing for Stockfish (issue #67,
+                builds on #65). The multipv=3 "before" call is now served
+                from cache on hit and written on miss, keyed by
+                (zobrist, "sf:<engine-id-name>", depth, multipv). Per-job
+                hit rate is logged, mirroring the lc0 path. The "sf:"
+                prefix isolates SF entries from lc0 entries at the same
+                zobrist. NOTE: when EvalFile (NNUE) is configurable in a
+                future change, fold its hash into the network key.
 """
 from __future__ import annotations
 
@@ -43,6 +51,12 @@ import chess.engine
 import chess.pgn
 
 from ._stockfish_helpers import mover_cp, second_best_gap, total_cpl, white_cp
+from .eval_cache import (
+    EvalCache,
+    cached_pvs_to_info_list,
+    info_list_to_cached_pvs,
+    zobrist_key,
+)
 from .math import classify_stockfish_move, game_accuracy, move_accuracy, win_pct
 from .models import StockfishGameResult, StockfishMoveResult
 from .see import see_capture_or_sacrifice
@@ -154,12 +168,63 @@ def _build_move_result(
     )
 
 
+def _multipv_before_sf(
+    board: chess.Board,
+    engine: chess.engine.SimpleEngine,
+    limit: chess.engine.Limit,
+    *,
+    cache: Optional[EvalCache],
+    network: str,
+    nodes: int,
+    multipv: int,
+) -> list[dict]:
+    """Return the engine's MultiPV result for `board`, using the cache when warm.
+
+    Stockfish counterpart of lc0._multipv_before. On cache hit, rebuilds an
+    info-list whose entries carry real ``chess.engine.PovScore`` objects so
+    ``white_cp(...)`` / mate handling behaves identically to a live result.
+    On miss (or when caching is disabled or the network key is empty), the
+    engine is called and the result is written back to the cache.
+
+    Args:
+        board: Position to analyse.
+        engine: Running Stockfish engine.
+        limit: Depth/time/nodes budget for the live call.
+        cache: EvalCache instance, or None to bypass.
+        network: Stockfish identifier for the cache key (typically
+            ``"sf:<engine-id-name>"``). Empty string disables caching.
+        nodes: Cache key column reused here for depth so different depth
+            settings produce separate cache entries.
+        multipv: MultiPV count.
+
+    Returns:
+        MultiPV info list, live or reconstructed from cache.
+    """
+    if cache is not None and cache.enabled and network:
+        key = zobrist_key(board)
+        cached = cache.get(key, network, nodes, multipv)
+        if cached is not None:
+            log.debug("stockfish: eval_cache hit zobrist=%016x", key)
+            return cached_pvs_to_info_list(cached, engine="stockfish")
+    info_list = engine.analyse(board, limit, multipv=multipv)
+    if cache is not None and cache.enabled and network:
+        cache.put(
+            zobrist_key(board), network, nodes, multipv,
+            info_list_to_cached_pvs(info_list, engine="stockfish"),
+        )
+    return info_list  # type: ignore[return-value]
+
+
 def _analyze_one_move(
     board: chess.Board,
     move: chess.Move,
     mover: chess.Color,
     engine: chess.engine.SimpleEngine,
     limit: chess.engine.Limit,
+    *,
+    cache: Optional[EvalCache] = None,
+    network: str = "",
+    depth_key: int = 0,
 ) -> tuple[StockfishMoveResult, float, float, int, float]:
     """Analyse a single move and return results plus per-player accumulator values.
 
@@ -178,6 +243,12 @@ def _analyze_one_move(
         mover: The colour making the move.
         engine: Configured Stockfish engine instance.
         limit: Engine search limit (depth/time/nodes).
+        cache: Optional persistent eval cache. When set, the multipv=3
+            "before" call is served from cache on hit and written on miss.
+        network: Stockfish identifier for the cache key (typically
+            ``"sf:<engine-id-name>"``). Empty disables caching for this call.
+        depth_key: Cache key field reused to carry the SF depth so different
+            depth settings produce separate cache entries.
 
     Returns:
         Tuple of (StockfishMoveResult, move_acc, mover_win_pct_before, cpl,
@@ -189,7 +260,10 @@ def _analyze_one_move(
     move_san = board.san(move)
     is_cap_or_sac = see_capture_or_sacrifice(board, move)
 
-    info_before = engine.analyse(board, limit, multipv=3)
+    info_before = _multipv_before_sf(
+        board, engine, limit,
+        cache=cache, network=network, nodes=depth_key, multipv=3,
+    )
     eval_before_white = white_cp(info_before[0]["score"])
     mover_eval_before = mover_cp(eval_before_white, mover)
     mover_win_pct_before = win_pct(mover_eval_before)
@@ -285,6 +359,131 @@ def _build_engine_opts(
     return opts
 
 
+def _resolve_sf_cache_network(engine: chess.engine.SimpleEngine) -> str:
+    """Build the cache network key from the running engine's UCI id name.
+
+    Empty/missing id yields an empty string which disables caching for
+    this run (matches the lc0 contract). Future: when EvalFile (NNUE)
+    becomes configurable, fold its hash in here so different nets at
+    the same Stockfish version don't collide.
+
+    Args:
+        engine: Already-popened Stockfish engine.
+
+    Returns:
+        Cache key string like ``"sf:Stockfish 16"``, or ``""`` when the
+        engine did not report an id name.
+    """
+    try:
+        engine_id_name = engine.id.get("name", "") or ""
+    except Exception:
+        engine_id_name = ""
+    return f"sf:{engine_id_name}" if engine_id_name else ""
+
+
+def _record_sf_per_player_stats(
+    *,
+    mover: chess.Color,
+    move_acc: float,
+    cpl: int,
+    ply_index: int,
+    classification: str,
+    accs: tuple[list[float], list[float]],
+    ply_indices: tuple[list[int], list[int]],
+    cpls: tuple[list[int], list[int]],
+    cls_counts: dict,
+) -> None:
+    """Append per-mover accuracy/CPL accumulators and bump classification counts.
+
+    Mutates the caller's lists in place.
+
+    Args:
+        mover: Side that played the move.
+        move_acc: Move-accuracy value for this ply.
+        cpl: Centipawn loss for this ply.
+        ply_index: 1-based ply number.
+        classification: Move quality label.
+        accs: ``(white_accs, black_accs)``.
+        ply_indices: ``(white_ply_indices, black_ply_indices)``.
+        cpls: ``(white_cpls, black_cpls)``.
+        cls_counts: Nested ``{color: {label: count}}`` dict.
+    """
+    idx = 0 if mover == chess.WHITE else 1
+    accs[idx].append(move_acc)
+    ply_indices[idx].append(ply_index)
+    cpls[idx].append(cpl)
+    if classification in cls_counts[mover]:
+        cls_counts[mover][classification] += 1
+
+
+def _log_sf_eval_cache_stats(eval_cache: Optional[EvalCache]) -> None:
+    """Log per-job hit-rate and reset cache counters.
+
+    No-op when caching is disabled or the cache is None.
+
+    Args:
+        eval_cache: Cache instance or None.
+    """
+    if eval_cache is None or not eval_cache.enabled:
+        return
+    cache_stats = eval_cache.stats()
+    total = max(1, cache_stats.hits + cache_stats.misses)
+    log.info(
+        "stockfish: eval_cache hits=%d misses=%d (%.1f%% hit rate)",
+        cache_stats.hits, cache_stats.misses, 100.0 * cache_stats.hits / total,
+    )
+    eval_cache.reset_counters()
+
+
+def _build_sf_game_result(
+    *,
+    depth: int,
+    move_results: list[StockfishMoveResult],
+    accs: tuple[list[float], list[float]],
+    ply_indices: tuple[list[int], list[int]],
+    cpls: tuple[list[int], list[int]],
+    all_win_pcts_game: list[float],
+    cls_counts: dict,
+) -> StockfishGameResult:
+    """Assemble the final StockfishGameResult from per-ply accumulators.
+
+    Args:
+        depth: Stockfish search depth (echoed into the result).
+        move_results: Per-move analysis dataclasses, in ply order.
+        accs: ``(white_accs, black_accs)`` per-mover accuracy lists.
+        ply_indices: ``(white_ply_indices, black_ply_indices)`` for the
+            game-wide volatility windowing.
+        cpls: ``(white_cpls, black_cpls)`` centipawn-loss lists.
+        all_win_pcts_game: Game-wide White-frame Win% sequence
+            (length = num_plies + 1).
+        cls_counts: Per-mover classification counts.
+
+    Returns:
+        Fully populated StockfishGameResult.
+    """
+    def _avg(nums: list) -> float:
+        return float(sum(nums)) / len(nums) if nums else 0.0
+
+    return StockfishGameResult(
+        engine_depth=depth,
+        white_accuracy=game_accuracy(
+            accs[0], all_win_pcts=all_win_pcts_game, mover_ply_indices=ply_indices[0],
+        ),
+        black_accuracy=game_accuracy(
+            accs[1], all_win_pcts=all_win_pcts_game, mover_ply_indices=ply_indices[1],
+        ),
+        white_acpl=_avg(cpls[0]),
+        black_acpl=_avg(cpls[1]),
+        white_blunders=cls_counts[chess.WHITE]["Blunder"],
+        white_mistakes=cls_counts[chess.WHITE]["Mistake"],
+        white_inaccuracies=cls_counts[chess.WHITE]["Inaccuracy"],
+        black_blunders=cls_counts[chess.BLACK]["Blunder"],
+        black_mistakes=cls_counts[chess.BLACK]["Mistake"],
+        black_inaccuracies=cls_counts[chess.BLACK]["Inaccuracy"],
+        moves=move_results,
+    )
+
+
 def analyze_pgn(
     pgn_text: str,
     stockfish_path: str,
@@ -294,6 +493,7 @@ def analyze_pgn(
     syzygy_path: str = "",
     progress_callback: Optional[Callable[..., None]] = None,
     auto_tune: bool = True,
+    eval_cache: Optional[EvalCache] = None,
 ) -> StockfishGameResult:
     """Analyse a PGN game with Stockfish per analysis-math.md.
 
@@ -341,23 +541,20 @@ def analyze_pgn(
         )
         log.info("stockfish: configuring engine with opts=%s", opts)
         engine.configure(opts)
+        cache_network = _resolve_sf_cache_network(engine)
 
         board = parsed.board()
         move_results: list[StockfishMoveResult] = []
 
-        white_accs: list[float] = []
-        white_ply_indices: list[int] = []
-        white_cpls: list[int] = []
-        black_accs: list[float] = []
-        black_ply_indices: list[int] = []
-        black_cpls: list[int] = []
+        accs: tuple[list[float], list[float]] = ([], [])
+        ply_indices: tuple[list[int], list[int]] = ([], [])
+        cpls: tuple[list[int], list[int]] = ([], [])
 
         # Game-wide White-frame Win% sequence — index 0 = initial position eval.
         # After each ply i the White-frame Win% is appended at index i.
         # Length = num_plies + 1 (mirrors Lichess allWinPercents).
         initial_info = engine.analyse(board, chess.engine.Limit(depth=depth))
-        initial_eval_white = white_cp(initial_info["score"])
-        all_win_pcts_game: list[float] = [win_pct(initial_eval_white)]
+        all_win_pcts_game: list[float] = [win_pct(white_cp(initial_info["score"]))]
 
         cls_counts: dict = {
             chess.WHITE: {"Blunder": 0, "Mistake": 0, "Inaccuracy": 0},
@@ -368,62 +565,42 @@ def analyze_pgn(
         for ply_index, move in enumerate(moves_list, start=1):
             mover = board.turn
             ply_started = time.monotonic()
-            move_result, move_acc, mover_win_pct_before, cpl, wp_after_white = (
-                _analyze_one_move(board, move, mover, engine, limit)
+            move_result, move_acc, _wp_before, cpl, wp_after_white = (
+                _analyze_one_move(
+                    board, move, mover, engine, limit,
+                    cache=eval_cache, network=cache_network, depth_key=depth,
+                )
             )
             ply_seconds = time.monotonic() - ply_started
             move_result.ply = ply_index
             move_results.append(move_result)
-
-            # Append White-frame Win% after this ply to the game-wide list.
             all_win_pcts_game.append(wp_after_white)
 
-            if mover == chess.WHITE:
-                white_accs.append(move_acc)
-                white_ply_indices.append(ply_index)
-                white_cpls.append(cpl)
-            else:
-                black_accs.append(move_acc)
-                black_ply_indices.append(ply_index)
-                black_cpls.append(cpl)
-
-            if move_result.classification in cls_counts[mover]:
-                cls_counts[mover][move_result.classification] += 1
+            _record_sf_per_player_stats(
+                mover=mover, move_acc=move_acc, cpl=cpl, ply_index=ply_index,
+                classification=move_result.classification,
+                accs=accs, ply_indices=ply_indices, cpls=cpls,
+                cls_counts=cls_counts,
+            )
 
             if progress_callback:
-                # Pass move SAN + post-move FEN so the CLI can show which move
-                # just finished and render the resulting board. depth/seconds
-                # feed the issue-#44 per-ply readouts.
+                # Pass move SAN + post-move FEN so the CLI can show which
+                # move just finished and render the resulting board.
+                # depth/seconds feed the issue-#44 per-ply readouts.
                 progress_callback(
                     ply_index, total_plies, move_result.san, board.fen(),
                     depth=depth, seconds=ply_seconds,
                 )
 
-        def _avg(nums: list) -> float:
-            """Return the arithmetic mean of a list, or 0.0 for empty lists."""
-            return float(sum(nums)) / len(nums) if nums else 0.0
-
-        return StockfishGameResult(
-            engine_depth=depth,
-            white_accuracy=game_accuracy(
-                white_accs,
-                all_win_pcts=all_win_pcts_game,
-                mover_ply_indices=white_ply_indices,
-            ),
-            black_accuracy=game_accuracy(
-                black_accs,
-                all_win_pcts=all_win_pcts_game,
-                mover_ply_indices=black_ply_indices,
-            ),
-            white_acpl=_avg(white_cpls),
-            black_acpl=_avg(black_cpls),
-            white_blunders=cls_counts[chess.WHITE]["Blunder"],
-            white_mistakes=cls_counts[chess.WHITE]["Mistake"],
-            white_inaccuracies=cls_counts[chess.WHITE]["Inaccuracy"],
-            black_blunders=cls_counts[chess.BLACK]["Blunder"],
-            black_mistakes=cls_counts[chess.BLACK]["Mistake"],
-            black_inaccuracies=cls_counts[chess.BLACK]["Inaccuracy"],
-            moves=move_results,
+        _log_sf_eval_cache_stats(eval_cache)
+        return _build_sf_game_result(
+            depth=depth,
+            move_results=move_results,
+            accs=accs,
+            ply_indices=ply_indices,
+            cpls=cpls,
+            all_win_pcts_game=all_win_pcts_game,
+            cls_counts=cls_counts,
         )
     finally:
         engine.quit()
