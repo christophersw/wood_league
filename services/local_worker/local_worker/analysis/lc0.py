@@ -25,6 +25,12 @@ Changelog:
                 multipv=3 "before" call is served from cache on hit and
                 written on miss, keyed by (zobrist, network, nodes).
                 Per-job hit rate is logged.
+    2026-05-13: Short-circuit engine.analyse() on terminal boards
+                (checkmate/stalemate/insufficient material). lc0 emits
+                "bestmove a1a1" on terminal positions which python-chess
+                raises InvalidMoveError for, killing the engine event
+                loop. A synthesised terminal score (Win/Draw/Loss = mate
+                outcome or draw permille) is supplied instead. Fixes #58.
 """
 from __future__ import annotations
 
@@ -211,6 +217,71 @@ def _build_move_result(
     )
 
 
+def _terminal_wdl_white(board: chess.Board) -> tuple[int, int, int]:
+    """Synthesise White-frame WDL permille for a terminal position.
+
+    lc0 emits ``bestmove a1a1`` (a non-UCI null sentinel) when asked to
+    search a board with no legal moves, which python-chess then raises
+    ``InvalidMoveError`` on, killing the engine event loop. We avoid the
+    call entirely and supply a deterministic terminal score here (#58).
+
+    Args:
+        board: Terminal board (caller has confirmed ``is_game_over()``).
+
+    Returns:
+        ``(wins, draws, losses)`` in permille from White's frame.
+        Checkmate against the side to move → that side loses; any other
+        terminal condition → draw.
+    """
+    if board.is_checkmate():
+        return (0, 0, 1000) if board.turn == chess.WHITE else (1000, 0, 0)
+    return (0, 1000, 0)
+
+
+class _TerminalRelScore:
+    """``.wdl()`` accessor returning a fixed Wdl — used by `_TerminalPovScore`."""
+
+    def __init__(self, wdl: chess.engine.Wdl) -> None:
+        self._wdl = wdl
+
+    def wdl(self, *_a: object, **_k: object) -> chess.engine.Wdl:
+        return self._wdl
+
+
+class _TerminalPovScore:
+    """`.pov(color).wdl()`-shaped object for a synthesised terminal score.
+
+    Mirrors `chess.engine.PovScore.pov(...).wdl()` semantics so the rest
+    of ``_analyze_one_move`` consumes it identically to a live result.
+    """
+
+    def __init__(self, wdl_white: tuple[int, int, int]) -> None:
+        self._white = chess.engine.Wdl(*wdl_white)
+        self._black = chess.engine.Wdl(
+            wins=wdl_white[2], draws=wdl_white[1], losses=wdl_white[0],
+        )
+
+    def pov(self, color: chess.Color) -> _TerminalRelScore:
+        return _TerminalRelScore(
+            self._white if color == chess.WHITE else self._black
+        )
+
+
+def _terminal_info_list(board: chess.Board) -> list[dict]:
+    """Build a single-entry info-list for a terminal `board` (#58).
+
+    The synthetic entry has an empty `pv`, mirroring how `_analyze_arrows`
+    already handles "no PV available" for a slot.
+
+    Args:
+        board: Terminal board.
+
+    Returns:
+        A one-element list shaped like ``engine.analyse(..., multipv=N)``.
+    """
+    return [{"score": _TerminalPovScore(_terminal_wdl_white(board)), "pv": []}]
+
+
 def _multipv_before(
     board: chess.Board,
     engine: chess.engine.SimpleEngine,
@@ -241,6 +312,13 @@ def _multipv_before(
     Returns:
         MultiPV info list, live or reconstructed from cache.
     """
+    if board.is_game_over(claim_draw=False):
+        # Never feed a terminal board to lc0 — it emits `bestmove a1a1`
+        # which kills the engine event loop (issue #58). We also skip
+        # the cache: terminal scores are cheap to synthesise and not
+        # worth a row.
+        log.debug("lc0: terminal position — skipping engine.analyse()")
+        return _terminal_info_list(board)
     if cache is not None and cache.enabled and network:
         key = zobrist_key(board)
         cached = cache.get(key, network, nodes, multipv)
@@ -323,6 +401,10 @@ def _analyze_one_move(
         # value of choosing that move (mover POV), which is exactly the
         # "after the move is played" score — no second analyse() needed.
         score_after = info_before_list[matched_idx]["score"]
+    elif board.is_game_over(claim_draw=False):
+        # Skip the post-move engine call on a terminal board — lc0 would
+        # emit `bestmove a1a1` which kills the engine event loop (#58).
+        score_after = _TerminalPovScore(_terminal_wdl_white(board))
     else:
         info_after = engine.analyse(board, limit)
         score_after = info_after["score"]
