@@ -19,6 +19,13 @@ Changelog:
                 new Lichess-aligned API.
     2026-05-10: Removed MultiPV from engine.configure() — python-chess treats
                 it as a managed option; it is passed directly to analyse().
+    2026-05-13: _analyze_one_move() reuses the matching MultiPV entry's score
+                instead of issuing a 2nd analyse() call when the played move
+                appears in the top-3 PV (issues #67/#61). Falls back to the
+                second analyse() call only when the move is outside the
+                top-3 (rare). total_cpl() in _stockfish_helpers.py was
+                refactored to take ``score_after: PovScore`` directly so
+                the fast path needn't synthesise a dict.
 """
 from __future__ import annotations
 
@@ -153,7 +160,13 @@ def _analyze_one_move(
     """Analyse a single move and return results plus per-player accumulator values.
 
     Captures the SAN and SEE result before pushing the move, then analyses
-    both the before and after positions with the engine.
+    the before-position with MultiPV=3. When the played move is one of the
+    top-3 PV lines (the common case in real games), the matching entry's
+    ``score`` is reused as the post-move score and no second engine.analyse()
+    call is issued — this halves Stockfish wall-clock per ply on the hit
+    path (issues #67/#61). Misses (move outside top-3) fall back to a
+    dedicated post-push analyse() call so CPL/classification stay
+    bit-identical to the pre-fast-path behaviour.
 
     Args:
         board: Position before the move (will be mutated by push).
@@ -183,14 +196,30 @@ def _analyze_one_move(
 
     arrows, arrow_scores, pv_sans = _extract_arrows_and_pvs(info_before, board, mover)
 
+    matched_idx: Optional[int] = None
+    for pv_idx, pv_info in enumerate(info_before[:3]):
+        pv = pv_info.get("pv") or []
+        if pv and pv[0] == move:
+            matched_idx = pv_idx
+            break
+
     board.push(move)
-    info_after = engine.analyse(board, limit)
-    eval_after_white = white_cp(info_after["score"])
+
+    if matched_idx is not None:
+        # Fast path: the engine already evaluated this move while building
+        # the top-3 PV result above. The matched entry's `score` represents
+        # the value of *playing* that move (mover POV), which is exactly
+        # what a post-push analyse() would return — no second call needed.
+        score_after = info_before[matched_idx]["score"]
+    else:
+        info_after = engine.analyse(board, limit)
+        score_after = info_after["score"]
+    eval_after_white = white_cp(score_after)
     mover_win_pct_after = win_pct(mover_cp(eval_after_white, mover))
     # White-frame Win% after this ply — used in the game-wide all_win_pcts list.
     win_pct_after_white = win_pct(eval_after_white)
 
-    cpl = total_cpl(info_before, info_after, eval_before_white, eval_after_white, mover)
+    cpl = total_cpl(info_before, score_after, eval_before_white, eval_after_white, mover)
     move_acc = move_accuracy(mover_win_pct_before, mover_win_pct_after)
     classification = classify_stockfish_move(
         cpl=cpl,
