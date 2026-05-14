@@ -92,11 +92,22 @@ class Lc0MoveSerializer(serializers.Serializer):
     wdl_loss = serializers.IntegerField(min_value=0, max_value=1000)
     cp_equiv = serializers.IntegerField(required=False, allow_null=True)
     best_move = serializers.CharField(max_length=10)
-    arrow_uci = serializers.CharField(max_length=8, required=False, default='')
+    # CharField rejects empty strings by default — the worker legitimately
+    # sends "" for PV slots that have no candidate (e.g. mate-in-1 with
+    # only one legal continuation), and the DB column is nullable/blank.
+    # Without allow_blank=True these submissions would fail validation
+    # mid-game and the whole job would be retried (issue #59).
+    arrow_uci = serializers.CharField(
+        max_length=8, required=False, default='', allow_blank=True,
+    )
     move_win_delta = serializers.FloatField()
     classification = serializers.ChoiceField(choices=CLASSIFICATION_CHOICES)
-    arrow_uci_2 = serializers.CharField(max_length=8, required=False, default='')
-    arrow_uci_3 = serializers.CharField(max_length=8, required=False, default='')
+    arrow_uci_2 = serializers.CharField(
+        max_length=8, required=False, default='', allow_blank=True,
+    )
+    arrow_uci_3 = serializers.CharField(
+        max_length=8, required=False, default='', allow_blank=True,
+    )
     arrow_score_1 = serializers.FloatField(required=False, allow_null=True, default=None)
     arrow_score_2 = serializers.FloatField(required=False, allow_null=True, default=None)
     arrow_score_3 = serializers.FloatField(required=False, allow_null=True, default=None)
