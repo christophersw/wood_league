@@ -43,6 +43,8 @@ class Settings:
     stockfish_threads: int = 4
     stockfish_hash_mb: int = 512
     lc0_nodes: int = 10000
+    eval_cache_enabled: bool = True
+    eval_cache_max_mb: int = 500
 
     def is_configured(self) -> bool:
         """Return True if the minimum required settings are present."""
