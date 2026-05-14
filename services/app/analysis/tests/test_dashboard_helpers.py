@@ -18,11 +18,14 @@ from django.utils import timezone
 from analysis.dashboard_helpers import (
     LIVENESS_HEALTHY_SECONDS,
     LIVENESS_WARNING_SECONDS,
+    _eta_for,
     _format_memory_mb,
     _format_uptime,
     _game_link_for,
     _liveness_for,
+    _rate_per_min,
 )
+from analysis.models import AnalysisJob
 from games.models import Game
 
 
@@ -124,3 +127,52 @@ def test_game_link_for_empty_returns_dash():
     label2, url2 = _game_link_for(None)
     assert label2 == "—"
     assert url2 is None
+
+
+def _make_completed_job_for_rate(engine: str, minutes_ago: float) -> AnalysisJob:
+    """Create a completed AnalysisJob completed ``minutes_ago`` minutes ago."""
+    completed_at = timezone.now() - timedelta(minutes=minutes_ago)
+    unique = f"rate-{uuid.uuid4().hex[:8]}"
+    game = Game.objects.create(
+        id=unique,
+        slug=unique,
+        played_at=timezone.now(),
+        time_control="600",
+        pgn="*",
+    )
+    return AnalysisJob.objects.create(
+        game=game,
+        engine=engine,
+        status=AnalysisJob.STATUS_COMPLETED,
+        duration_seconds=60.0,
+        started_at=completed_at - timedelta(seconds=60),
+        completed_at=completed_at,
+    )
+
+
+@pytest.mark.django_db
+def test_rate_per_min_returns_zero_when_no_recent_completions():
+    """No recent completions → 0.0 jobs/min."""
+    rate = _rate_per_min("stockfish", window_minutes=10)
+    assert rate == 0.0
+
+
+@pytest.mark.django_db
+def test_rate_per_min_counts_completions_inside_window():
+    """Five completions in the window → 0.5 jobs/min."""
+    for i in range(5):
+        _make_completed_job_for_rate("stockfish", minutes_ago=float(i))
+    rate = _rate_per_min("stockfish", window_minutes=10)
+    assert rate == pytest.approx(0.5)
+
+
+def test_eta_for_zero_rate_returns_none():
+    """Rate of 0 → ETA is ``None`` (renders as ``—``)."""
+    assert _eta_for(pending=42, rate_per_min=0.0) is None
+
+
+def test_eta_for_returns_formatted_string():
+    """Pending/rate combinations across seconds/minutes/hours buckets."""
+    assert _eta_for(pending=60, rate_per_min=1.0) == "1h 0m"
+    assert _eta_for(pending=30, rate_per_min=1.0) == "30m"
+    assert _eta_for(pending=5, rate_per_min=10.0) == "30s"

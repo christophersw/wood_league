@@ -10,6 +10,7 @@ Description:
 Changelog:
     2026-05-14 (#106): Initial extraction from views.py (#86) + new
         dashboard-specific helpers.
+    2026-05-14 (#106): Added _rate_per_min and _eta_for for queues partial.
 """
 from __future__ import annotations
 
@@ -35,6 +36,8 @@ __all__ = [
     "_format_uptime",
     "_format_memory_mb",
     "_game_link_for",
+    "_rate_per_min",
+    "_eta_for",
 ]
 
 
@@ -301,3 +304,45 @@ def _game_link_for(current_game_id: str | None) -> tuple[str, str | None]:
     if slug is None:
         return (label, None)
     return (label, reverse("games:analysis", kwargs={"slug": slug}))
+
+
+def _rate_per_min(engine: str, window_minutes: int = 10) -> float:
+    """Per-minute completion rate over the last ``window_minutes``.
+
+    Args:
+        engine: Engine name to filter on.
+        window_minutes: Trailing window length. Defaults to 10.
+
+    Returns:
+        Completions in window divided by ``window_minutes``.
+    """
+    cutoff = timezone.now() - timedelta(minutes=window_minutes)
+    completed = AnalysisJob.objects.filter(
+        engine=engine,
+        status=AnalysisJob.STATUS_COMPLETED,
+        completed_at__gte=cutoff,
+    ).count()
+    return completed / float(window_minutes)
+
+
+def _eta_for(pending: int, rate_per_min: float) -> str | None:
+    """Estimate "time to drain" pending jobs at the current rate.
+
+    Args:
+        pending: Pending job count.
+        rate_per_min: Completion rate in jobs per minute.
+
+    Returns:
+        ``None`` when rate is zero or pending is zero. Otherwise a
+        compact string: seconds under a minute, ``Nm`` under an hour,
+        ``Xh Ym`` otherwise.
+    """
+    if pending <= 0 or rate_per_min <= 0:
+        return None
+    total_seconds = int((pending / rate_per_min) * 60)
+    if total_seconds < 60:
+        return f"{total_seconds}s"
+    if total_seconds < 3600:
+        return f"{total_seconds // 60}m"
+    hours, rem = divmod(total_seconds, 3600)
+    return f"{hours}h {rem // 60}m"
