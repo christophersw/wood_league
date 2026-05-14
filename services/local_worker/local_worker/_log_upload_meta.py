@@ -6,6 +6,8 @@ Description:
 
 Changelog:
     2026-05-13 (#52): Initial creation.
+    2026-05-14 (#85): Added ``session_end`` reason for the graceful-exit
+        auto-upload hook in ``commands/run.py``.
 """
 from __future__ import annotations
 
@@ -22,7 +24,8 @@ from local_worker.environment import detect_environment
 
 log = logging.getLogger(__name__)
 
-Reason = Literal['crash', 'manual']
+Reason = Literal['crash', 'manual', 'session_end']
+SESSION_END: Reason = 'session_end'
 
 # Mirror of the server's WORKER_LOG_MAX_BYTES default.
 MAX_UPLOAD_BYTES = 100 * 1024 * 1024
@@ -103,4 +106,7 @@ def preflight(log_path: Path) -> int:
     return size
 
 
-__all__ = ['Reason', 'log_file_path', 'host_summary', 'build_metadata', 'preflight']
+__all__ = [
+    'Reason', 'SESSION_END',
+    'log_file_path', 'host_summary', 'build_metadata', 'preflight',
+]

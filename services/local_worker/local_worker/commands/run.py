@@ -11,6 +11,7 @@ Changelog:
     2026-05-12: Callbacks split into ``_run_callbacks.py`` to satisfy
         the Halstead-effort gate.
     2026-05-14: Wire RunPod self-stop hook after queue drain (#81).
+    2026-05-14: Auto-upload ``worker.log`` at graceful session end (#85).
 """
 from __future__ import annotations
 
@@ -21,10 +22,13 @@ from typing import Optional
 import questionary
 import typer
 
+from local_worker._log_upload_meta import SESSION_END
 from local_worker._shared import console
 from local_worker.commands._run_callbacks import make_display_callbacks
 from local_worker.config import Settings, load_settings
+from local_worker.consent import get_consent
 from local_worker.display import worker_display
+from local_worker.log_upload import upload_log
 from local_worker.logging_setup import is_debug_logging
 from local_worker.loop import WorkerStats, run_batch
 from local_worker.runpod_lifecycle import resolve_pod_id, stop_self
@@ -124,6 +128,36 @@ def _maybe_stop_runpod(settings: Settings) -> None:
     stop_self(pod_id, settings.runpod_api_key)
 
 
+def _maybe_upload_log(settings: Settings) -> None:
+    """Upload the current ``worker.log`` to the server at graceful exit.
+
+    No-op when the worker is unconfigured or the operator has not granted
+    log-upload consent. The upload itself is best-effort: any exception
+    raised by ``upload_log`` is caught and logged so it can never break
+    the calling ``finally`` chain.
+
+    Args:
+        settings: Loaded worker settings.
+
+    Returns:
+        None. Logs the resulting upload id at INFO, or a single WARNING
+        line on failure; never raises.
+    """
+    if not settings.is_configured():
+        return
+    if get_consent() is not True:
+        return
+    try:
+        upload_id = upload_log(reason=SESSION_END)
+    except Exception as exc:  # noqa: BLE001 — best-effort upload, never re-raised.
+        logger.warning("session_end log upload raised: %s", exc)
+        return
+    if upload_id > 0:
+        logger.info("session_end log upload succeeded (id=%d)", upload_id)
+    else:
+        logger.warning("session_end log upload failed (returned %d)", upload_id)
+
+
 def run(
     engine: Optional[str] = typer.Option(
         None, help="Force engine: stockfish, lc0, or both"
@@ -164,4 +198,8 @@ def run(
 
         _print_session_summary(result_stats or stats)
     finally:
+        # Upload the log first — pod must still be running for HTTP to
+        # work — then ask RunPod to stop the pod. Both calls are
+        # best-effort and swallow their own exceptions.
+        _maybe_upload_log(settings)
         _maybe_stop_runpod(settings)

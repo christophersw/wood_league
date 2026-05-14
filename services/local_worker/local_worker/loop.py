@@ -11,6 +11,10 @@ Changelog:
                 (issue #67, builds on #65). Renamed the on-disk file from
                 lc0_eval_cache.sqlite to eval_cache.sqlite and migrate the
                 old name on first open if present.
+    2026-05-14: Heartbeat status_message now includes avg seconds/game and
+                cache hit-rate (issue #85). ``WorkerStats`` accumulates
+                cache hits/lookups across per-job cache lifetimes via the
+                new ``record_cache`` method.
 """
 from __future__ import annotations
 
@@ -33,6 +37,32 @@ log = logging.getLogger(__name__)
 _HEARTBEAT_INTERVAL = 30.0
 
 
+def build_heartbeat_status(stats: "WorkerStats") -> str:
+    """Render the worker-heartbeat ``status_message`` from session stats.
+
+    The base form is ``processed=N``. When at least one game has been
+    processed, an ``avg_s=<seconds>`` field is appended (1 decimal place).
+    When the eval cache has served at least one lookup so far in this
+    session, a ``cache_hits=<percent>%`` field is appended (rounded to
+    the nearest whole percent). Fields are space-separated so the
+    message stays short enough for the server-side status column
+    (issue #85).
+
+    Args:
+        stats: Live ``WorkerStats`` for the current session.
+
+    Returns:
+        The fully rendered status message string.
+    """
+    parts = [f"processed={stats.games_processed}"]
+    if stats.games_processed > 0:
+        parts.append(f"avg_s={stats.avg_seconds_per_game():.1f}")
+    if stats.cache_lookups > 0:
+        hit_percent = round(100.0 * stats.cache_hits / stats.cache_lookups)
+        parts.append(f"cache_hits={hit_percent}%")
+    return " ".join(parts)
+
+
 @dataclass
 class WorkerStats:
     """Tracks per-session analysis statistics."""
@@ -42,6 +72,8 @@ class WorkerStats:
     lc0_count: int = 0
     total_seconds: float = 0.0
     errors: int = 0
+    cache_hits: int = 0
+    cache_lookups: int = 0
 
     def record_game(self, engine: str, elapsed: float) -> None:
         """Record a successfully processed game.
@@ -62,6 +94,22 @@ class WorkerStats:
         if self.games_processed == 0:
             return 0.0
         return self.total_seconds / self.games_processed
+
+    def record_cache(self, hits: int, lookups: int) -> None:
+        """Add this job's cache hit/lookup counts to the session totals.
+
+        The eval cache is opened per-job and closed at the end of each
+        job. Call this from inside ``run_one_job`` just before
+        ``cache.close()`` so the running totals stay accurate after the
+        cache instance is gone (issue #85).
+
+        Args:
+            hits: Number of cache hits during the just-finished job.
+            lookups: Total number of cache lookups (hits + misses)
+                during the just-finished job.
+        """
+        self.cache_hits += int(hits)
+        self.cache_lookups += int(lookups)
 
 
 def _worker_id(settings: Settings) -> str:
@@ -170,6 +218,7 @@ def run_one_job(
                 )
             finally:
                 if cache is not None:
+                    stats.record_cache(cache.hits, cache.lookups)
                     cache.prune(settings.eval_cache_max_mb * 1024 * 1024)
                     cache.close()
             payload = build_stockfish_payload(result, worker_id=worker_id)
@@ -190,6 +239,7 @@ def run_one_job(
                 )
             finally:
                 if cache is not None:
+                    stats.record_cache(cache.hits, cache.lookups)
                     cache.prune(settings.eval_cache_max_mb * 1024 * 1024)
                     cache.close()
             payload = build_lc0_payload(result, worker_id=worker_id)
@@ -272,7 +322,7 @@ def run_batch(
                 client.heartbeat(
                     worker_id=worker_id,
                     engine=engine,
-                    status_message=f"processed={stats.games_processed}",
+                    status_message=build_heartbeat_status(stats),
                 )
             except WorkerClientError:
                 pass
