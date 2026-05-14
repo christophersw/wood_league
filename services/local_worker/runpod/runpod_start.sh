@@ -86,6 +86,25 @@ if ! command -v wood-league-worker >/dev/null 2>&1; then
     pip3 install --no-cache-dir "wood-league-worker==${WLW_VERSION}"
 fi
 
+# ---- 3b. Pre-write log-upload consent ---------------------------------
+# `wood-league-worker run` prompts on first invocation for permission to
+# upload session logs. In a headless container there is no TTY, the
+# prompt aborts within seconds, and both engine processes exit before
+# claiming any work. Pre-write the consent file so the prompt is skipped.
+# Default: opt-in (1) — these uploads are how we debug pod failures.
+CONSENT_DIR="${HOME:-/root}/.config/wood-league-worker"
+CONSENT_FILE="${CONSENT_DIR}/config.json"
+CONSENT_VALUE="${WLW_LOG_UPLOAD_CONSENT:-1}"
+case "${CONSENT_VALUE}" in
+    1|true|TRUE|yes|YES) consent_bool="true" ;;
+    *)                    consent_bool="false" ;;
+esac
+if [ ! -f "${CONSENT_FILE}" ]; then
+    log "writing log-upload consent (${consent_bool}) to ${CONSENT_FILE}"
+    mkdir -p "${CONSENT_DIR}"
+    printf '{"log_upload_consent": %s}\n' "${consent_bool}" > "${CONSENT_FILE}"
+fi
+
 # ---- 4. Pull the canonical bootstrap.sh -------------------------------
 log "fetching bootstrap.sh from ${BOOTSTRAP_URL}"
 curl -fsSL "${BOOTSTRAP_URL}" -o /usr/local/bin/wlw-bootstrap
