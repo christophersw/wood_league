@@ -6,6 +6,8 @@ Description:
 
 Changelog:
     2026-05-14 (#106): Initial test module.
+    2026-05-14 (#106): Cover percentile interpolation, throughput_rows,
+        worker-log url matching, and multi-job latest_completed_at update.
 """
 from __future__ import annotations
 
@@ -18,13 +20,17 @@ from django.utils import timezone
 from analysis.dashboard_helpers import (
     LIVENESS_HEALTHY_SECONDS,
     LIVENESS_WARNING_SECONDS,
+    _engine_throughput_row,
     _eta_for,
     _format_memory_mb,
     _format_uptime,
     _game_link_for,
     _group_recent_by_game,
     _liveness_for,
+    _percentile,
     _rate_per_min,
+    _throughput_for_window,
+    _worker_log_url_for,
 )
 from analysis.models import AnalysisJob
 from games.models import Game
@@ -253,3 +259,129 @@ def test_group_recent_respects_limit():
         _make_completed(g, "stockfish", 60.0, now - timedelta(minutes=i))
 
     assert len(_group_recent_by_game(limit=25)) == 25
+
+
+@pytest.mark.django_db
+def test_group_recent_tracks_latest_completed_at_per_game():
+    """A second job for the same game must bump ``latest_completed_at``."""
+    game = _make_game_for_link()
+    now = timezone.now()
+    # Earliest job becomes the seed; later job for the same game must
+    # update ``latest_completed_at`` (covers line 393).
+    _make_completed(game, "stockfish", 60.0, now - timedelta(minutes=5))
+    _make_completed(game, "lc0", 90.0, now - timedelta(minutes=1))
+
+    rows = _group_recent_by_game(limit=25)
+
+    matching = [r for r in rows if r["game_id"] == str(game.pk)]
+    assert len(matching) == 1
+    assert matching[0]["stockfish_seconds"] == 60
+    assert matching[0]["lc0_seconds"] == 90
+
+
+def test_percentile_returns_none_for_empty_input():
+    """Percentile of an empty list is None."""
+    assert _percentile([], 0.5) is None
+
+
+def test_percentile_returns_single_value_directly():
+    """A one-element list returns that element unchanged."""
+    assert _percentile([42.0], 0.95) == 42.0
+
+
+def test_percentile_interpolates_between_neighbors():
+    """Interpolated percentile sits between bracketing values."""
+    # p50 of [0, 10, 20, 30, 40] is exactly 20.0
+    assert _percentile([0.0, 10.0, 20.0, 30.0, 40.0], 0.5) == 20.0
+    # p25 of [0, 10, 20, 30] = 7.5 (interpolated between 0 and 10)
+    assert _percentile([0.0, 10.0, 20.0, 30.0], 0.25) == 7.5
+
+
+@pytest.mark.django_db
+def test_throughput_for_window_returns_one_row_per_engine():
+    """``_throughput_for_window`` returns one row each for stockfish + lc0."""
+    rows = _throughput_for_window(hours=24)
+    engines = [r["engine"] for r in rows]
+    assert engines == ["stockfish", "lc0"]
+
+
+@pytest.mark.django_db
+def test_engine_throughput_row_with_completed_jobs():
+    """A populated window reports non-None p50/p95 + a positive games_per_hour."""
+    now = timezone.now()
+    for duration in (30.0, 60.0, 90.0, 120.0):
+        game = _make_game_for_link()
+        _make_completed(game, "stockfish", duration, now - timedelta(minutes=10))
+
+    row = _engine_throughput_row("stockfish", hours=24)
+
+    assert row["completed"] == 4
+    assert row["p50_seconds"] is not None
+    assert row["p95_seconds"] is not None
+    assert row["games_per_hour"] is not None
+
+
+@pytest.mark.django_db
+def test_worker_log_url_for_returns_none_without_prefix():
+    """Missing ``claimed_by_key_prefix`` yields no log URL."""
+    game = _make_game_for_link()
+    job = AnalysisJob.objects.create(
+        game=game, engine="stockfish",
+        status=AnalysisJob.STATUS_FAILED,
+        error_message="boom",
+        completed_at=timezone.now(),
+    )
+    assert _worker_log_url_for(job) is None
+
+
+@pytest.mark.django_db
+def test_worker_log_url_for_returns_admin_url_when_match_exists():
+    """A WorkerLogUpload within ±1h of the failure produces an admin URL."""
+    from api.models import WorkerAPIKey, WorkerLogUpload
+
+    api_key, _ = WorkerAPIKey.objects.create_key(
+        name="dash-test-worker",
+        worker_name="dash-test-worker",
+    )
+    prefix = api_key.prefix
+
+    game = _make_game_for_link()
+    failed_at = timezone.now()
+    job = AnalysisJob.objects.create(
+        game=game, engine="stockfish",
+        status=AnalysisJob.STATUS_FAILED,
+        error_message="boom",
+        completed_at=failed_at,
+        claimed_by_key_prefix=prefix,
+    )
+    upload = WorkerLogUpload.objects.create(
+        worker=api_key,
+        bucket_key="logs/dash-test/1.log",
+        size_bytes=42,
+        reason=WorkerLogUpload.REASON_CRASH,
+    )
+
+    url = _worker_log_url_for(job)
+
+    assert url is not None
+    assert str(upload.pk) in url
+
+
+@pytest.mark.django_db
+def test_worker_log_url_for_returns_none_when_no_upload_in_window():
+    """A prefix with no upload within ±1h still yields None."""
+    from api.models import WorkerAPIKey
+
+    api_key, _ = WorkerAPIKey.objects.create_key(
+        name="dash-test-worker-empty",
+        worker_name="dash-test-worker-empty",
+    )
+    game = _make_game_for_link()
+    job = AnalysisJob.objects.create(
+        game=game, engine="stockfish",
+        status=AnalysisJob.STATUS_FAILED,
+        error_message="boom",
+        completed_at=timezone.now(),
+        claimed_by_key_prefix=api_key.prefix,
+    )
+    assert _worker_log_url_for(job) is None
