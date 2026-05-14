@@ -1,11 +1,41 @@
 {% comment %}
-  Title: _dash_failures.html — Worker dashboard failures partial (stub)
-  Description: HTMX-polled partial for the worker dashboard. Stub content
-      until slice 5 wires real data.
+  Title: _dash_failures.html — Recent failures (collapsed by default)
+  Description: HTMX-polled partial for the worker dashboard. Lists the 10
+      most-recently-failed AnalysisJob rows using the dict produced by
+      :func:`analysis.dashboard_helpers._build_failure_row`.
   Changelog:
-      2026-05-14 (#106): Stub.
+      2026-05-14 (#106): Initial implementation — reuses row dict from
+          dashboard_helpers._build_failure_row.
 {% endcomment %}
-<div class="pg-section">
-  <div class="pg-head"><span class="pg-title">failures</span></div>
-  <span class="pg-caption">stub</span>
-</div>
+<details class="pg-section">
+  <summary class="pg-head">
+    <span class="pg-title">Recent failures ({{ rows|length }})</span>
+    <span class="pg-caption">click to expand</span>
+  </summary>
+  {% if rows %}
+    <table class="pg-table">
+      <thead>
+        <tr><th>When</th><th>Engine</th><th>Game</th><th>Error</th><th>Log</th></tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+          <tr>
+            <td>{% if row.completed_at %}{{ row.completed_at|timesince }} ago{% else %}—{% endif %}</td>
+            <td>{{ row.engine }}</td>
+            <td>
+              {% if row.game_url %}
+                <a href="{{ row.game_url }}">{{ row.game_id }}</a>
+              {% else %}
+                {{ row.game_id }}
+              {% endif %}
+            </td>
+            <td><code>{{ row.error_snippet }}</code></td>
+            <td>{% if row.worker_log_url %}<a href="{{ row.worker_log_url }}">log</a>{% else %}—{% endif %}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <span class="pg-caption">No recent failures.</span>
+  {% endif %}
+</details>

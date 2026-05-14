@@ -207,6 +207,26 @@ def test_recent_partial_links_to_game_page(client):
 
 
 @pytest.mark.django_db
+def test_failures_partial_lists_recent_failures(client):
+    """A failed AnalysisJob shows up in the failures partial."""
+    admin = _make_user("admin")
+    client.force_login(admin)
+
+    game = _make_dash_game("fail")
+    AnalysisJob.objects.create(
+        game=game, engine="stockfish",
+        status=AnalysisJob.STATUS_FAILED,
+        error_message="boom",
+        completed_at=timezone.now(),
+    )
+
+    response = client.get(reverse("analysis:dash_failures"))
+
+    assert response.status_code == 200
+    assert "boom" in response.content.decode()
+
+
+@pytest.mark.django_db
 def test_throughput_partial_lists_engines_and_windows(client):
     """Throughput partial renders one row per engine and 1h/6h/24h columns."""
     admin = _make_user("admin")

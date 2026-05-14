@@ -10,6 +10,7 @@ Changelog:
     2026-05-14 (#106): Banner + workers partials now render live data.
     2026-05-14 (#106): Queues + throughput partials now render live data.
     2026-05-14 (#106): Recent partial now renders live data.
+    2026-05-14 (#106): Failures partial now renders live data.
 """
 from __future__ import annotations
 
@@ -232,5 +233,24 @@ def dashboard_recent(request: HttpRequest) -> HttpResponse:
 
 @staff_member_required
 def dashboard_failures(request: HttpRequest) -> HttpResponse:
-    """Render the recent-failures partial (stub)."""
-    return render(request, "analysis/_dash_failures.html", {})
+    """Render the recent-failures partial.
+
+    Surfaces the 10 most-recently-failed analysis jobs, each linked to
+    the matching worker log upload when one is available.
+
+    Args:
+        request: The incoming Django HTTP request.
+
+    Returns:
+        Rendered HTML for ``analysis/_dash_failures.html``.
+    """
+    from analysis.dashboard_helpers import _build_failure_row
+    from analysis.models import AnalysisJob
+
+    failures = (
+        AnalysisJob.objects
+        .filter(status=AnalysisJob.STATUS_FAILED)
+        .order_by("-completed_at", "-last_error_at", "-created_at")[:10]
+    )
+    rows = [_build_failure_row(job) for job in failures]
+    return render(request, "analysis/_dash_failures.html", {"rows": rows})
