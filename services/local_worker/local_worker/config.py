@@ -10,6 +10,7 @@ Description:
 Changelog:
     2026-05-09: Initial creation
     2026-05-14: Add ``WLW_*`` env-var overrides for RunPod deployment (#79).
+    2026-05-14: Add RunPod self-stop settings (#81).
 """
 from __future__ import annotations
 
@@ -50,6 +51,9 @@ class Settings:
     lc0_nodes: int = 10000
     eval_cache_enabled: bool = True
     eval_cache_max_mb: int = 500
+    runpod_self_stop_enabled: bool = False
+    runpod_api_key: str = ""
+    runpod_pod_id: str = ""
 
     def is_configured(self) -> bool:
         """Return True if the minimum required settings are present."""
@@ -85,6 +89,14 @@ _STRING_ENV_FIELDS: dict[str, str] = {
     "WLW_LC0_WEIGHTS_PATH": "lc0_weights_path",
     "WLW_LC0_BACKEND": "lc0_backend",
     "WLW_SYZYGY_PATH": "syzygy_path",
+    "WLW_RUNPOD_API_KEY": "runpod_api_key",
+    "WLW_RUNPOD_POD_ID": "runpod_pod_id",
+}
+
+# Mapping of ``WLW_*`` env var names to ``Settings`` bool-typed fields.
+_BOOL_ENV_FIELDS: dict[str, str] = {
+    "WLW_EVAL_CACHE_ENABLED": "eval_cache_enabled",
+    "WLW_RUNPOD_SELF_STOP": "runpod_self_stop_enabled",
 }
 
 # Mapping of ``WLW_*`` env var names to ``Settings`` int-typed fields.
@@ -152,6 +164,15 @@ def _apply_optional_int_override(settings: Settings) -> None:
         return
 
 
+def _apply_bool_overrides(settings: Settings) -> None:
+    """Apply all bool-typed ``WLW_*`` overrides to ``settings`` in place."""
+    for env_name, field_name in _BOOL_ENV_FIELDS.items():
+        value = os.environ.get(env_name)
+        if value is None or value == "":
+            continue
+        setattr(settings, field_name, _parse_bool(value))
+
+
 def _apply_engines_override(settings: Settings) -> None:
     """Apply the comma-separated ``WLW_DEFAULT_ENGINES`` override."""
     raw = os.environ.get("WLW_DEFAULT_ENGINES", "")
@@ -177,9 +198,7 @@ def _apply_env_overrides(settings: Settings) -> Settings:
     _apply_string_overrides(settings)
     _apply_int_overrides(settings)
     _apply_optional_int_override(settings)
-    eval_cache = os.environ.get("WLW_EVAL_CACHE_ENABLED")
-    if eval_cache:
-        settings.eval_cache_enabled = _parse_bool(eval_cache)
+    _apply_bool_overrides(settings)
     _apply_engines_override(settings)
     return settings
 

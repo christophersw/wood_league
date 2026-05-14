@@ -10,9 +10,11 @@ Changelog:
     2026-05-12: Extracted from cli.py (issue #43 follow-up).
     2026-05-12: Callbacks split into ``_run_callbacks.py`` to satisfy
         the Halstead-effort gate.
+    2026-05-14: Wire RunPod self-stop hook after queue drain (#81).
 """
 from __future__ import annotations
 
+import logging
 import threading
 from typing import Optional
 
@@ -25,6 +27,9 @@ from local_worker.config import Settings, load_settings
 from local_worker.display import worker_display
 from local_worker.logging_setup import is_debug_logging
 from local_worker.loop import WorkerStats, run_batch
+from local_worker.runpod_lifecycle import resolve_pod_id, stop_self
+
+logger = logging.getLogger(__name__)
 
 
 def _resolve_run_options(
@@ -97,6 +102,28 @@ def _print_session_summary(final: WorkerStats) -> None:
     console.print(f"Errors: {final.errors}")
 
 
+def _maybe_stop_runpod(settings: Settings) -> None:
+    """If self-stop is enabled and creds/pod-id resolved, ask RunPod to stop this pod.
+
+    Args:
+        settings: Loaded worker settings carrying the self-stop flag and creds.
+
+    Returns:
+        None. Logs at INFO on attempt and at WARNING when prerequisites are
+        missing; never raises.
+    """
+    if not settings.runpod_self_stop_enabled:
+        return
+    if not settings.runpod_api_key:
+        logger.warning("runpod self-stop enabled but WLW_RUNPOD_API_KEY is empty; skipping")
+        return
+    pod_id = resolve_pod_id(settings)
+    if not pod_id:
+        logger.warning("runpod self-stop enabled but no pod id resolvable; skipping")
+        return
+    stop_self(pod_id, settings.runpod_api_key)
+
+
 def run(
     engine: Optional[str] = typer.Option(
         None, help="Force engine: stockfish, lc0, or both"
@@ -121,17 +148,20 @@ def run(
     result_stats: Optional[WorkerStats] = None
 
     try:
-        with worker_display(stats, debug=is_debug_logging()) as display:
-            callbacks = make_display_callbacks(display, stats)
-            result_stats = run_batch(
-                settings=settings,
-                engines=engines,
-                batch_size=batch_size,
-                batch_time_minutes=batch_time,
-                stop_event=stop_event,
-                **callbacks,
-            )
-    except KeyboardInterrupt:
-        stop_event.set()
+        try:
+            with worker_display(stats, debug=is_debug_logging()) as display:
+                callbacks = make_display_callbacks(display, stats)
+                result_stats = run_batch(
+                    settings=settings,
+                    engines=engines,
+                    batch_size=batch_size,
+                    batch_time_minutes=batch_time,
+                    stop_event=stop_event,
+                    **callbacks,
+                )
+        except KeyboardInterrupt:
+            stop_event.set()
 
-    _print_session_summary(result_stats or stats)
+        _print_session_summary(result_stats or stats)
+    finally:
+        _maybe_stop_runpod(settings)
