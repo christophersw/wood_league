@@ -177,7 +177,9 @@ path("dashboard/failures/", views_dashboard.dashboard_failures, name="dash_failu
 ```
 
 `/admin/diagnostics/` becomes a redirect to `/admin/dashboard/` (preserve
-muscle memory + any existing bookmarks).
+muscle memory + any existing bookmarks). The redirect is a thin
+`RedirectView` — the old `diagnostics_view` function and its template are
+deleted (see Section 9.5).
 
 **Why a new file** (`views_dashboard.py`): `views.py` is already 400+ lines
 covering queues + diagnostics + RunPod admin. Adding 6 new view functions
@@ -238,9 +240,72 @@ This is one PR, but committed in reviewable slices:
 4. **Recently completed partial** — game grouping logic + per-engine pivot.
    Tests: group-by-game with mixed engine completion states (both done, only
    stockfish done, only lc0 done).
-5. **Failures partial + final polish** — reuse existing `_build_failure_row`
-   helper. Visual pass via `frontend-design` subagent. Tests for the
-   end-to-end render.
+5. **Failures partial + final polish + cleanup** — reuse existing
+   `_build_failure_row` helper. Visual pass via `frontend-design` subagent.
+   Tests for the end-to-end render. Apply all of Section 9.5: delete
+   `diagnostics_view` + template + test, move shared helpers to
+   `dashboard_helpers.py`, swap `diagnostics/` URL to a `RedirectView`,
+   migrate `{% url 'analysis:diagnostics' %}` callers to `analysis:dashboard`,
+   and remove stale "Endpoint ID not configured" / "submitted to RunPod"
+   text from queue templates.
+
+## 9.5. Cleanup of Consolidated Code
+
+The dashboard subsumes everything the old diagnostics page did. Once the
+dashboard renders end-to-end (after slice 5), the following is removed in
+the same PR — not deferred — so the codebase doesn't carry two parallel
+diagnostics surfaces:
+
+**Delete outright:**
+
+- `services/app/analysis/views.py::diagnostics_view` — the function itself
+- `services/app/templates/analysis/diagnostics.html` — the old template
+- `services/app/analysis/tests/test_diagnostics_view.py` — replaced by the
+  new dashboard tests (which cover the same throughput + failures logic
+  via the new partials)
+
+**Move (not delete) — these are shared helpers the dashboard still uses:**
+
+- `_engine_throughput_row`, `_throughput_for_window`, `_percentile`,
+  `_failure_timestamp`, `_worker_log_url_for`, `_build_failure_row`
+- These currently live in `analysis/views.py`. Move them into a new
+  `analysis/dashboard_helpers.py` (or `analysis/_helpers.py` if more
+  helpers join later) so `views_dashboard.py` and any future consumer
+  import from one canonical location. Add an `__all__` listing the public
+  helpers.
+
+**Replace:**
+
+- `analysis/urls.py` — the `path("diagnostics/", views.diagnostics_view, …)`
+  line is rewritten as
+  `path("diagnostics/", RedirectView.as_view(pattern_name="analysis:dashboard", permanent=False), …)`.
+  The URL `name="diagnostics"` is preserved so any `{% url 'analysis:diagnostics' %}`
+  in templates continues to work; those callers should also be migrated to
+  `name="dashboard"` in the same PR (search will be a single `grep`).
+
+**Stale UI text to remove from queue templates** (these are *not* in the
+dashboard's scope but they're legacy artifacts of the same push-dispatch
+era we're cleaning up):
+
+- The "Endpoint ID not configured for lc0 / stockfish" line on
+  `/admin/queues/<engine>/` pages. Source: search the queue partials for
+  the string. The text refers to a serverless RunPod flow that no longer
+  exists.
+- The "Running & submitted to RunPod" caption above the Active table in
+  `services/app/templates/analysis/queue.html` — workers now pull jobs;
+  nothing is "submitted" anywhere. Replace with "Currently running."
+
+**Migration of callers:**
+
+- `grep -r "analysis:diagnostics" services/app/templates/ services/app/`
+  before the PR closes. Each hit becomes `analysis:dashboard`.
+- `grep -r "diagnostics_view\|diagnostics.html"` should return zero hits
+  after the PR.
+
+This cleanup is part of slice 5 (final polish) in Section 9. Keeping it in
+the same PR is deliberate: a follow-up "now clean up diagnostics" PR tends
+to slip, and meanwhile readers of the codebase have to look at two
+overlapping implementations.
 
 ## 10. Testing
 
@@ -295,7 +360,12 @@ invokes the `frontend-design` skill before writing HTML.
 ## 13. Done When
 
 - `/admin/dashboard/` exists, renders all six sections with live data
-- `/admin/diagnostics/` redirects to it
+- `/admin/diagnostics/` redirects to it; `diagnostics_view` + template +
+  test are deleted; shared helpers moved to `dashboard_helpers.py`
+- Stale "Endpoint ID not configured" / "submitted to RunPod" text gone
+  from queue templates
+- `grep -r "diagnostics_view\|diagnostics.html"` returns zero hits;
+  `grep -r "analysis:diagnostics"` returns zero hits (all migrated)
 - Tests pass; ruff/bandit/mypy clean
 - The page can be left open during a real RunPod run and you can answer all
   five Section 2 questions from it without SSH
