@@ -1,0 +1,128 @@
+#!/usr/bin/env bash
+#
+# Title: bootstrap.sh — RunPod container entrypoint for wood-league-worker
+# Description:
+#   Verifies that /workspace (the RunPod network volume) is mounted and
+#   writable, lazily downloads the lc0 BT4 weights and Syzygy 3-4-5
+#   tablebases on first boot, exports the WLW_* env vars consumed by
+#   ``local_worker.config``, and finally execs the worker.
+#
+#   Designed to be idempotent: re-launching the pod skips any download
+#   whose target file already exists on the volume.
+#
+# Changelog:
+#   2026-05-14: Initial creation for issue #79.
+
+set -euo pipefail
+
+log() {
+    # Timestamped log line on stderr so docker logs interleaves cleanly.
+    printf '[wlw-bootstrap %s] %s\n' "$(date -u +%FT%TZ)" "$*" >&2
+}
+
+die() {
+    log "FATAL: $*"
+    exit 1
+}
+
+WORKSPACE="${WLW_WORKSPACE:-/workspace}"
+WEIGHTS_DIR="${WORKSPACE}/weights"
+SYZYGY_DIR="${WORKSPACE}/syzygy"
+DATA_DIR="${WORKSPACE}/data"
+
+# BT4 768x15smolgen-12 — a well-known strong lc0 net used for analysis.
+BT4_FILENAME="${WLW_BT4_FILENAME:-BT4-1024x15x32h-swa-6147500.pb.gz}"
+BT4_URL="${WLW_BT4_URL:-https://storage.lczero.org/files/networks-contrib/${BT4_FILENAME}}"
+BT4_PATH="${WEIGHTS_DIR}/${BT4_FILENAME}"
+
+# Syzygy 3-4-5 piece WDL+DTZ. Sesse mirrors the full set as individual
+# files; we loop because there's no tarball at this tier.
+SYZYGY_BASE_URL="${WLW_SYZYGY_BASE_URL:-https://tablebase.sesse.net/syzygy/3-4-5}"
+
+# ---- 1. Workspace sanity ------------------------------------------------
+log "verifying workspace at ${WORKSPACE}"
+if [ ! -d "${WORKSPACE}" ]; then
+    die "${WORKSPACE} does not exist — attach a RunPod network volume."
+fi
+if [ ! -w "${WORKSPACE}" ]; then
+    die "${WORKSPACE} is not writable — check volume permissions."
+fi
+mkdir -p "${WEIGHTS_DIR}" "${SYZYGY_DIR}" "${DATA_DIR}"
+
+# ---- 2. lc0 weights -----------------------------------------------------
+if [ -s "${BT4_PATH}" ]; then
+    log "lc0 weights already present at ${BT4_PATH}"
+else
+    log "downloading lc0 weights ${BT4_FILENAME}"
+    # Atomic write: download to .part, rename on success so a killed pod
+    # never leaves a half-written file that looks valid on next boot.
+    tmp="${BT4_PATH}.part"
+    curl -fL --retry 5 --retry-delay 10 -o "${tmp}" "${BT4_URL}" \
+        || die "failed to download lc0 weights from ${BT4_URL}"
+    mv "${tmp}" "${BT4_PATH}"
+    log "lc0 weights ready at ${BT4_PATH}"
+fi
+
+# ---- 3. Syzygy 3-4-5 tablebases ----------------------------------------
+# We treat the presence of any KPvK.rtbw + KPvK.rtbz as the marker that a
+# previous boot completed the download. If either is missing, we fetch the
+# full file index from the mirror and pull anything we don't already have.
+need_syzygy=0
+if [ ! -s "${SYZYGY_DIR}/KPvK.rtbw" ] || [ ! -s "${SYZYGY_DIR}/KPvK.rtbz" ]; then
+    need_syzygy=1
+fi
+
+if [ "${need_syzygy}" -eq 1 ]; then
+    log "fetching Syzygy 3-4-5 tablebase file list from ${SYZYGY_BASE_URL}"
+    index_html="$(curl -fsSL "${SYZYGY_BASE_URL}/" || true)"
+    if [ -z "${index_html}" ]; then
+        die "could not read Syzygy file index at ${SYZYGY_BASE_URL}/"
+    fi
+    files="$(printf '%s\n' "${index_html}" \
+        | grep -oE 'href="[A-Za-z0-9]+\.rtb[wz]"' \
+        | sed -E 's/^href="(.*)"$/\1/' \
+        | sort -u)"
+    if [ -z "${files}" ]; then
+        die "no .rtbw/.rtbz files discovered at ${SYZYGY_BASE_URL}"
+    fi
+
+    count=0
+    while IFS= read -r fname; do
+        [ -z "${fname}" ] && continue
+        dest="${SYZYGY_DIR}/${fname}"
+        if [ -s "${dest}" ]; then
+            continue
+        fi
+        log "  download ${fname}"
+        tmp="${dest}.part"
+        curl -fL --retry 5 --retry-delay 5 -o "${tmp}" "${SYZYGY_BASE_URL}/${fname}" \
+            || die "failed to download ${fname}"
+        mv "${tmp}" "${dest}"
+        count=$((count + 1))
+    done <<EOF
+${files}
+EOF
+    log "syzygy: fetched ${count} new file(s) into ${SYZYGY_DIR}"
+else
+    log "syzygy tablebases already populated under ${SYZYGY_DIR}"
+fi
+
+# ---- 4. Exported settings ----------------------------------------------
+# WLW_API_URL / WLW_API_KEY are intentionally NOT set here — they are
+# supplied by the RunPod operator at pod create time and must not be
+# baked into the image.
+export WLW_DATA_DIR="${WLW_DATA_DIR:-${DATA_DIR}}"
+export WLW_LC0_WEIGHTS_PATH="${WLW_LC0_WEIGHTS_PATH:-${BT4_PATH}}"
+export WLW_SYZYGY_PATH="${WLW_SYZYGY_PATH:-${SYZYGY_DIR}}"
+export WLW_LC0_PATH="${WLW_LC0_PATH:-/usr/local/bin/lc0}"
+export WLW_STOCKFISH_PATH="${WLW_STOCKFISH_PATH:-/usr/games/stockfish}"
+export WLW_LC0_BACKEND="${WLW_LC0_BACKEND:-cuda-fp16}"
+export WLW_DEFAULT_ENGINES="${WLW_DEFAULT_ENGINES:-stockfish,lc0}"
+export WLW_STOCKFISH_THREADS="${WLW_STOCKFISH_THREADS:-7}"
+
+if [ -z "${WLW_API_URL:-}" ] || [ -z "${WLW_API_KEY:-}" ]; then
+    log "WARNING: WLW_API_URL / WLW_API_KEY not set — worker will refuse to run."
+fi
+
+log "launching wood-league-worker (batch-size=10, engines=${WLW_DEFAULT_ENGINES})"
+exec wood-league-worker run --engine both --batch-size 10

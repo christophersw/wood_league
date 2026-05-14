@@ -8,9 +8,12 @@ Description:
 
 Changelog:
     2026-05-12: Initial creation. Issue #43 follow-up.
+    2026-05-14: ``data_dir()`` honours the ``WLW_DATA_DIR`` env var so the
+        worker can keep eval-cache + tuner state on a RunPod volume (#79).
 """
 from __future__ import annotations
 
+import os
 from importlib.metadata import PackageNotFoundError, version as _pkg_version
 from pathlib import Path
 
@@ -41,9 +44,18 @@ def current_release() -> str:
 def data_dir() -> Path:
     """Return the platform user-data directory for this worker.
 
+    If the ``WLW_DATA_DIR`` environment variable is set and non-empty, that
+    path is used verbatim instead of the platform default. This lets a
+    containerised deployment (e.g. RunPod) park the eval cache and tuner
+    state on a mounted volume.
+
     Returns:
         Path to the writable data directory; created if absent.
     """
-    path = Path(platformdirs.user_data_dir("wood-league-worker", "WoodLeague"))
+    override = os.environ.get("WLW_DATA_DIR", "").strip()
+    if override:
+        path = Path(override)
+    else:
+        path = Path(platformdirs.user_data_dir("wood-league-worker", "WoodLeague"))
     path.mkdir(parents=True, exist_ok=True)
     return path
