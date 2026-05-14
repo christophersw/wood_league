@@ -1,11 +1,31 @@
 {% comment %}
-  Title: _dash_throughput.html — Worker dashboard throughput partial (stub)
-  Description: HTMX-polled partial for the worker dashboard. Stub content
-      until slice 3 wires real data.
+  Title: _dash_throughput.html — 1h / 6h / 24h completion windows
   Changelog:
-      2026-05-14 (#106): Stub.
+      2026-05-14 (#106): Initial real implementation.
 {% endcomment %}
 <div class="pg-section">
-  <div class="pg-head"><span class="pg-title">throughput</span></div>
-  <span class="pg-caption">stub</span>
+  <div class="pg-head">
+    <span class="pg-title">Throughput</span>
+    <span class="pg-caption">completed jobs across rolling windows · p50/p95 from 24h</span>
+  </div>
+  <table class="pg-table">
+    <thead>
+      <tr>
+        <th>Engine</th><th>1h</th><th>6h</th><th>24h</th>
+        <th>p50 (s)</th><th>p95 (s)</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+        <tr>
+          <td>{{ row.engine|title }}</td>
+          <td>{{ row.h1 }}</td>
+          <td>{{ row.h6 }}</td>
+          <td>{{ row.h24 }}</td>
+          <td>{% if row.p50 %}{{ row.p50 }}{% else %}—{% endif %}</td>
+          <td>{% if row.p95 %}{{ row.p95 }}{% else %}—{% endif %}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
 </div>

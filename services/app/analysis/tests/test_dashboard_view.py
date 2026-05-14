@@ -166,3 +166,31 @@ def test_workers_partial_lists_each_heartbeat(client):
     assert "runpod-stockfish" in body
     assert "#42" in body
     assert "60.5 GB" in body  # _format_memory_mb output
+
+
+@pytest.mark.django_db
+def test_queues_partial_lists_both_engines(client):
+    """Queues partial renders one row per engine with counts + rate."""
+    admin = _make_user("admin")
+    client.force_login(admin)
+
+    response = client.get(reverse("analysis:dash_queues"))
+
+    assert response.status_code == 200
+    body = response.content.decode()
+    assert "stockfish" in body.lower()
+    assert "lc0" in body.lower()
+
+
+@pytest.mark.django_db
+def test_throughput_partial_lists_engines_and_windows(client):
+    """Throughput partial renders one row per engine and 1h/6h/24h columns."""
+    admin = _make_user("admin")
+    client.force_login(admin)
+
+    response = client.get(reverse("analysis:dash_throughput"))
+
+    assert response.status_code == 200
+    body = response.content.decode()
+    for header in ("Stockfish", "Lc0", "1h", "6h", "24h"):
+        assert header in body

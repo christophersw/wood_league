@@ -8,6 +8,7 @@ Description:
 Changelog:
     2026-05-14 (#106): Initial wire-up — stub partials, no real data yet.
     2026-05-14 (#106): Banner + workers partials now render live data.
+    2026-05-14 (#106): Queues + throughput partials now render live data.
 """
 from __future__ import annotations
 
@@ -135,14 +136,71 @@ def dashboard_workers(request: HttpRequest) -> HttpResponse:
 
 @staff_member_required
 def dashboard_queues(request: HttpRequest) -> HttpResponse:
-    """Render the queues partial (stub)."""
-    return render(request, "analysis/_dash_queues.html", {})
+    """Render the queues partial.
+
+    For each known engine, show pending/running counts, the per-minute
+    completion rate over the last 10 minutes, and an ETA to drain.
+
+    Args:
+        request: The incoming Django HTTP request.
+
+    Returns:
+        Rendered HTML for ``analysis/_dash_queues.html``.
+    """
+    from analysis.models import AnalysisJob
+    from analysis.dashboard_helpers import _eta_for, _rate_per_min
+
+    rows: list[dict[str, Any]] = []
+    for engine in ("stockfish", "lc0"):
+        pending = AnalysisJob.objects.filter(
+            engine=engine,
+            status__in=[AnalysisJob.STATUS_PENDING, AnalysisJob.STATUS_SUBMITTED],
+        ).count()
+        running = AnalysisJob.objects.filter(
+            engine=engine, status=AnalysisJob.STATUS_RUNNING,
+        ).count()
+        rate = _rate_per_min(engine)
+        rows.append({
+            "engine": engine,
+            "pending": pending,
+            "running": running,
+            "rate": round(rate, 2),
+            "eta": _eta_for(pending, rate),
+        })
+    return render(request, "analysis/_dash_queues.html", {"rows": rows})
 
 
 @staff_member_required
 def dashboard_throughput(request: HttpRequest) -> HttpResponse:
-    """Render the throughput partial (stub)."""
-    return render(request, "analysis/_dash_throughput.html", {})
+    """Render the throughput partial (1h / 6h / 24h windows).
+
+    Reuses :func:`analysis.dashboard_helpers._engine_throughput_row` to
+    compute each engine's completed count and p50/p95 durations within
+    each window.
+
+    Args:
+        request: The incoming Django HTTP request.
+
+    Returns:
+        Rendered HTML for ``analysis/_dash_throughput.html``.
+    """
+    from analysis.dashboard_helpers import _engine_throughput_row
+
+    engines = ("stockfish", "lc0")
+    windows = (1, 6, 24)
+    rows: list[dict[str, Any]] = []
+    for engine in engines:
+        window_data = {h: _engine_throughput_row(engine, h) for h in windows}
+        twenty_four = window_data[24]
+        rows.append({
+            "engine": engine,
+            "h1": window_data[1]["completed"],
+            "h6": window_data[6]["completed"],
+            "h24": window_data[24]["completed"],
+            "p50": twenty_four["p50_seconds"],
+            "p95": twenty_four["p95_seconds"],
+        })
+    return render(request, "analysis/_dash_throughput.html", {"rows": rows})
 
 
 @staff_member_required
