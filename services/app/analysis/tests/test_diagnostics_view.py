@@ -140,16 +140,14 @@ def test_non_admin_user_is_denied(db, client):
     assert resp.status_code in (302, 403)
 
 
-def test_throughput_metrics_for_both_engines(db):
-    """Throughput helper returns correct counts and averages per engine.
+def test_throughput_metrics_for_stockfish(db):
+    """Throughput helper returns correct counts and averages for stockfish.
 
     Args:
         db: pytest-django database fixture.
     """
     for seconds in (10.0, 20.0, 30.0, 40.0, 50.0):
         _make_completed_job("stockfish", seconds)
-    for seconds in (5.0, 15.0, 25.0):
-        _make_completed_job("lc0", seconds)
 
     rows = _throughput_for_window(hours=24)
     by_engine = {row["engine"]: row for row in rows}
@@ -161,6 +159,19 @@ def test_throughput_metrics_for_both_engines(db):
     assert abs(by_engine["stockfish"]["p95_seconds"] - 48.0) < 0.01
     assert by_engine["stockfish"]["games_per_hour"] == round(5 / 24, 2)
     assert by_engine["stockfish"]["failure_rate"] == 0.0
+
+
+def test_throughput_metrics_for_lc0(db):
+    """Throughput helper returns correct counts and averages for lc0.
+
+    Args:
+        db: pytest-django database fixture.
+    """
+    for seconds in (5.0, 15.0, 25.0):
+        _make_completed_job("lc0", seconds)
+
+    rows = _throughput_for_window(hours=24)
+    by_engine = {row["engine"]: row for row in rows}
 
     assert by_engine["lc0"]["completed"] == 3
     assert by_engine["lc0"]["avg_seconds"] == 15.0
