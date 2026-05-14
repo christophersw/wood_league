@@ -1,0 +1,67 @@
+name: Build lc0 binary
+
+on:
+  workflow_dispatch:
+    inputs:
+      lc0_version:
+        description: "lc0 version tag (without leading v), e.g. 0.31.2"
+        required: true
+        default: "0.31.2"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            meson ninja-build build-essential pkg-config \
+            libprotobuf-dev protobuf-compiler libeigen3-dev zlib1g-dev
+
+      - name: Install CUDA toolkit 12.4
+        run: |
+          wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
+          sudo dpkg -i cuda-keyring_1.1-1_all.deb
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cuda-toolkit-12-4
+          echo "/usr/local/cuda/bin" >> $GITHUB_PATH
+
+      - name: Clone lc0 source
+        run: |
+          git clone --depth 1 --branch v${{ inputs.lc0_version }} \
+            https://github.com/LeelaChessZero/lc0.git lc0-src
+
+      - name: Build lc0
+        run: |
+          cd lc0-src
+          meson setup build --buildtype=release -Dgtest=false
+          ninja -C build -j $(nproc)
+
+      - name: Package binary and checksum
+        run: |
+          cd lc0-src
+          tar -czf ../lc0-v${{ inputs.lc0_version }}-linux-cuda-fp16.tar.gz -C build lc0
+          cd ..
+          sha256sum lc0-v${{ inputs.lc0_version }}-linux-cuda-fp16.tar.gz > lc0-v${{ inputs.lc0_version }}-linux-cuda-fp16.tar.gz.sha256
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: lc0-v${{ inputs.lc0_version }}
+          name: lc0 v${{ inputs.lc0_version }} (linux cuda-fp16)
+          body: |
+            Auto-built lc0 binary for x86_64 Linux with cuda-fp16 backend.
+            Built from upstream tag v${{ inputs.lc0_version }} via .github/workflows/lc0-build.yml.
+
+            **SHA256**: see attached `*.sha256` file.
+          files: |
+            lc0-v${{ inputs.lc0_version }}-linux-cuda-fp16.tar.gz
+            lc0-v${{ inputs.lc0_version }}-linux-cuda-fp16.tar.gz.sha256
+          fail_on_unmatched_files: true
