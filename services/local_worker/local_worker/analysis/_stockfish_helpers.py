@@ -7,6 +7,10 @@ Description:
 
 Changelog:
     2026-05-09: Initial creation
+    2026-05-13: total_cpl() now accepts ``score_after: PovScore`` directly
+                instead of an info_after dict, so callers using the
+                MultiPV PV-reuse fast path can pass the matched PV's
+                score without synthesising a dict (issues #67/#61).
 """
 from __future__ import annotations
 
@@ -64,7 +68,7 @@ def second_best_gap(
 
 def total_cpl(
     info_before: list,
-    info_after: chess.engine.InfoDict,
+    score_after: chess.engine.PovScore,
     eval_before_white: int,
     eval_after_white: int,
     mover: chess.Color,
@@ -73,7 +77,10 @@ def total_cpl(
 
     Args:
         info_before: PV list from the position before the move.
-        info_after: PV dict from the position after the move.
+        score_after: PovScore for the position after the move (either from
+            a dedicated post-push engine.analyse() call or — on the PV-reuse
+            fast path — pulled directly from the matching MultiPV entry of
+            ``info_before``).
         eval_before_white: cp before, White frame.
         eval_after_white: cp after, White frame.
         mover: Side to move.
@@ -86,6 +93,6 @@ def total_cpl(
     )
     extra = mate_distance_cpl(
         mover_mate(info_before[0]["score"], mover),
-        mover_mate(info_after["score"], mover),
+        mover_mate(score_after, mover),
     )
     return base + extra
