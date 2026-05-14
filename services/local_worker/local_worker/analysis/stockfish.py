@@ -26,6 +26,9 @@ Changelog:
                 top-3 (rare). total_cpl() in _stockfish_helpers.py was
                 refactored to take ``score_after: PovScore`` directly so
                 the fast path needn't synthesise a dict.
+    2026-05-13: analyze_pgn() gained auto_tune flag (issue #67); when True,
+                heuristic Threads/Hash from stockfish_tuning.get_tuned_opts()
+                are merged via setdefault so caller-supplied values win.
 """
 from __future__ import annotations
 
@@ -43,6 +46,7 @@ from ._stockfish_helpers import mover_cp, second_best_gap, total_cpl, white_cp
 from .math import classify_stockfish_move, game_accuracy, move_accuracy, win_pct
 from .models import StockfishGameResult, StockfishMoveResult
 from .see import see_capture_or_sacrifice
+from .stockfish_tuning import get_tuned_opts
 
 # Cap how many SAN plies are stored per PV continuation. Matches the lc0 path
 # (lc0.py::_extract_arrows_and_pvs) so the UI can render both engines uniformly.
@@ -242,14 +246,54 @@ def _analyze_one_move(
     return move_result, move_acc, mover_win_pct_before, cpl, win_pct_after_white
 
 
+def _build_engine_opts(
+    *,
+    threads: Optional[int],
+    hash_mb: Optional[int],
+    syzygy_path: str,
+    auto_tune: bool,
+) -> dict:
+    """Compose the UCI option dict passed to engine.configure().
+
+    Caller-supplied threads and hash_mb (when not None) take priority over
+    auto_tune output. When auto_tune is True, missing slots are filled by
+    stockfish_tuning.get_tuned_opts(). A safe baseline of Threads=4/Hash=512
+    is applied last so non-tuned, no-override invocations still configure.
+
+    Args:
+        threads: Caller's Threads value, or None to defer to tuner/baseline.
+        hash_mb: Caller's Hash value (MB), or None to defer.
+        syzygy_path: Tablebase directory; empty string skips SyzygyPath.
+        auto_tune: When True, merge get_tuned_opts() via setdefault.
+
+    Returns:
+        Mapping of UCI option name to value (str or int) ready to pass to
+        chess.engine.SimpleEngine.configure().
+    """
+    opts: dict = {}
+    if threads is not None:
+        opts["Threads"] = threads
+    if hash_mb is not None:
+        opts["Hash"] = hash_mb
+    if syzygy_path:
+        opts["SyzygyPath"] = syzygy_path
+    if auto_tune:
+        for tuned_key, tuned_value in get_tuned_opts().items():
+            opts.setdefault(tuned_key, tuned_value)
+    opts.setdefault("Threads", 4)
+    opts.setdefault("Hash", 512)
+    return opts
+
+
 def analyze_pgn(
     pgn_text: str,
     stockfish_path: str,
     depth: int = 20,
-    threads: int = 4,
-    hash_mb: int = 512,
+    threads: Optional[int] = None,
+    hash_mb: Optional[int] = None,
     syzygy_path: str = "",
     progress_callback: Optional[Callable[..., None]] = None,
+    auto_tune: bool = True,
 ) -> StockfishGameResult:
     """Analyse a PGN game with Stockfish per analysis-math.md.
 
@@ -257,10 +301,16 @@ def analyze_pgn(
         pgn_text: Full PGN string for the game.
         stockfish_path: Absolute path to the Stockfish binary.
         depth: Analysis depth (default 20).
-        threads: Engine thread count (default 4).
-        hash_mb: Engine hash table size in MB (default 512).
+        threads: Engine thread count. None (default) leaves the slot open for
+            the auto-tuner; pass an int to override.
+        hash_mb: Engine hash table size in MB. None (default) leaves the slot
+            open for the auto-tuner; pass an int to override.
         syzygy_path: Path to Syzygy tablebase directory, or empty string.
         progress_callback: Optional callable(ply, total_plies) called per move.
+        auto_tune: When True (default), merge heuristic UCI options from
+            stockfish_tuning.get_tuned_opts() into the engine.configure()
+            dict via setdefault — caller-supplied threads/hash_mb keep
+            priority. Set False to bypass the tuner entirely.
 
     Returns:
         StockfishGameResult containing per-move evaluations, per-player
@@ -283,9 +333,13 @@ def analyze_pgn(
     try:
         # MultiPV is passed directly to each analyse() call — do not set it
         # here as python-chess treats it as a managed option and will raise.
-        opts: dict = {"Threads": threads, "Hash": hash_mb}
-        if syzygy_path:
-            opts["SyzygyPath"] = syzygy_path
+        opts = _build_engine_opts(
+            threads=threads,
+            hash_mb=hash_mb,
+            syzygy_path=syzygy_path,
+            auto_tune=auto_tune,
+        )
+        log.info("stockfish: configuring engine with opts=%s", opts)
         engine.configure(opts)
 
         board = parsed.board()
