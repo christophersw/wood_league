@@ -87,9 +87,9 @@ def _engine_metric(rows: list[dict], engine: str, status: str) -> int:
 def _queue_context() -> dict:
     """Build context for the analysis overview: per-engine summary + workers.
 
-    Fetches live queue counts and RunPod health for each engine, then
-    assembles the ``engine_rows`` list consumed by ``queues_summary.html``.
-    Does NOT include recent_jobs — that table lives on the per-engine queue page.
+    Fetches live queue counts for each engine, then assembles the
+    ``engine_rows`` list consumed by ``queues_summary.html``. Does NOT
+    include recent_jobs — that table lives on the per-engine queue page.
 
     Extended in Task 9 to include ``pending_high`` (count of pending jobs at
     HIGH priority or above), ``failed_24h`` (failed jobs in the last 24 hours),
@@ -100,8 +100,8 @@ def _queue_context() -> dict:
         dict: Keys are ``engine_rows`` (list of per-engine dicts) and
               ``workers`` (list of worker-heartbeat dicts).
               Each engine dict contains: ``name``, ``pending``, ``submitted``,
-              ``running``, ``completed``, ``runpod``, ``runpod_error``,
-              ``pending_high``, ``failed_24h``, ``worker_last_seen``.
+              ``running``, ``completed``, ``pending_high``, ``failed_24h``,
+              and ``worker_last_seen``.
     """
     by_engine = services.queue_by_engine()
     engines = ["stockfish", "lc0"]
@@ -110,8 +110,7 @@ def _queue_context() -> dict:
 
     rows: list[dict] = []
     for eng in engines:
-        health, error = services.runpod_health(eng)
-        row: dict = {"name": eng, "runpod": health, "runpod_error": error}
+        row: dict = {"name": eng}
         for s in statuses:
             row[s] = _engine_metric(by_engine, eng, s)
 

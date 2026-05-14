@@ -4,6 +4,8 @@ Description: Provides query functions for analysis job queue status, worker hear
     and RunPod health. Previously lived in services.py; renamed to avoid shadowing the
     analysis/services/ package directory.
 Changelog:
+    2026-05-14 (#106): Remove dead `runpod_health()` serverless probe — the
+        consolidated worker dashboard no longer surfaces this state.
     2026-05-08 C. Webster — Renamed from services.py to resolve Python package/module
         name collision with the analysis/services/ directory.
 """
@@ -60,42 +62,3 @@ def worker_heartbeats() -> list[dict]:
     )
 
 
-def runpod_health(engine: str) -> tuple[dict | None, str | None]:
-    """Call RunPod health endpoint. Returns (metrics_dict, error_str)."""
-    import os
-    env_map = {
-        "stockfish": ("RUNPOD_STOCKFISH_ENDPOINT_ID", "RUNPOD_ENDPOINT_ID"),
-        "lc0": ("RUNPOD_LC0_ENDPOINT_ID",),
-    }
-    endpoint_id = None
-    for key in env_map.get(engine, ()):
-        endpoint_id = os.environ.get(key, "").strip() or None
-        if endpoint_id:
-            break
-
-    if not endpoint_id:
-        return None, f"Endpoint ID not configured for {engine}"
-
-    api_key = os.environ.get("RUNPOD_API_KEY", "").strip()
-    if not api_key:
-        return None, "RUNPOD_API_KEY not set"
-
-    try:
-        import runpod  # type: ignore
-        runpod.api_key = api_key
-        data = runpod.Endpoint(endpoint_id).health(timeout=5)
-    except ImportError:
-        return None, "runpod package not installed"
-    except Exception as exc:
-        return None, f"Health request failed: {exc}"
-
-    jobs = data.get("jobs", {}) or {}
-    workers = data.get("workers", {}) or {}
-    return {
-        "jobs_in_queue": int(jobs.get("inQueue", 0) or 0),
-        "jobs_in_progress": int(jobs.get("inProgress", 0) or 0),
-        "jobs_completed": int(jobs.get("completed", 0) or 0),
-        "jobs_failed": int(jobs.get("failed", 0) or 0),
-        "workers_idle": int(workers.get("idle", 0) or 0),
-        "workers_running": int(workers.get("running", 0) or 0),
-    }, None

@@ -71,22 +71,6 @@
       <div class="queue-card-footer">
 
         <div class="queue-health-row">
-          <span class="queue-health-label">RunPod</span>
-          <span class="queue-health-value">
-            {% if row.runpod %}
-              <span class="queue-health-ok">&#x2713; healthy</span>
-              <span class="queue-health-detail">
-                {{ row.runpod.workers_idle }}i / {{ row.runpod.workers_running }}r
-              </span>
-            {% elif row.runpod_error %}
-              <span class="queue-health-err">— {{ row.runpod_error }}</span>
-            {% else %}
-              <span class="queue-health-na">—</span>
-            {% endif %}
-          </span>
-        </div>
-
-        <div class="queue-health-row">
           <span class="queue-health-label">Worker last seen</span>
           <span class="queue-health-value">
             {% if row.worker_last_seen %}

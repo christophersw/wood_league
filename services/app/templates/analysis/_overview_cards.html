@@ -1,18 +1,15 @@
 {# _overview_cards.html — Per-engine summary cards for the /analysis/ overview. #}
-{# Auto-polled HTMX partial: engine counts + RunPod health badges.            #}
-{# Context keys: engine_rows (list of per-engine dicts)                        #}
+{# Auto-polled HTMX partial: engine counts.                                     #}
+{# Context keys: engine_rows (list of per-engine dicts)                         #}
 
 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
   {% for row in engine_rows %}
   <a href="{% if row.name == 'stockfish' %}{% url 'analysis:queue_stockfish' %}{% else %}{% url 'analysis:queue_lc0' %}{% endif %}"
      class="block card hover:shadow-md transition-shadow">
 
-    {# Card header: engine name + RunPod health badge #}
+    {# Card header: engine name #}
     <div class="flex items-baseline justify-between mb-3">
       <h2 class="font-mono text-base font-semibold text-ebony">{{ row.name|title }}</h2>
-      <span class="font-mono text-xs {% if row.runpod %}text-moss{% else %}text-crimson{% endif %}">
-        RunPod:&nbsp;{% if row.runpod %}healthy{% else %}{{ row.runpod_error|default:"unknown" }}{% endif %}
-      </span>
     </div>
 
     {# Queue counts grid #}
