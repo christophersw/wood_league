@@ -10,6 +10,9 @@ Description:
     queue+recent-jobs view has been replaced (Task C1, scrap-dispatchers plan).
 
 Changelog:
+    2026-05-14 (#106): Remove legacy diagnostics_view, _recent_failures
+        helper, and re-exports from dashboard_helpers — superseded by the
+        consolidated /admin/dashboard/ partial views.
     2026-05-14 (#86): Add diagnostics_view + helpers for 24h throughput and
         recent-failures admin page.
     2026-05-11: Task 9 — extend _queue_context() with pending_high, failed_24h,
@@ -26,7 +29,6 @@ from __future__ import annotations
 
 import logging
 from datetime import timedelta
-from typing import Any
 
 from django.conf import settings as django_settings
 from django.contrib.auth.decorators import login_required, user_passes_test
@@ -46,14 +48,6 @@ from app.runpod_client import start_pod
 
 from .models import AnalysisJob, WorkerHeartbeat
 from . import services
-from analysis.dashboard_helpers import (
-    _build_failure_row,
-    _engine_throughput_row,  # noqa: F401 — re-exported for backwards compat
-    _failure_timestamp,
-    _percentile,  # noqa: F401 — re-exported for backwards compat
-    _throughput_for_window,
-    _worker_log_url_for,  # noqa: F401 — re-exported for backwards compat
-)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -175,52 +169,6 @@ def queues_summary(request: HttpRequest) -> HttpResponse:
     context["runpod_enabled"] = bool(getattr(django_settings, "RUNPOD_ENABLED", False))
     context["runpod_worker_pod_id"] = getattr(django_settings, "RUNPOD_WORKER_POD_ID", "")
     return render(request, "analysis/queues_summary.html", context)
-
-
-def _recent_failures(limit: int = 50) -> list[dict[str, Any]]:
-    """Return recent failed analysis jobs as template-friendly dicts.
-
-    Failures are ordered by ``COALESCE(completed_at, last_error_at,
-    created_at) DESC`` and capped at ``limit`` rows.
-
-    Args:
-        limit: Maximum number of failures to return. Defaults to 50.
-
-    Returns:
-        A list of dicts produced by :func:`_build_failure_row`.
-    """
-    failures_qs = (
-        AnalysisJob.objects
-        .filter(status=AnalysisJob.STATUS_FAILED)
-        .select_related("game")
-    )
-    jobs = list(failures_qs)
-    jobs.sort(key=_failure_timestamp, reverse=True)
-    trimmed = jobs[:limit]
-    return [_build_failure_row(job) for job in trimmed]
-
-
-@_admin_login_required
-@require_GET
-def diagnostics_view(request: HttpRequest) -> HttpResponse:
-    """Render the staff-only diagnostics admin page.
-
-    Displays a 24-hour throughput summary per engine and a table of the
-    most recent failed analysis jobs with deep links to the matching
-    worker log uploads when available.
-
-    Args:
-        request: The incoming HTTP GET request.
-
-    Returns:
-        Rendered ``analysis/diagnostics.html`` response.
-    """
-    context = {
-        "throughput_rows": _throughput_for_window(hours=24),
-        "failure_rows": _recent_failures(limit=50),
-        "window_hours": 24,
-    }
-    return render(request, "analysis/diagnostics.html", context)
 
 
 @_admin_login_required
