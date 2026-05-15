@@ -21,6 +21,10 @@ Changelog:
     2026-05-13: Lower benchmark nodes to 50_000, raise timeout to 300s, and
         short-circuit the calibration sweep when the first batch size times
         out (issue #74).
+    2026-05-14: Stop the MinibatchSize sweep as soon as nps regresses
+        versus the previous successful measurement. Saves the 4–5 minute
+        per-step cost (and the doomed mb=1024 timeout) on slower GPUs once
+        the peak has been observed (issue #109).
 """
 from __future__ import annotations
 
@@ -303,6 +307,68 @@ def _measure_one_batch_size(
     return BenchmarkResult(nps=nps, timed_out=False)
 
 
+def _log_nps_regression(
+    minibatch_size: int, previous_nps: float, current_nps: float
+) -> None:
+    """Log that the sweep is ending because nps has dropped."""
+    log.info(
+        "lc0_tuning: nps regressed at mb=%d (%.0f -> %.0f); ending sweep early",
+        minibatch_size,
+        previous_nps,
+        current_nps,
+    )
+
+
+def _sweep_for_best(
+    family: str,
+    lc0_path: str,
+    weights_path: str,
+    backend: str,
+    run: BenchmarkRunner,
+) -> Optional[tuple[int, float]]:
+    """Walk ``_BATCH_SWEEPS[family]`` and return the best ``(mb, nps)``.
+
+    Aborts immediately if the first sweep entry hits the hard timeout
+    (issue #74). Stops as soon as a successful measurement reports lower
+    nps than the previous one — every subsequent step would burn 4–5
+    minutes for a worse result, and on slow GPUs the largest entry tends
+    to time out and kill the whole run (issue #109).
+
+    Args:
+        family: Sweep family key (e.g. ``"cuda"``, ``"metal"``).
+        lc0_path: Absolute path to lc0 binary.
+        weights_path: Path to weights file (may be empty).
+        backend: Lc0 backend string.
+        run: Benchmark runner callable.
+
+    Returns:
+        ``(minibatch_size, nps)`` of the best observed run, or ``None``
+        if every invocation failed or the first entry timed out.
+    """
+    best: Optional[tuple[int, float]] = None
+    last_nps: Optional[float] = None
+    for index, minibatch_size in enumerate(_BATCH_SWEEPS[family]):
+        outcome = _measure_one_batch_size(
+            lc0_path, weights_path, backend, minibatch_size, run
+        )
+        if outcome.timed_out and index == 0:
+            log.warning(
+                "lc0_tuning: first sweep entry mb=%d timed out; "
+                "aborting calibration",
+                minibatch_size,
+            )
+            return None
+        if outcome.nps is None:
+            continue
+        if best is None or outcome.nps > best[1]:
+            best = (minibatch_size, outcome.nps)
+        if last_nps is not None and outcome.nps < last_nps:
+            _log_nps_regression(minibatch_size, last_nps, outcome.nps)
+            break
+        last_nps = outcome.nps
+    return best
+
+
 def calibrate(
     lc0_path: str,
     weights_path: str,
@@ -331,23 +397,7 @@ def calibrate(
         return None
     run = runner or _default_benchmark_runner
 
-    best: Optional[tuple[int, float]] = None
-    for index, minibatch_size in enumerate(_BATCH_SWEEPS[family]):
-        outcome = _measure_one_batch_size(
-            lc0_path, weights_path, backend, minibatch_size, run
-        )
-        # If the very first batch size already exceeds the hard timeout, the
-        # net + GPU combination cannot complete a benchmark in any reasonable
-        # window — abort the sweep instead of burning more time (issue #74).
-        if outcome.timed_out and index == 0:
-            log.warning(
-                "lc0_tuning: first sweep entry mb=%d timed out; "
-                "aborting calibration",
-                minibatch_size,
-            )
-            return None
-        if outcome.nps is not None and (best is None or outcome.nps > best[1]):
-            best = (minibatch_size, outcome.nps)
+    best = _sweep_for_best(family, lc0_path, weights_path, backend, run)
 
     if best is None:
         return None

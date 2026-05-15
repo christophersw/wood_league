@@ -236,3 +236,90 @@ def test_probe_engine_version_strips_ansi_from_fallback(
     assert "\x1b" not in result
     # The first non-blank line after ANSI stripping is used.
     assert result.startswith("_") or "lc0" in result
+
+
+def test_detect_torch_falls_back_to_nvidia_smi(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Issue #109: torch missing + NVIDIA card present → GPU surfaced via nvidia-smi.
+
+    Reproduces Sean's rig: ``import torch`` fails but the host genuinely has
+    an NVIDIA card. The probe must report ``cuda=True`` and a populated
+    ``gpus`` list so the banner is accurate and the lc0 tuning fingerprint
+    is stable across sessions.
+    """
+    import builtins
+
+    real_import = builtins.__import__
+
+    def fake_import(name: str, *args: object, **kwargs: object) -> object:
+        if name == "torch":
+            raise ImportError("no torch on this host")
+        return real_import(name, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    monkeypatch.setattr(
+        environment,
+        "_probe_nvidia_smi",
+        lambda: ["NVIDIA GeForce RTX 4070"],
+    )
+
+    info = environment._detect_torch()
+    assert info["available"] is False
+    assert info["cuda"] is True
+    assert info["gpus"] == ["NVIDIA GeForce RTX 4070"]
+
+
+def test_detect_torch_no_torch_no_nvidia_reports_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Torch absent and no NVIDIA card → empty gpus, cuda False.
+
+    Guards against regressing the previously-correct behaviour for plain
+    CPU hosts.
+    """
+    import builtins
+
+    real_import = builtins.__import__
+
+    def fake_import(name: str, *args: object, **kwargs: object) -> object:
+        if name == "torch":
+            raise ImportError("no torch")
+        return real_import(name, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    monkeypatch.setattr(environment, "_probe_nvidia_smi", lambda: [])
+    monkeypatch.setattr(environment, "_is_apple_silicon", lambda: False)
+
+    info = environment._detect_torch()
+    assert info["available"] is False
+    assert info["cuda"] is False
+    assert info["gpus"] == []
+
+
+def test_probe_nvidia_smi_returns_empty_when_binary_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If nvidia-smi is not on PATH, the probe returns an empty list."""
+    monkeypatch.setattr(environment.shutil, "which", lambda _name: None)
+    assert environment._probe_nvidia_smi() == []
+
+
+def test_probe_nvidia_smi_parses_csv_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The probe strips blank lines and whitespace from nvidia-smi CSV output."""
+
+    class FakeResult:
+        returncode = 0
+        stdout = "NVIDIA GeForce RTX 4070\n\nNVIDIA GeForce RTX 4070  \n"
+        stderr = ""
+
+    monkeypatch.setattr(environment.shutil, "which", lambda _name: "/usr/bin/nvidia-smi")
+    monkeypatch.setattr(
+        environment.subprocess, "run", lambda *a, **k: FakeResult()
+    )
+    assert environment._probe_nvidia_smi() == [
+        "NVIDIA GeForce RTX 4070",
+        "NVIDIA GeForce RTX 4070",
+    ]
