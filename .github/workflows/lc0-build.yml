@@ -11,7 +11,11 @@ name: Build lc0 binary
 #                                  TRT_VERSION / WLW_TRT_URL).
 # The trt variant requires g++-13 (lc0 0.32 network_onnx.cc uses std::format).
 # Verify gate observed (no GPU on CI): "The ONNX backend requires a network
-# file." — classified as expected GPU/net-absence; build is correct.
+# file." — classified as expected GPU/net-absence.
+# CUDA arch: built with -Dnative_cuda=false -Dnative_arch=false so nvcc emits
+# a portable -arch=all-major fat binary (issue #122). native_* defaults key
+# off the GPU-less build host and produced an sm_50-only binary that ran
+# ~20x slow on the L4. Runtime perf is validated on the L4, not in CI.
 
 on:
   workflow_dispatch:
@@ -90,6 +94,13 @@ jobs:
         run: |
           set -euo pipefail
           cd lc0-src
+          # native_cuda/native_arch are lc0 defaults that key off the BUILD
+          # host. CI runners have no GPU, so -arch=native falls back to the
+          # oldest CUDA arch (sm_50) — the binary then has no Ada (sm_89)
+          # SASS and runs ~20x slow on the L4 (issue #122). Force lc0's
+          # portable-release flags: -arch=all-major fat CUDA binary +
+          # no host -march=native. Applies to BOTH variants.
+          PORTABLE_ARCH="-Dnative_cuda=false -Dnative_arch=false"
           if [ "${{ inputs.variant }}" = "trt" ]; then
             CC=gcc-13 CXX=g++-13 ./build.sh release \
               -Dgtest=false \
@@ -97,9 +108,10 @@ jobs:
               -Donnx_libdir="${ORT_DIR}/lib" \
               -Donnx_include="${ORT_DIR}/include" \
               -Ddefault_backend=onnx-trt \
-              -Dnvcc_ccbin=g++-13
+              -Dnvcc_ccbin=g++-13 \
+              ${PORTABLE_ARCH}
           else
-            CC=gcc CXX=g++ ./build.sh release -Dgtest=false
+            CC=gcc CXX=g++ ./build.sh release -Dgtest=false ${PORTABLE_ARCH}
           fi
           test -x build/release/lc0
 
