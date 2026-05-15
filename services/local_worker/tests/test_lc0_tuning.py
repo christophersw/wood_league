@@ -9,6 +9,7 @@ Description:
 Changelog:
     2026-05-13: Initial creation (issue #62).
     2026-05-13: Add regression for first-batch timeout short-circuit (issue #74).
+    2026-05-15: Cover the TensorRT (onnx-trt) L4 MinibatchSize sweep (issue #119).
 """
 from __future__ import annotations
 
@@ -62,6 +63,18 @@ def test_heuristics_cpu_backend_uses_more_threads():
     )
     opts = derive_heuristic_opts(host)
     assert opts["Threads"] == "7"
+
+
+def test_heuristics_trt_backend_is_gpu():
+    host = HostInfo(
+        backend="onnx-trt",
+        cpu_count=24,
+        ram_total_bytes=_gb(64),
+        ram_available_bytes=_gb(40),
+    )
+    opts = derive_heuristic_opts(host)
+    # GPU backends cap Threads at 3; a CPU backend on 24 cores would give 23.
+    assert opts["Threads"] == "3"
 
 
 def test_nn_cache_floor_on_low_ram():
@@ -259,6 +272,24 @@ def test_calibrate_skips_batches_with_unparseable_output():
     result = calibrate("/fake/lc0", "/fake/net.pb.gz", "cuda-fp16", runner=runner)
     assert result is not None
     assert result["minibatch_size"] in {256, 512, 1024}
+
+
+def test_calibrate_trt_uses_l4_sweep():
+    seen_batches: list[int] = []
+
+    def runner(cmd: list[str]) -> "subprocess.CompletedProcess[str]":
+        mb = next(int(c.split("=", 1)[1]) for c in cmd if c.startswith("--minibatch-size="))
+        seen_batches.append(mb)
+        return _fake_completed("Total: 40000 nps\n")
+
+    result = calibrate("/fake/lc0", "/fake/net.pb.gz", "onnx-trt", runner=runner)
+
+    assert result is not None
+    assert sorted(seen_batches) == [256, 512, 1024, 2048]
+    # Flat nps never regresses, so the full L4 sweep runs and the first
+    # (joint-highest) entry wins the strict-greater-than tie-break.
+    assert result["minibatch_size"] == 256
+    assert result["measured_nps"] == 40_000.0
 
 
 # ---------------------------------------------------------------------------
