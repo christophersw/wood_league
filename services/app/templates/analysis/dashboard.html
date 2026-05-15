@@ -68,4 +68,11 @@
      hx-swap="innerHTML">
   <div class="pg-section"><span class="loading-pip">Loading failures…</span></div>
 </div>
+
+<div id="dash-logs"
+     hx-get="{% url 'analysis:dash_logs' %}"
+     hx-trigger="load, every 30s"
+     hx-swap="innerHTML">
+  <div class="pg-section"><span class="loading-pip">Loading worker logs…</span></div>
+</div>
 {% endblock %}

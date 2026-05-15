@@ -1,0 +1,45 @@
+{% comment %}
+  Title: _dash_logs.html — Recent worker log uploads
+  Description: Table of the 20 most recently uploaded ``WorkerLogUpload``
+      rows with a per-row "Download" link. The link points at the admin
+      download view, which 302-redirects to a short-lived presigned URL
+      on the configured object-storage bucket.
+  Context: ``rows`` — list of dicts from ``dashboard_logs``.
+  Changelog:
+      2026-05-14: Initial creation.
+{% endcomment %}
+<div class="pg-section">
+  <div class="pg-head">
+    <span class="pg-title">Worker Logs ({{ rows|length }})</span>
+    <span class="pg-caption">most recent uploads · refresh 30s</span>
+  </div>
+
+  {% if rows %}
+    <table class="pg-table">
+      <thead>
+        <tr>
+          <th>Worker</th>
+          <th>Uploaded</th>
+          <th>Reason</th>
+          <th>Size (KB)</th>
+          <th>Note</th>
+          <th>Download</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+          <tr>
+            <td>{{ row.worker_name }}</td>
+            <td>{{ row.uploaded_at|date:"Y-m-d H:i:s" }}</td>
+            <td>{{ row.reason }}</td>
+            <td>{{ row.size_kb }}</td>
+            <td>{{ row.note_preview|default:"—" }}</td>
+            <td><a href="{{ row.download_url }}">Download</a></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="dash-empty">No worker log uploads yet.</p>
+  {% endif %}
+</div>

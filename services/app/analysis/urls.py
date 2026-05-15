@@ -34,6 +34,7 @@ urlpatterns = [
     path("dashboard/throughput/", views_dashboard.dashboard_throughput, name="dash_throughput"),
     path("dashboard/recent/", views_dashboard.dashboard_recent, name="dash_recent"),
     path("dashboard/failures/", views_dashboard.dashboard_failures, name="dash_failures"),
+    path("dashboard/logs/", views_dashboard.dashboard_logs, name="dash_logs"),
 
     # Legacy diagnostics URL — preserved as a redirect for bookmarks.
     path(
