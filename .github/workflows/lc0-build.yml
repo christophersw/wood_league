@@ -37,6 +37,15 @@ jobs:
             meson ninja-build build-essential pkg-config \
             libprotobuf-dev protobuf-compiler libeigen3-dev zlib1g-dev patchelf
 
+      - name: Install GCC 13 (trt variant only)
+        if: ${{ inputs.variant == 'trt' }}
+        run: |
+          set -euo pipefail
+          sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends g++-13 gcc-13
+          g++-13 --version
+
       - name: Install CUDA toolkit 12.4
         run: |
           wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
@@ -69,12 +78,13 @@ jobs:
           set -euo pipefail
           cd lc0-src
           if [ "${{ inputs.variant }}" = "trt" ]; then
-            CC=gcc CXX=g++ ./build.sh release \
+            CC=gcc-13 CXX=g++-13 ./build.sh release \
               -Dgtest=false \
               -Donnx=true \
               -Donnx_libdir="${ORT_DIR}/lib" \
               -Donnx_include="${ORT_DIR}/include" \
-              -Ddefault_backend=onnx-trt
+              -Ddefault_backend=onnx-trt \
+              -Dnvcc_ccbin=g++-13
           else
             CC=gcc CXX=g++ ./build.sh release -Dgtest=false
           fi
