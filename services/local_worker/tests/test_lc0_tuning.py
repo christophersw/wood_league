@@ -224,6 +224,33 @@ def test_calibrate_continues_when_non_first_batch_times_out():
     assert call_count["n"] == 4
 
 
+def test_calibrate_stops_when_nps_regresses():
+    """Issue #109: stop the sweep once a measurement drops below the prior.
+
+    On slow GPUs, peak nps is reached early (mb=128) and every additional
+    sweep step burns 4–5 minutes for a worse result — and the largest entry
+    tends to time out and kill the run. Verify the sweep ends after the first
+    regression and the best earlier result wins.
+    """
+    call_count = {"n": 0}
+    nps_by_mb = {128: 17772.0, 256: 13721.0, 512: 13569.0, 1024: 8000.0}
+
+    def runner(cmd: list[str]) -> "subprocess.CompletedProcess[str]":
+        call_count["n"] += 1
+        mb = next(
+            int(c.split("=", 1)[1]) for c in cmd if c.startswith("--minibatch-size=")
+        )
+        return _fake_completed(f"Total: {nps_by_mb[mb]:.0f} nps\n")
+
+    result = calibrate("/fake/lc0", "/fake/net.pb.gz", "cuda-fp16", runner=runner)
+
+    assert result is not None
+    assert result["minibatch_size"] == 128
+    assert result["measured_nps"] == 17772.0
+    # Should have run mb=128 then mb=256 (first regression), then stopped.
+    assert call_count["n"] == 2
+
+
 def test_calibrate_skips_batches_with_unparseable_output():
     def runner(cmd: list[str]) -> "subprocess.CompletedProcess[str]":
         mb = next(int(c.split("=", 1)[1]) for c in cmd if c.startswith("--minibatch-size="))

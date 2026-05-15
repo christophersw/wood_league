@@ -21,6 +21,11 @@ Changelog:
         session banner reflects the binaries the run loop will actually
         launch (issue #60). A configured-but-missing path returns None
         rather than silently falling back to PATH.
+    2026-05-14: NVIDIA GPU detection no longer requires PyTorch. When
+        torch is missing or reports no CUDA devices, the probe falls back
+        to ``nvidia-smi --query-gpu=name``. Lets the banner and the lc0
+        tuning fingerprint see the GPU on hosts without torch installed
+        (issue #109).
 """
 from __future__ import annotations
 
@@ -111,39 +116,106 @@ def _safe_call(func: Any) -> Any:
         return "unknown"
 
 
+def _probe_nvidia_smi() -> list[str]:
+    """Return GPU names reported by ``nvidia-smi``, or an empty list.
+
+    Used as a torch-free fallback so hosts with an NVIDIA card but no
+    PyTorch installation still surface their GPU in the banner and in
+    the lc0 calibration fingerprint. Returns an empty list when
+    ``nvidia-smi`` is not on PATH, the call fails, or no devices are
+    listed.
+
+    Returns:
+        List of GPU name strings in NVML order (e.g. ``["NVIDIA GeForce
+        RTX 4070"]``). Empty list on any failure mode.
+    """
+    if shutil.which("nvidia-smi") is None:
+        return []
+    try:
+        proc = subprocess.run(  # noqa: S603 - argv is constant
+            ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except Exception:  # noqa: BLE001 - banner must never crash startup
+        return []
+    if proc.returncode != 0:
+        return []
+    names = [line.strip() for line in (proc.stdout or "").splitlines()]
+    return [name for name in names if name]
+
+
+def _detect_without_torch() -> dict[str, Any]:
+    """Build a torch-free accelerator probe result.
+
+    Consulted when ``import torch`` fails. Surfaces an NVIDIA GPU via
+    ``nvidia-smi`` if one is present, otherwise reports Apple Silicon
+    Metal availability if applicable, otherwise no accelerator.
+    """
+    nvidia_gpus = _probe_nvidia_smi()
+    if nvidia_gpus:
+        return {
+            "available": False,
+            "version": None,
+            "cuda": True,
+            "mps": False,
+            "gpus": nvidia_gpus,
+        }
+    apple = _is_apple_silicon()
+    return {
+        "available": False,
+        "version": None,
+        "cuda": False,
+        "mps": apple,
+        "gpus": ["Apple Silicon (Metal-capable)"] if apple else [],
+    }
+
+
+def _torch_cuda_gpus(torch: Any) -> list[str]:
+    """Return per-device names from a usable ``torch.cuda`` install."""
+    try:
+        count = int(torch.cuda.device_count())
+    except Exception:  # noqa: BLE001
+        return []
+    try:
+        return [str(torch.cuda.get_device_name(i)) for i in range(count)]
+    except Exception:  # noqa: BLE001
+        return []
+
+
 def _detect_torch() -> dict[str, Any]:
-    """Probe for PyTorch and its GPU/MPS support.
+    """Probe for PyTorch, NVIDIA, and MPS accelerators.
+
+    Detection no longer requires torch to be installed: when torch is
+    missing or reports zero CUDA devices, the probe falls back to
+    ``nvidia-smi`` so the banner accurately reflects host hardware.
 
     Returns:
         Mapping with keys ``available``, ``version``, ``cuda``, ``mps``,
         and ``gpus``. ``available`` is ``False`` when torch is not
-        installed; the other fields fall back to safe defaults.
+        installed; ``cuda`` and ``gpus`` may still be populated via the
+        ``nvidia-smi`` fallback even in that case.
     """
     try:
         import torch  # type: ignore[import-not-found]
     except Exception:  # noqa: BLE001
-        gpus_no_torch: list[str] = (
-            ["Apple Silicon (Metal-capable)"] if _is_apple_silicon() else []
-        )
-        return {
-            "available": False,
-            "version": None,
-            "cuda": False,
-            "mps": _is_apple_silicon(),
-            "gpus": gpus_no_torch,
-        }
+        return _detect_without_torch()
 
     cuda = bool(getattr(torch.cuda, "is_available", lambda: False)())
     mps = bool(
         getattr(getattr(torch.backends, "mps", None), "is_available", lambda: False)()
     )
-    gpus: list[str] = []
-    if cuda:
-        try:
-            count = int(torch.cuda.device_count())
-            gpus = [str(torch.cuda.get_device_name(i)) for i in range(count)]
-        except Exception:  # noqa: BLE001
-            gpus = []
+    gpus = _torch_cuda_gpus(torch) if cuda else []
+    if not gpus:
+        # Torch is installed but blind to the GPU (CPU-only wheel, or CUDA
+        # runtime mismatch). nvidia-smi often still works — use it so the
+        # tuning fingerprint and banner aren't silently wrong.
+        nvidia_gpus = _probe_nvidia_smi()
+        if nvidia_gpus:
+            gpus = nvidia_gpus
+            cuda = True
     if not gpus and _is_apple_silicon() and mps:
         gpus = ["Apple Silicon (Metal-capable)"]
     return {
