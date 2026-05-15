@@ -71,7 +71,9 @@ if [ ! -x "${LC0_BIN}" ]; then
     if [ -s "${LC0_TARBALL}.sha256" ]; then
         sha256sum -c "${LC0_TARBALL}.sha256" || { log "FATAL: lc0 sha256 mismatch"; exit 1; }
     fi
-    tar -xzf "${LC0_TARBALL}" -C "${LC0_DIR}"
+    # --no-same-owner: the tarball records the CI runner's uid/gid; as root
+    # GNU tar would chown to it, which the RunPod network volume rejects.
+    tar --no-same-owner -xzf "${LC0_TARBALL}" -C "${LC0_DIR}"
     chmod 0755 "${LC0_BIN}"
     cd /; rm -rf "${tmpdir}"
     log "lc0 installed at ${LC0_BIN}"
@@ -89,7 +91,7 @@ if [ "${LC0_VARIANT}" = "trt" ]; then
         # RunPod image ships. WLW_TRT_URL overrides for mirror/air-gapped.
         : "${WLW_TRT_URL:?set WLW_TRT_URL to the NVIDIA TensorRT ${TRT_VERSION} linux tarball URL}"
         curl -fL --retry 5 --retry-delay 10 -o trt.tar.gz "${WLW_TRT_URL}"
-        tar -xzf trt.tar.gz --strip-components=1 -C "${TRT_DIR}"
+        tar --no-same-owner -xzf trt.tar.gz --strip-components=1 -C "${TRT_DIR}"
         test -d "${TRT_DIR}/lib" || { log "FATAL: TensorRT lib/ missing after extract"; exit 1; }
         cd /; rm -rf "${trt_tmp}"
         log "TensorRT ready at ${TRT_DIR}"
