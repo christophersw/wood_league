@@ -615,6 +615,57 @@ def _build_game_result(
     )
 
 
+def launch_engine(
+    *,
+    lc0_path: str,
+    weights_path: str = "",
+    syzygy_path: str = "",
+    backend: str = "cpu",
+    auto_tune: bool = True,
+) -> tuple[chess.engine.SimpleEngine, str]:
+    """Launch and configure a long-lived lc0 engine for batch reuse.
+
+    Pays the cold-start cost (process launch + weights load + CUDA backend +
+    syzygy reopen + tuner calibration) exactly once. Callers pass the
+    returned engine into :func:`analyze_pgn` for every job in the batch and
+    call ``engine.quit()`` at the end. See issue #117.
+
+    Args:
+        lc0_path: Absolute path to the lc0 binary.
+        weights_path: Path to network weights file, or empty for default.
+        syzygy_path: Path to Syzygy tablebase directory, or empty string.
+        backend: Lc0 backend ('cuda-auto', 'metal', 'cpu').
+        auto_tune: Merge auto-tuner UCI options into ``engine.configure()``.
+
+    Returns:
+        Tuple of ``(engine, network_name)``. The engine is fully configured
+        and ready for ``analyse`` calls; the network_name is the resolved
+        identifier for the run.
+    """
+    log.info("lc0: launching engine at %s", lc0_path)
+    engine = chess.engine.SimpleEngine.popen_uci(lc0_path)
+    log.info("lc0: engine launched; configuring backend=%s weights=%s syzygy=%s",
+             backend or "(default)", weights_path or "(default)",
+             syzygy_path or "(none)")
+    try:
+        network_name = _configure_engine(
+            engine,
+            lc0_path=lc0_path,
+            weights_path=weights_path,
+            syzygy_path=syzygy_path,
+            backend=backend,
+            auto_tune=auto_tune,
+        )
+    except BaseException:
+        # Configure failed mid-flight — don't leak the subprocess.
+        try:
+            engine.quit()
+        except Exception:  # noqa: BLE001
+            pass
+        raise
+    return engine, network_name
+
+
 def analyze_pgn(
     pgn_text: str,
     lc0_path: str,
@@ -625,6 +676,8 @@ def analyze_pgn(
     progress_callback: Optional[Callable[..., None]] = None,
     auto_tune: bool = True,
     eval_cache: Optional[EvalCache] = None,
+    engine: Optional[chess.engine.SimpleEngine] = None,
+    network_name_override: str = "",
 ) -> Lc0GameResult:
     """Analyse a PGN game with Lc0 and return per-move WDL results.
 
@@ -643,6 +696,13 @@ def analyze_pgn(
             (Threads, NNCacheSize, RamLimitMb, SmartPruningFactor, and — if
             calibration succeeded — MinibatchSize/MaxPrefetch) into the
             engine.configure() call. Set False to bypass the tuner entirely.
+        engine: Optional pre-launched, pre-configured lc0 engine. When
+            provided, this call neither launches nor quits the process —
+            the caller (e.g. the batch drain loop) owns its lifecycle.
+            Saves ~6 s of cold-start per game on GPU rigs (issue #117).
+        network_name_override: When ``engine`` is reused, the caller already
+            resolved the network name at launch — pass it through instead of
+            re-reading ``engine.id``.
 
     Returns:
         Lc0GameResult with per-move WDL evaluations and game statistics.
@@ -662,20 +722,26 @@ def analyze_pgn(
         # client.fail() so the job is requeued or surfaced.
         raise ValueError("PGN has no moves — cannot analyse a 0-ply game")
 
-    log.info("lc0: launching engine at %s", lc0_path)
-    engine = chess.engine.SimpleEngine.popen_uci(lc0_path)
-    log.info("lc0: engine launched; configuring backend=%s weights=%s syzygy=%s",
-             backend or "(default)", weights_path or "(default)", syzygy_path or "(none)")
-    try:
-        network_name = _configure_engine(
-            engine,
+    owns_engine = engine is None
+    active_engine: chess.engine.SimpleEngine
+    if engine is None:
+        active_engine, network_name = launch_engine(
             lc0_path=lc0_path,
             weights_path=weights_path,
             syzygy_path=syzygy_path,
             backend=backend,
             auto_tune=auto_tune,
         )
-
+    else:
+        # Caller-owned engine: skip launch + configure entirely.
+        # SimpleEngine re-issues a full ``position fen …`` command on every
+        # ``analyse()`` call so search state resets implicitly between
+        # games; the NNCache is intentionally left warm so cached evals
+        # carry across games (it's a pure speedup, never a correctness
+        # issue) — issue #117.
+        active_engine = engine
+        network_name = network_name_override
+    try:
         board = game.board()
         move_results: list[Lc0MoveResult] = []
         white_wdl_wins: list[float] = []
@@ -695,7 +761,7 @@ def analyze_pgn(
             log.info("lc0: analysing ply %d/%d", ply_index, total_plies)
             ply_started = time.monotonic()
             move_result, mover, wdl_white = _analyze_one_move(
-                board, move, ply_index, engine, limit,
+                board, move, ply_index, active_engine, limit,
                 cache=eval_cache, network=network_name, nodes=nodes,
             )
             ply_seconds = time.monotonic() - ply_started
@@ -734,7 +800,8 @@ def analyze_pgn(
             cls_counts=cls_counts,
         )
     finally:
-        engine.quit()
+        if owns_engine:
+            active_engine.quit()
 
 
 def build_lc0_payload(result: Lc0GameResult, *, worker_id: str) -> dict:

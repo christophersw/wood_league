@@ -25,9 +25,15 @@ import time
 from dataclasses import dataclass
 from typing import Callable, Optional
 
+import chess.engine
+
 from local_worker.worker_client import WorkerClient, WorkerClientError
 from local_worker.analysis.stockfish import analyze_pgn as sf_analyze, build_stockfish_payload
-from local_worker.analysis.lc0 import analyze_pgn as lc0_analyze, build_lc0_payload
+from local_worker.analysis.lc0 import (
+    analyze_pgn as lc0_analyze,
+    build_lc0_payload,
+    launch_engine as lc0_launch_engine,
+)
 from local_worker.analysis.eval_cache import EvalCache
 from local_worker._shared import data_dir
 from local_worker.config import Settings
@@ -169,6 +175,8 @@ def run_one_job(
     stats: WorkerStats,
     client: WorkerClient,
     progress_callback: Optional[Callable[..., None]] = None,
+    lc0_engine: Optional[chess.engine.SimpleEngine] = None,
+    lc0_network_name: str = "",
 ) -> bool:
     """Claim, analyse, and submit a single job.
 
@@ -178,6 +186,12 @@ def run_one_job(
         stats: WorkerStats to update on completion.
         client: Authenticated WorkerClient for API calls.
         progress_callback: Optional callable(ply, total_plies) for per-move progress.
+        lc0_engine: Optional warm lc0 engine to reuse for this job instead
+            of cold-starting a new process. The caller (the batch drain
+            loop) owns the engine's lifecycle. Saves ~6 s of weights +
+            CUDA backend reload per game (issue #117).
+        lc0_network_name: Resolved network name from the warm engine's
+            ``id name``. Only consulted when ``lc0_engine`` is supplied.
 
     Returns:
         True if the job completed successfully, False on error.
@@ -241,6 +255,8 @@ def run_one_job(
                     backend=settings.lc0_backend or "cpu",
                     progress_callback=_logging_progress,
                     eval_cache=cache,
+                    engine=lc0_engine,
+                    network_name_override=lc0_network_name,
                 )
             finally:
                 if cache is not None:
@@ -333,6 +349,22 @@ def run_batch(
                 pass
             last_heartbeat = now
 
+    def _engine_alive(eng: chess.engine.SimpleEngine) -> bool:
+        """Return True when the underlying lc0 process is still running.
+
+        SimpleEngine exposes its protocol via ``.protocol``; the spawned
+        subprocess sits under ``.transport``. ``returncode is None`` is
+        the canonical "still running" signal for asyncio subprocess
+        transports.
+        """
+        try:
+            transport = getattr(eng, "transport", None)
+            if transport is None:
+                return True
+            return transport.get_returncode() is None
+        except Exception:  # noqa: BLE001
+            return False
+
     def _should_stop() -> bool:
         """Return True if the loop should stop due to time limit or stop event.
 
@@ -373,21 +405,75 @@ def run_batch(
             if on_jobs_claimed:
                 on_jobs_claimed(jobs)
 
-            for job in jobs:
-                if stop_event and stop_event.is_set():
-                    break
-                if on_job_start:
-                    on_job_start(job)
-                job_start = time.monotonic()
-                success = run_one_job(
-                    job=job,
-                    settings=settings,
-                    stats=stats,
-                    client=client,
-                    progress_callback=on_progress,
-                )
-                if on_job_done:
-                    on_job_done(job, success, time.monotonic() - job_start)
+            # Warm engine reuse across the whole claimed batch — saves
+            # ~6 s per lc0 game on GPU rigs (issue #117). On launch failure
+            # fall back to per-job cold-start so the run still makes
+            # progress; lc0_analyze() will relaunch itself when
+            # ``engine=None``.
+            warm_engine: Optional[chess.engine.SimpleEngine] = None
+            warm_network_name = ""
+            if engine == "lc0":
+                try:
+                    warm_engine, warm_network_name = lc0_launch_engine(
+                        lc0_path=settings.lc0_path,
+                        weights_path=settings.lc0_weights_path,
+                        syzygy_path=settings.syzygy_path,
+                        backend=settings.lc0_backend or "cpu",
+                    )
+                except Exception:  # noqa: BLE001
+                    log.warning(
+                        "lc0: batch engine launch failed; falling back to "
+                        "per-job cold-start", exc_info=True,
+                    )
+                    warm_engine = None
+
+            try:
+                for job in jobs:
+                    if stop_event and stop_event.is_set():
+                        break
+                    if on_job_start:
+                        on_job_start(job)
+                    job_start = time.monotonic()
+                    success = run_one_job(
+                        job=job,
+                        settings=settings,
+                        stats=stats,
+                        client=client,
+                        progress_callback=on_progress,
+                        lc0_engine=warm_engine if engine == "lc0" else None,
+                        lc0_network_name=warm_network_name,
+                    )
+                    if (
+                        engine == "lc0"
+                        and warm_engine is not None
+                        and not _engine_alive(warm_engine)
+                    ):
+                        log.warning(
+                            "lc0: warm engine died mid-batch; relaunching"
+                        )
+                        try:
+                            warm_engine, warm_network_name = lc0_launch_engine(
+                                lc0_path=settings.lc0_path,
+                                weights_path=settings.lc0_weights_path,
+                                syzygy_path=settings.syzygy_path,
+                                backend=settings.lc0_backend or "cpu",
+                            )
+                        except Exception:  # noqa: BLE001
+                            log.warning(
+                                "lc0: relaunch failed; remaining jobs in "
+                                "batch will cold-start", exc_info=True,
+                            )
+                            warm_engine = None
+                            warm_network_name = ""
+                    if on_job_done:
+                        on_job_done(job, success, time.monotonic() - job_start)
+            finally:
+                if warm_engine is not None:
+                    try:
+                        warm_engine.quit()
+                    except Exception:  # noqa: BLE001
+                        log.warning("lc0: warm engine quit failed",
+                                    exc_info=True)
 
     for engine in engines:
         if _should_stop():
