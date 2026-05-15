@@ -503,11 +503,23 @@ unit-testable by design.
 
 ### Task D3: Persistence confirmation
 
+- [ ] **Engine-cache activation check (do this on the FIRST trt run).**
+  `ORT_TENSORRT_ENGINE_CACHE_ENABLE` / `ORT_TENSORRT_CACHE_PATH` are marked
+  **deprecated** in the onnxruntime TensorRT-EP docs
+  (https://onnxruntime.ai/docs/execution-providers/TensorRT-ExecutionProvider.html);
+  the current API is the session-option keys `trt_engine_cache_enable` /
+  `trt_engine_cache_path`. They are deprecated, not necessarily removed in
+  ORT 1.20.1 — so verify empirically: after the first L4 trt inference,
+  `ls -la "${ORT_TENSORRT_CACHE_PATH}"` MUST contain `.engine` (and
+  `.profile`) files. If the directory stays empty, lc0 0.32's onnx-trt is
+  NOT honouring the env vars → complete Task C2 Step 3 (wire the cache via
+  the lc0 onnx-trt backend sub-option string in `lc0.py::_build_engine_opts`,
+  exact key confirmed from lc0 onnx backend source) and repeat.
 - [ ] Stop/start the trt pod and re-run the fixed game. Confirm in the
   second session log: **no** MinibatchSize recalibration (tuning cache
-  reused) **and** **no** TensorRT engine rebuild (`ORT_TENSORRT_CACHE_PATH`
-  reused). If a rebuild occurs, complete Task C2 Step 3 (wire the lc0
-  backend sub-option) and repeat.
+  reused) **and** **no** TensorRT engine rebuild (the `.engine` files in
+  `ORT_TENSORRT_CACHE_PATH` are reused, not regenerated). If a rebuild
+  occurs, complete Task C2 Step 3 and repeat.
 
 ---
 
