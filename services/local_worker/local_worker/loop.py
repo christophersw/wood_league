@@ -224,7 +224,12 @@ def run_one_job(
             payload = build_stockfish_payload(result, worker_id=worker_id)
             client.complete_stockfish(job_id=job.id, worker_id=worker_id, payload=payload)
         elif job.engine == "lc0":
-            nodes = job.nodes or settings.lc0_nodes
+            # The server currently encodes the lc0 node budget into the
+            # ``depth`` field (e.g. depth=25000 nodes=None). Honour
+            # ``job.depth`` as a fallback so we run at the requested
+            # strength instead of silently defaulting to lc0_nodes
+            # (issue #111).
+            nodes = job.nodes or job.depth or settings.lc0_nodes
             cache = _open_eval_cache(settings)
             try:
                 result = lc0_analyze(
