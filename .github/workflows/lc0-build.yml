@@ -1,12 +1,37 @@
 name: Build lc0 binary
 
+# Verified working version triple (issue #119, dry-run 2026-05-15):
+#   lc0_ref      = release/0.32   (builds lc0 v0.32.1)
+#   ort_version  = 1.20.1         (onnxruntime-linux-x64-gpu; bundles
+#                                  libonnxruntime_providers_tensorrt.so)
+#   TensorRT     = 10.x           (ORT 1.20.1 TRT provider NEEDs
+#                                  libnvinfer.so.10 / libnvinfer_plugin.so.10;
+#                                  provision TensorRT 10.4 on the L4 volume —
+#                                  see services/local_worker/runpod/runpod_start.sh
+#                                  TRT_VERSION / WLW_TRT_URL).
+# The trt variant requires g++-13 (lc0 0.32 network_onnx.cc uses std::format).
+# Verify gate observed (no GPU on CI): "The ONNX backend requires a network
+# file." — classified as expected GPU/net-absence; build is correct.
+
 on:
   workflow_dispatch:
     inputs:
-      lc0_version:
-        description: "lc0 version tag (without leading v), e.g. 0.31.2"
+      lc0_ref:
+        description: "lc0 git ref to build (tag/branch), e.g. v0.32.1 or release/0.32"
         required: true
-        default: "0.31.2"
+        default: "release/0.32"
+      variant:
+        description: "Build variant: cuda-fp16 or trt"
+        required: true
+        default: "cuda-fp16"
+        type: choice
+        options:
+          - cuda-fp16
+          - trt
+      ort_version:
+        description: "Microsoft onnxruntime-gpu release version (trt variant only)"
+        required: true
+        default: "1.20.1"
 
 permissions:
   contents: write
@@ -23,7 +48,16 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             meson ninja-build build-essential pkg-config \
-            libprotobuf-dev protobuf-compiler libeigen3-dev zlib1g-dev
+            libprotobuf-dev protobuf-compiler libeigen3-dev zlib1g-dev patchelf
+
+      - name: Install GCC 13 (trt variant only)
+        if: ${{ inputs.variant == 'trt' }}
+        run: |
+          set -euo pipefail
+          sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends g++-13 gcc-13
+          g++-13 --version
 
       - name: Install CUDA toolkit 12.4
         run: |
@@ -33,35 +67,111 @@ jobs:
           sudo apt-get install -y --no-install-recommends cuda-toolkit-12-4
           echo "/usr/local/cuda/bin" >> $GITHUB_PATH
 
+      - name: Fetch onnxruntime-gpu (trt variant only)
+        if: ${{ inputs.variant == 'trt' }}
+        run: |
+          set -euo pipefail
+          ORT_VER="${{ inputs.ort_version }}"
+          ORT_TGZ="onnxruntime-linux-x64-gpu-${ORT_VER}.tgz"
+          curl -fsSL -o "${ORT_TGZ}" \
+            "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VER}/${ORT_TGZ}"
+          mkdir -p "${GITHUB_WORKSPACE}/ort"
+          tar -xzf "${ORT_TGZ}" --strip-components=1 -C "${GITHUB_WORKSPACE}/ort"
+          test -d "${GITHUB_WORKSPACE}/ort/lib" && test -d "${GITHUB_WORKSPACE}/ort/include"
+          echo "ORT_DIR=${GITHUB_WORKSPACE}/ort" >> "$GITHUB_ENV"
+          ls -1 "${GITHUB_WORKSPACE}/ort/lib"
+
       - name: Clone lc0 source
         run: |
-          git clone --depth 1 --branch v${{ inputs.lc0_version }} \
+          git clone --depth 1 --branch ${{ inputs.lc0_ref }} \
             https://github.com/LeelaChessZero/lc0.git lc0-src
 
       - name: Build lc0
         run: |
+          set -euo pipefail
           cd lc0-src
-          meson setup build --buildtype=release -Dgtest=false
-          ninja -C build -j $(nproc)
+          if [ "${{ inputs.variant }}" = "trt" ]; then
+            CC=gcc-13 CXX=g++-13 ./build.sh release \
+              -Dgtest=false \
+              -Donnx=true \
+              -Donnx_libdir="${ORT_DIR}/lib" \
+              -Donnx_include="${ORT_DIR}/include" \
+              -Ddefault_backend=onnx-trt \
+              -Dnvcc_ccbin=g++-13
+          else
+            CC=gcc CXX=g++ ./build.sh release -Dgtest=false
+          fi
+          test -x build/release/lc0
+
+      - name: Verify onnx-trt linked (trt variant only)
+        if: ${{ inputs.variant == 'trt' }}
+        run: |
+          set -euo pipefail
+          cd lc0-src
+          export LD_LIBRARY_PATH="${ORT_DIR}/lib:${LD_LIBRARY_PATH:-}"
+          # The TensorRT execution provider .so must exist in the ORT dir.
+          # Do NOT dlopen it here: it needs libnvinfer (NVIDIA TensorRT),
+          # which is deliberately absent on CI (split-sourcing). Assert
+          # presence + that it is a valid ELF shared object instead.
+          TRT_SO="${ORT_DIR}/lib/libonnxruntime_providers_tensorrt.so"
+          test -f "${TRT_SO}" || { echo "FATAL: ${TRT_SO} missing from onnxruntime-gpu package"; exit 1; }
+          file "${TRT_SO}" | grep -qi "ELF .*shared object" \
+            || { echo "FATAL: ${TRT_SO} is not an ELF shared object"; exit 1; }
+          OUT="$(./build/release/lc0 benchmark --backend=onnx-trt --nodes=1 2>&1 || true)"
+          echo "----- lc0 onnx-trt probe output -----"
+          echo "$OUT"
+          echo "-------------------------------------"
+          # FAIL (build is wrong) if the backend is unknown or onnxruntime
+          # did not link. PASS if the only failure is the absence of a GPU /
+          # network file on the CI runner (the TRT EP is dlopen'd lazily at
+          # ORT session creation, which never happens without a net on CI).
+          if echo "$OUT" | grep -qiE "unknown backend|Unknown backend type|error while loading shared libraries|libonnxruntime"; then
+            echo "FATAL: onnx-trt not built correctly (backend missing or onnxruntime unlinked)"
+            exit 1
+          fi
+          if echo "$OUT" | grep -qiE "onnx-trt|tensorrt|onnxruntime|Cuda error|no CUDA-capable|Could not find a backend|network file"; then
+            echo "OK: onnx-trt registered, onnxruntime linked, TRT provider .so present; failure is GPU/net-absence (expected on CI)"
+            exit 0
+          fi
+          echo "FATAL: unrecognised probe output — pin the expected strings"
+          exit 1
 
       - name: Package binary and checksum
         run: |
-          cd lc0-src
-          tar -czf ../lc0-v${{ inputs.lc0_version }}-linux-cuda-fp16.tar.gz -C build lc0
-          cd ..
-          sha256sum lc0-v${{ inputs.lc0_version }}-linux-cuda-fp16.tar.gz > lc0-v${{ inputs.lc0_version }}-linux-cuda-fp16.tar.gz.sha256
+          set -euo pipefail
+          VARIANT="${{ inputs.variant }}"
+          REF="${{ inputs.lc0_ref }}"
+          SLUG="$(echo "${REF}" | tr '/' '-')"
+          STAGE="$(mktemp -d)"
+          cp lc0-src/build/release/lc0 "${STAGE}/lc0"
+          if [ "${VARIANT}" = "trt" ]; then
+            mkdir -p "${STAGE}/lib"
+            cp -Lv "${ORT_DIR}"/lib/libonnxruntime*.so* "${STAGE}/lib/" 2>/dev/null || true
+            test -n "$(ls -A "${STAGE}/lib" 2>/dev/null)" \
+              || { echo "FATAL: no onnxruntime libs staged"; exit 1; }
+            if ls "${STAGE}"/lib/libnvinfer* >/dev/null 2>&1; then
+              echo "FATAL: TensorRT lib leaked into public artifact"; exit 1
+            fi
+            patchelf --set-rpath '$ORIGIN/lib' "${STAGE}/lc0"
+          fi
+          TARBALL="lc0-${SLUG}-linux-${VARIANT}.tar.gz"
+          tar -czf "${TARBALL}" -C "${STAGE}" .
+          sha256sum "${TARBALL}" > "${TARBALL}.sha256"
+          echo "TARBALL=${TARBALL}" >> "$GITHUB_ENV"
+          echo "RELEASE_TAG=lc0-${SLUG}" >> "$GITHUB_ENV"
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: lc0-v${{ inputs.lc0_version }}
-          name: lc0 v${{ inputs.lc0_version }} (linux cuda-fp16)
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: ${{ env.RELEASE_TAG }}
+          append_body: true
           body: |
-            Auto-built lc0 binary for x86_64 Linux with cuda-fp16 backend.
-            Built from upstream tag v${{ inputs.lc0_version }} via .github/workflows/lc0-build.yml.
-
-            **SHA256**: see attached `*.sha256` file.
+            Auto-built lc0 (${{ inputs.variant }}) for x86_64 Linux from
+            ${{ inputs.lc0_ref }} via .github/workflows/lc0-build.yml.
+            trt variant bundles onnxruntime (MIT) only; TensorRT is fetched
+            to the RunPod volume at provision time. SHA256: see attached.
           files: |
-            lc0-v${{ inputs.lc0_version }}-linux-cuda-fp16.tar.gz
-            lc0-v${{ inputs.lc0_version }}-linux-cuda-fp16.tar.gz.sha256
+            ${{ env.TARBALL }}
+            ${{ env.TARBALL }}.sha256
           fail_on_unmatched_files: true

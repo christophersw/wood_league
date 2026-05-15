@@ -121,7 +121,22 @@ export WLW_LC0_WEIGHTS_PATH="${WLW_LC0_WEIGHTS_PATH:-${BT4_PATH}}"
 export WLW_SYZYGY_PATH="${WLW_SYZYGY_PATH:-${SYZYGY_DIR}}"
 export WLW_LC0_PATH="${WLW_LC0_PATH:-/usr/local/bin/lc0}"
 export WLW_STOCKFISH_PATH="${WLW_STOCKFISH_PATH:-/usr/games/stockfish}"
-export WLW_LC0_BACKEND="${WLW_LC0_BACKEND:-cuda-fp16}"
+LC0_VARIANT="${LC0_VARIANT:-cuda-fp16}"
+if [ "${LC0_VARIANT}" = "trt" ]; then
+    export WLW_LC0_BACKEND="${WLW_LC0_BACKEND:-onnx-trt}"
+else
+    export WLW_LC0_BACKEND="${WLW_LC0_BACKEND:-cuda-fp16}"
+fi
+
+# onnxruntime TensorRT EP rebuilds a per-(network,GPU) engine on every
+# cold start unless cached. Persist it on the network volume.
+if [ "${LC0_VARIANT}" = "trt" ]; then
+    export ORT_TENSORRT_ENGINE_CACHE_ENABLE=1
+    export ORT_TENSORRT_CACHE_PATH="${WLW_TRT_CACHE_DIR:-${DATA_DIR}/trt-engine-cache}"
+    mkdir -p "${ORT_TENSORRT_CACHE_PATH}"
+    log "TRT engine cache at ${ORT_TENSORRT_CACHE_PATH}"
+fi
+
 export WLW_DEFAULT_ENGINES="${WLW_DEFAULT_ENGINES:-stockfish,lc0}"
 export WLW_STOCKFISH_THREADS="${WLW_STOCKFISH_THREADS:-7}"
 
