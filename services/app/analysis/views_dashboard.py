@@ -12,6 +12,8 @@ Changelog:
     2026-05-14 (#106): Recent partial now renders live data.
     2026-05-14 (#106): Failures partial now renders live data.
     2026-05-14 (#106): Coerce naive datetimes in banner + workers views.
+    2026-05-14: Add ``dashboard_logs`` partial listing recent worker log
+        uploads with per-row download links.
 """
 from __future__ import annotations
 
@@ -277,3 +279,42 @@ def dashboard_failures(request: HttpRequest) -> HttpResponse:
     )
     rows = [_build_failure_row(job) for job in failures]
     return render(request, "analysis/_dash_failures.html", {"rows": rows})
+
+
+@staff_member_required
+def dashboard_logs(request: HttpRequest) -> HttpResponse:
+    """Render the worker-logs partial.
+
+    Lists the 20 most recently uploaded :class:`WorkerLogUpload` rows
+    with a per-row Download link that 302-redirects to a short-lived
+    presigned URL via the existing admin view.
+
+    Args:
+        request: The incoming Django HTTP request.
+
+    Returns:
+        Rendered HTML for ``analysis/_dash_logs.html``.
+    """
+    from api.models import WorkerLogUpload
+
+    uploads = (
+        WorkerLogUpload.objects
+        .select_related("worker")
+        .order_by("-uploaded_at")[:20]
+    )
+    rows: list[dict[str, Any]] = []
+    for upload in uploads:
+        note = upload.note or ""
+        first_line = note.splitlines()[0].strip() if note else ""
+        rows.append({
+            "id": upload.pk,
+            "worker_name": upload.worker.worker_name,
+            "uploaded_at": upload.uploaded_at,
+            "reason": upload.reason,
+            "size_kb": round(upload.size_bytes / 1024, 1),
+            "note_preview": first_line,
+            "download_url": reverse(
+                "admin:api_workerlogupload_download", args=[upload.pk]
+            ),
+        })
+    return render(request, "analysis/_dash_logs.html", {"rows": rows})
