@@ -1,5 +1,18 @@
 name: Build lc0 binary
 
+# Verified working version triple (issue #119, dry-run 2026-05-15):
+#   lc0_ref      = release/0.32   (builds lc0 v0.32.1)
+#   ort_version  = 1.20.1         (onnxruntime-linux-x64-gpu; bundles
+#                                  libonnxruntime_providers_tensorrt.so)
+#   TensorRT     = 10.x           (ORT 1.20.1 TRT provider NEEDs
+#                                  libnvinfer.so.10 / libnvinfer_plugin.so.10;
+#                                  provision TensorRT 10.4 on the L4 volume —
+#                                  see services/local_worker/runpod/runpod_start.sh
+#                                  TRT_VERSION / WLW_TRT_URL).
+# The trt variant requires g++-13 (lc0 0.32 network_onnx.cc uses std::format).
+# Verify gate observed (no GPU on CI): "The ONNX backend requires a network
+# file." — classified as expected GPU/net-absence; build is correct.
+
 on:
   workflow_dispatch:
     inputs:
