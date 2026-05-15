@@ -273,6 +273,20 @@ def test_calibrate_skips_batches_with_unparseable_output():
     assert result["minibatch_size"] in {256, 512, 1024}
 
 
+def test_calibrate_trt_uses_l4_sweep():
+    seen_batches: list[int] = []
+
+    def runner(cmd: list[str]) -> "subprocess.CompletedProcess[str]":
+        mb = next(int(c.split("=", 1)[1]) for c in cmd if c.startswith("--minibatch-size="))
+        seen_batches.append(mb)
+        return _fake_completed("Total: 40000 nps\n")
+
+    result = calibrate("/fake/lc0", "/fake/net.pb.gz", "onnx-trt", runner=runner)
+
+    assert result is not None
+    assert sorted(seen_batches) == [256, 512, 1024, 2048]
+
+
 # ---------------------------------------------------------------------------
 # Orchestration: get_tuned_opts
 # ---------------------------------------------------------------------------

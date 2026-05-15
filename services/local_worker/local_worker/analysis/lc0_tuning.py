@@ -25,6 +25,8 @@ Changelog:
         versus the previous successful measurement. Saves the 4–5 minute
         per-step cost (and the doomed mb=1024 timeout) on slower GPUs once
         the peak has been observed (issue #109).
+    2026-05-15: Recognise the TensorRT (onnx-trt) backend — GPU thread
+        heuristic + a dedicated L4-sized MinibatchSize sweep (issue #119).
 """
 from __future__ import annotations
 
@@ -59,6 +61,10 @@ _RAM_FRACTION_FOR_NN_CACHE = 0.05
 _BATCH_SWEEPS: dict[str, tuple[int, ...]] = {
     "cuda": (128, 256, 512, 1024),
     "metal": (64, 128, 256),
+    # L4 (24 GB, Ada) under TensorRT sustains larger batches than the
+    # 12 GB cuda-fp16 rig; the #109 early-regression stop trims doomed
+    # large entries on smaller cards.
+    "trt": (256, 512, 1024, 2048),
 }
 
 _BENCHMARK_NODES_PER_POSITION = 50_000
@@ -111,6 +117,8 @@ def _is_gpu_backend(backend: str) -> bool:
 def _batch_family(backend: str) -> Optional[str]:
     """Return the key used to look up a MinibatchSize sweep, or None."""
     lower = backend.lower()
+    if "trt" in lower:
+        return "trt"
     if lower.startswith("cuda"):
         return "cuda"
     if lower.startswith("metal"):
