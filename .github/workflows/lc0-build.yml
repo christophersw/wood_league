@@ -83,25 +83,34 @@ jobs:
       - name: Verify onnx-trt linked (trt variant only)
         if: ${{ inputs.variant == 'trt' }}
         run: |
-          set -uo pipefail
+          set -euo pipefail
           cd lc0-src
           export LD_LIBRARY_PATH="${ORT_DIR}/lib:${LD_LIBRARY_PATH:-}"
+          # The TensorRT execution provider .so must exist in the ORT dir.
+          # Do NOT dlopen it here: it needs libnvinfer (NVIDIA TensorRT),
+          # which is deliberately absent on CI (split-sourcing). Assert
+          # presence + that it is a valid ELF shared object instead.
+          TRT_SO="${ORT_DIR}/lib/libonnxruntime_providers_tensorrt.so"
+          test -f "${TRT_SO}" || { echo "FATAL: ${TRT_SO} missing from onnxruntime-gpu package"; exit 1; }
+          file "${TRT_SO}" | grep -qi "ELF .*shared object" \
+            || { echo "FATAL: ${TRT_SO} is not an ELF shared object"; exit 1; }
           OUT="$(./build/release/lc0 benchmark --backend=onnx-trt --nodes=1 2>&1 || true)"
           echo "----- lc0 onnx-trt probe output -----"
           echo "$OUT"
           echo "-------------------------------------"
           # FAIL (build is wrong) if the backend is unknown or onnxruntime
           # did not link. PASS if the only failure is the absence of a GPU /
-          # network file on the CI runner.
+          # network file on the CI runner (the TRT EP is dlopen'd lazily at
+          # ORT session creation, which never happens without a net on CI).
           if echo "$OUT" | grep -qiE "unknown backend|Unknown backend type|error while loading shared libraries|libonnxruntime"; then
             echo "FATAL: onnx-trt not built correctly (backend missing or onnxruntime unlinked)"
             exit 1
           fi
           if echo "$OUT" | grep -qiE "onnx-trt|tensorrt|onnxruntime|Cuda error|no CUDA-capable|Could not find a backend|network file"; then
-            echo "OK: binary recognised onnx-trt; failure is GPU/net-absence (expected on CI)"
+            echo "OK: onnx-trt registered, onnxruntime linked, TRT provider .so present; failure is GPU/net-absence (expected on CI)"
             exit 0
           fi
-          echo "FATAL: unrecognised probe output — pin the expected strings (see Step 2)"
+          echo "FATAL: unrecognised probe output — pin the expected strings"
           exit 1
 
       - name: Package binary and checksum
