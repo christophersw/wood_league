@@ -27,7 +27,7 @@ set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 export PATH=/usr/local/cuda/bin:${PATH}
 
-WLW_VERSION="${WLW_VERSION:-0.9.2}"
+WLW_VERSION="${WLW_VERSION:-0.9.4}"
 LC0_VERSION="${LC0_VERSION:-0.31.2}"
 BOOTSTRAP_URL="${WLW_BOOTSTRAP_URL:-https://raw.githubusercontent.com/christophersw/wood_league/main/services/local_worker/runpod/bootstrap.sh}"
 
@@ -81,10 +81,11 @@ fi
 export WLW_LC0_PATH="${LC0_BIN}"
 
 # ---- 3. wood-league-worker from PyPI ----------------------------------
-if ! command -v wood-league-worker >/dev/null 2>&1; then
-    log "installing wood-league-worker==${WLW_VERSION}"
-    pip3 install --no-cache-dir "wood-league-worker==${WLW_VERSION}"
-fi
+# Always run with --upgrade so a pod restart picks up new releases. Pip
+# is a no-op when the requested version is already installed, so this
+# stays cheap on warm volumes (issue #114).
+log "installing/upgrading wood-league-worker==${WLW_VERSION}"
+pip3 install --no-cache-dir --upgrade "wood-league-worker==${WLW_VERSION}"
 
 # ---- 3b. Pre-write log-upload consent ---------------------------------
 # `wood-league-worker run` prompts on first invocation for permission to
