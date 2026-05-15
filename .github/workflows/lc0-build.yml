@@ -3,10 +3,22 @@ name: Build lc0 binary
 on:
   workflow_dispatch:
     inputs:
-      lc0_version:
-        description: "lc0 version tag (without leading v), e.g. 0.31.2"
+      lc0_ref:
+        description: "lc0 git ref to build (tag/branch), e.g. v0.32.1 or release/0.32"
         required: true
-        default: "0.31.2"
+        default: "release/0.32"
+      variant:
+        description: "Build variant: cuda-fp16 or trt"
+        required: true
+        default: "cuda-fp16"
+        type: choice
+        options:
+          - cuda-fp16
+          - trt
+      ort_version:
+        description: "Microsoft onnxruntime-gpu release version (trt variant only)"
+        required: true
+        default: "1.20.1"
 
 permissions:
   contents: write
@@ -35,7 +47,7 @@ jobs:
 
       - name: Clone lc0 source
         run: |
-          git clone --depth 1 --branch v${{ inputs.lc0_version }} \
+          git clone --depth 1 --branch ${{ inputs.lc0_ref }} \
             https://github.com/LeelaChessZero/lc0.git lc0-src
 
       - name: Build lc0
