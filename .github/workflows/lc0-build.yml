@@ -102,6 +102,14 @@ jobs:
           # no host -march=native. Applies to BOTH variants.
           PORTABLE_ARCH="-Dnative_cuda=false -Dnative_arch=false"
           if [ "${{ inputs.variant }}" = "trt" ]; then
+            # trt is built with g++-13 (lc0 0.32 network_onnx.cc needs
+            # std::format). The RunPod stock cuda:*-runtime-ubuntu22.04
+            # image ships only Ubuntu 22.04 libstdc++ (no GLIBCXX_3.4.31),
+            # so statically link the C++/GCC runtime into the binary —
+            # keeps the published artifact self-contained, no pod-side
+            # libstdc++ provisioning. (cuda-fp16 uses system g++-11 and
+            # needs no static link.)
+            LDFLAGS="-static-libstdc++ -static-libgcc ${LDFLAGS:-}" \
             CC=gcc-13 CXX=g++-13 ./build.sh release \
               -Dgtest=false \
               -Donnx=true \
@@ -125,6 +133,16 @@ jobs:
           # Do NOT dlopen it here: it needs libnvinfer (NVIDIA TensorRT),
           # which is deliberately absent on CI (split-sourcing). Assert
           # presence + that it is a valid ELF shared object instead.
+          # The RunPod cuda:*-runtime-ubuntu22.04 image's libstdc++ tops out
+          # at GLIBCXX_3.4.30. The g++-13 build must be statically linked so
+          # the binary needs no newer symbol. Fail the build if it does.
+          NEWER_GLIBCXX="$(objdump -T ./build/release/lc0 2>/dev/null \
+            | grep -oE 'GLIBCXX_3\.4\.3[1-9]' | sort -u || true)"
+          if [ -n "${NEWER_GLIBCXX}" ]; then
+            echo "FATAL: lc0 requires ${NEWER_GLIBCXX} — static libstdc++ link failed; would not run on the RunPod runtime image"
+            exit 1
+          fi
+          echo "OK: no GLIBCXX_3.4.31+ requirement (static libstdc++ link held)"
           TRT_SO="${ORT_DIR}/lib/libonnxruntime_providers_tensorrt.so"
           test -f "${TRT_SO}" || { echo "FATAL: ${TRT_SO} missing from onnxruntime-gpu package"; exit 1; }
           file "${TRT_SO}" | grep -qi "ELF .*shared object" \
