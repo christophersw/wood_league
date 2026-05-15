@@ -28,18 +28,14 @@ export DEBIAN_FRONTEND=noninteractive
 export PATH=/usr/local/cuda/bin:${PATH}
 
 WLW_VERSION="${WLW_VERSION:-0.9.5}"
-LC0_VERSION="${LC0_VERSION:-0.31.2}"
 BOOTSTRAP_URL="${WLW_BOOTSTRAP_URL:-https://raw.githubusercontent.com/christophersw/wood_league/main/services/local_worker/runpod/bootstrap.sh}"
-
-# Persist the lc0 binary on the network volume so we only build once.
-LC0_BIN="/workspace/bin/lc0"
 
 log() { printf '[runpod-start %s] %s\n' "$(date -u +%FT%TZ)" "$*" >&2; }
 
 # cuda-fp16 (default) or trt. The trt tarball bundles onnxruntime (MIT)
 # under ./lib; TensorRT is fetched separately below (NVIDIA license — not
 # redistributed by us).
-LC0_VARIANT="${LC0_VARIANT:-cuda-fp16}"
+export LC0_VARIANT="${LC0_VARIANT:-cuda-fp16}"
 LC0_REF="${LC0_REF:-release/0.32}"
 LC0_SLUG="$(echo "${LC0_REF}" | tr '/' '-')"
 TRT_VERSION="${TRT_VERSION:-10.4.0.26}"   # must match the ORT build; see lc0-build.yml header
