@@ -66,9 +66,19 @@ jobs:
 
       - name: Build lc0
         run: |
+          set -euo pipefail
           cd lc0-src
-          meson setup build --buildtype=release -Dgtest=false
-          ninja -C build -j $(nproc)
+          if [ "${{ inputs.variant }}" = "trt" ]; then
+            CC=gcc CXX=g++ ./build.sh release \
+              -Dgtest=false \
+              -Donnx=true \
+              -Donnx_libdir="${ORT_DIR}/lib" \
+              -Donnx_include="${ORT_DIR}/include" \
+              -Ddefault_backend=onnx-trt
+          else
+            CC=gcc CXX=g++ ./build.sh release -Dgtest=false
+          fi
+          test -x build/release/lc0
 
       - name: Package binary and checksum
         run: |
