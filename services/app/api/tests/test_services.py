@@ -335,3 +335,27 @@ class FailJobTests(TestCase):
         self.job.refresh_from_db()
         self.assertEqual(self.job.status, AnalysisJob.STATUS_FAILED)
         self.assertEqual(self.job.retry_count, 3)
+
+    @override_settings(MAX_JOB_RETRIES=3)
+    def test_fail_job_permanent_for_empty_pgn(self):
+        """Issue #112: 'PGN has no moves' errors must fail immediately, no retry.
+
+        Without this, an empty-PGN game gets claimed, failed, requeued, and
+        re-claimed until MAX_JOB_RETRIES — burning checkout slots and worker
+        time on a structurally unanalysable game.
+        """
+        self.assertEqual(self.job.retry_count, 0)
+
+        result = fail_job(
+            job_id=self.job.id,
+            worker_id='worker-1',
+            key_prefix='abc12345',
+            error='PGN has no moves — cannot analyse a 0-ply game',
+        )
+
+        self.assertEqual(result, 'failed')
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.status, AnalysisJob.STATUS_FAILED)
+        # retry_count is still incremented for visibility, but the job is
+        # marked failed regardless of the retry budget.
+        self.assertEqual(self.job.retry_count, 1)
