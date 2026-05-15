@@ -45,6 +45,20 @@ jobs:
           sudo apt-get install -y --no-install-recommends cuda-toolkit-12-4
           echo "/usr/local/cuda/bin" >> $GITHUB_PATH
 
+      - name: Fetch onnxruntime-gpu (trt variant only)
+        if: ${{ inputs.variant == 'trt' }}
+        run: |
+          set -euo pipefail
+          ORT_VER="${{ inputs.ort_version }}"
+          ORT_TGZ="onnxruntime-linux-x64-gpu-${ORT_VER}.tgz"
+          curl -fsSL -o "${ORT_TGZ}" \
+            "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VER}/${ORT_TGZ}"
+          mkdir -p "${GITHUB_WORKSPACE}/ort"
+          tar -xzf "${ORT_TGZ}" --strip-components=1 -C "${GITHUB_WORKSPACE}/ort"
+          test -d "${GITHUB_WORKSPACE}/ort/lib" && test -d "${GITHUB_WORKSPACE}/ort/include"
+          echo "ORT_DIR=${GITHUB_WORKSPACE}/ort" >> "$GITHUB_ENV"
+          ls -1 "${GITHUB_WORKSPACE}/ort/lib"
+
       - name: Clone lc0 source
         run: |
           git clone --depth 1 --branch ${{ inputs.lc0_ref }} \
