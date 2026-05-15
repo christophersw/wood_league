@@ -27,7 +27,7 @@ set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 export PATH=/usr/local/cuda/bin:${PATH}
 
-WLW_VERSION="${WLW_VERSION:-0.9.4}"
+WLW_VERSION="${WLW_VERSION:-0.9.5}"
 LC0_VERSION="${LC0_VERSION:-0.31.2}"
 BOOTSTRAP_URL="${WLW_BOOTSTRAP_URL:-https://raw.githubusercontent.com/christophersw/wood_league/main/services/local_worker/runpod/bootstrap.sh}"
 
