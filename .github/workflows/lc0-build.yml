@@ -35,7 +35,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             meson ninja-build build-essential pkg-config \
-            libprotobuf-dev protobuf-compiler libeigen3-dev zlib1g-dev
+            libprotobuf-dev protobuf-compiler libeigen3-dev zlib1g-dev patchelf
 
       - name: Install CUDA toolkit 12.4
         run: |
@@ -106,22 +106,40 @@ jobs:
 
       - name: Package binary and checksum
         run: |
-          cd lc0-src
-          tar -czf ../lc0-v${{ inputs.lc0_version }}-linux-cuda-fp16.tar.gz -C build lc0
-          cd ..
-          sha256sum lc0-v${{ inputs.lc0_version }}-linux-cuda-fp16.tar.gz > lc0-v${{ inputs.lc0_version }}-linux-cuda-fp16.tar.gz.sha256
+          set -euo pipefail
+          VARIANT="${{ inputs.variant }}"
+          REF="${{ inputs.lc0_ref }}"
+          SLUG="$(echo "${REF}" | tr '/' '-')"
+          STAGE="$(mktemp -d)"
+          cp lc0-src/build/release/lc0 "${STAGE}/lc0"
+          if [ "${VARIANT}" = "trt" ]; then
+            mkdir -p "${STAGE}/lib"
+            cp -Lv "${ORT_DIR}"/lib/libonnxruntime*.so* "${STAGE}/lib/" 2>/dev/null || true
+            test -n "$(ls -A "${STAGE}/lib" 2>/dev/null)" \
+              || { echo "FATAL: no onnxruntime libs staged"; exit 1; }
+            if ls "${STAGE}"/lib/libnvinfer* >/dev/null 2>&1; then
+              echo "FATAL: TensorRT lib leaked into public artifact"; exit 1
+            fi
+            patchelf --set-rpath '$ORIGIN/lib' "${STAGE}/lc0"
+          fi
+          TARBALL="lc0-${SLUG}-linux-${VARIANT}.tar.gz"
+          tar -czf "${TARBALL}" -C "${STAGE}" .
+          sha256sum "${TARBALL}" > "${TARBALL}.sha256"
+          echo "TARBALL=${TARBALL}" >> "$GITHUB_ENV"
+          echo "RELEASE_TAG=lc0-${SLUG}" >> "$GITHUB_ENV"
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: lc0-v${{ inputs.lc0_version }}
-          name: lc0 v${{ inputs.lc0_version }} (linux cuda-fp16)
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: ${{ env.RELEASE_TAG }}
+          append_body: true
           body: |
-            Auto-built lc0 binary for x86_64 Linux with cuda-fp16 backend.
-            Built from upstream tag v${{ inputs.lc0_version }} via .github/workflows/lc0-build.yml.
-
-            **SHA256**: see attached `*.sha256` file.
+            Auto-built lc0 (${{ inputs.variant }}) for x86_64 Linux from
+            ${{ inputs.lc0_ref }} via .github/workflows/lc0-build.yml.
+            trt variant bundles onnxruntime (MIT) only; TensorRT is fetched
+            to the RunPod volume at provision time. SHA256: see attached.
           files: |
-            lc0-v${{ inputs.lc0_version }}-linux-cuda-fp16.tar.gz
-            lc0-v${{ inputs.lc0_version }}-linux-cuda-fp16.tar.gz.sha256
+            ${{ env.TARBALL }}
+            ${{ env.TARBALL }}.sha256
           fail_on_unmatched_files: true
