@@ -2,11 +2,15 @@
 Title: test_enqueue.py — Dedup matrix for enqueue_analysis_job
 Description: Six cases: no-existing creates; pending/running/submitted skip;
     completed at sufficient depth skips; completed at lower depth creates.
+    Plus the 0-move-PGN guard (#112): refuses to enqueue games that have
+    no analysable moves so workers don't loop them through retries.
     Follows the pattern established in test_models_last_error.py (Task A2) —
     objects created directly without pytest-django db fixture.
 Changelog:
     2026-05-10: Initial — Task A3 of scrap-dispatchers plan.
     2026-05-11: Add race-path test (Task 3 of enqueue-race-safe plan).
+    2026-05-15: Cover 0-move-PGN skip path (issue #112); test fixture
+        now uses a real 2-ply PGN so other cases still create jobs.
 """
 import uuid
 from unittest.mock import patch
@@ -16,15 +20,20 @@ from django.db import IntegrityError
 from django.utils import timezone
 
 from analysis.models import AnalysisJob
-from analysis.services.enqueue import enqueue_analysis_job
+from analysis.services.enqueue import _pgn_has_moves, enqueue_analysis_job
 from games.models import Game
 
+# Minimal real PGN — two plies, enough for python-chess to parse a move so
+# the issue #112 guard treats this as analysable.
+_REAL_PGN = "1. e4 e5 *"
 
-def _make_game() -> Game:
+
+def _make_game(pgn: str = _REAL_PGN) -> Game:
     """Create a minimal Game instance with a unique ID to avoid collision across runs.
 
     Args:
-        None
+        pgn: Override for the game's PGN body. Defaults to a real 2-ply
+            opening so the enqueue guard does not short-circuit.
 
     Returns:
         Game: A saved Game instance.
@@ -33,7 +42,7 @@ def _make_game() -> Game:
         id=f"test-A3-{uuid.uuid4().hex[:8]}",
         played_at=timezone.now(),
         time_control="600",
-        pgn="*",
+        pgn=pgn,
     )
 
 
@@ -171,3 +180,50 @@ def test_enqueue_returns_none_when_race_violates_constraint():
     assert result is None
     # We did not create any rows (the mocked .create() raised before insert).
     assert AnalysisJob.objects.filter(game=game, engine="stockfish").count() == 0
+
+
+# ── Issue #112: skip 0-move PGNs at enqueue time ─────────────────────────
+
+
+@pytest.mark.parametrize("pgn", [
+    "",                                            # empty
+    "   \n\n",                                     # whitespace only
+    '[Event "x"]\n[Result "*"]\n\n*',              # headers only, no moves
+    "this is not a pgn",                           # unparseable
+])
+def test_pgn_has_moves_false_for_empty_inputs(pgn):
+    """Issue #112: the guard returns False for any input without playable moves."""
+    assert _pgn_has_moves(pgn) is False
+
+
+@pytest.mark.parametrize("pgn", [
+    "1. e4 e5 *",
+    "1. d4 *",
+    '[Event "x"]\n[Result "1-0"]\n\n1. e4 e5 2. Nf3 1-0',
+])
+def test_pgn_has_moves_true_for_real_games(pgn):
+    """Issue #112: any PGN with at least one ply must be accepted."""
+    assert _pgn_has_moves(pgn) is True
+
+
+@pytest.mark.django_db
+def test_enqueue_skips_when_game_has_no_moves():
+    """Issue #112: don't create a job for a game whose PGN parses to 0 plies.
+
+    Workers raise ``ValueError("PGN has no moves …")`` for these and the
+    job would loop through retries before reaching MAX_JOB_RETRIES. Refuse
+    to enqueue in the first place.
+    """
+    game = _make_game(pgn="")
+    result = enqueue_analysis_job(game=game, engine="stockfish", depth=20)
+    assert result is None
+    assert AnalysisJob.objects.filter(game=game).count() == 0
+
+
+@pytest.mark.django_db
+def test_enqueue_skips_when_pgn_headers_only():
+    """Issue #112: header-only PGNs (forfeits before move 1) are also skipped."""
+    game = _make_game(pgn='[Event "x"]\n[Result "0-1"]\n\n0-1')
+    result = enqueue_analysis_job(game=game, engine="lc0", depth=25000)
+    assert result is None
+    assert AnalysisJob.objects.filter(game=game).count() == 0

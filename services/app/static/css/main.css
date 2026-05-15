@@ -385,6 +385,16 @@
     background: color-mix(in srgb, var(--color-gold) 7%, var(--color-cream));
   }
 
+  /* Data-dense admin/dashboard tables: add zebra striping for row-scanning
+     legibility while keeping the wc-table header band and hover behaviour. */
+  .wc-table--zebra tbody tr:nth-child(even) td {
+    background: color-mix(in srgb, var(--color-parchment) 55%, var(--color-cream));
+  }
+
+  .wc-table--zebra tbody tr:nth-child(even):hover td {
+    background: color-mix(in srgb, var(--color-gold) 7%, var(--color-cream));
+  }
+
   /* ── Buttons ─────────────────────────────────────────────────────────── */
 
   .wc-btn {

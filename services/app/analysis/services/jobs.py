@@ -9,6 +9,8 @@ Changelog:
     2026-05-08: Added file header to meet documentation standards
     2026-05-08: Added submit_job() for RunPod dispatcher integration
     2026-05-10: Removed dispatch_mode from claim_jobs, recover_stale_jobs, and submit_job
+    2026-05-15: fail_job() now treats "PGN has no moves" errors as
+        permanent failures (no retry) — issue #112.
 """
 from datetime import timedelta
 
@@ -28,6 +30,18 @@ from analysis.models import (
 # ── Constants ────────────────────────────────────────────────────────────
 class JobCheckoutDenied(Exception):
     """Raised when a requested job checkout cannot be honored."""
+
+
+# Error substrings that signal the job is structurally unanalysable. Retrying
+# these is wasted work — fail them permanently on first report (issue #112).
+_PERMANENT_FAILURE_MARKERS = (
+    "PGN has no moves",
+)
+
+
+def _is_permanent_failure(error: str) -> bool:
+    """Return True when the worker error is non-retryable by design."""
+    return any(marker in error for marker in _PERMANENT_FAILURE_MARKERS)
 
 
 def _analysis_already_completed(*, engine: str, game_id: str) -> bool:
@@ -322,7 +336,7 @@ def fail_job(
         job.retry_count += 1
         job.error_message = error[:2000]
 
-        if job.retry_count >= _max_retries():
+        if _is_permanent_failure(error) or job.retry_count >= _max_retries():
             job.status = AnalysisJob.STATUS_FAILED
             outcome = 'failed'
         else:

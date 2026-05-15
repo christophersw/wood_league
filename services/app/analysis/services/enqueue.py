@@ -9,13 +9,22 @@ Description: Single source of truth for deciding whether a Game needs a new
 Changelog:
     2026-05-10: Initial — Task A3 of scrap-dispatchers plan.
     2026-05-11: Race-safe via partial unique constraint (issue #15).
+    2026-05-15: Refuse to enqueue 0-move PGNs — workers cannot analyse
+        them and were being looped through retry until MAX_JOB_RETRIES
+        (issue #112).
 """
 from __future__ import annotations
 
+import io
+import logging
+
+import chess.pgn
 from django.db import IntegrityError
 
 from analysis.models import AnalysisJob
 from games.models import Game
+
+log = logging.getLogger(__name__)
 
 # Statuses that indicate a job is actively being processed or waiting to run.
 # A job in any of these states blocks creation of a duplicate for the same
@@ -25,6 +34,34 @@ _ACTIVE_STATUSES = (
     AnalysisJob.STATUS_RUNNING,
     AnalysisJob.STATUS_SUBMITTED,
 )
+
+
+def _pgn_has_moves(pgn_text: str) -> bool:
+    """Return True when the PGN parses to at least one ply.
+
+    Engines refuse to analyse 0-ply games (they raise ``ValueError("PGN has
+    no moves …")``) and any job we create for one is wasted: it claims a
+    checkout slot, fails, retries up to MAX_JOB_RETRIES times, then sits as
+    a permanently-failed row. Filter these out at enqueue time.
+
+    Args:
+        pgn_text: Raw PGN as stored on ``Game.pgn``. May be empty.
+
+    Returns:
+        True if at least one move parses cleanly; False for empty input,
+        headers-only PGNs, or unparseable input.
+    """
+    if not pgn_text or not pgn_text.strip():
+        return False
+    try:
+        game = chess.pgn.read_game(io.StringIO(pgn_text))
+    except Exception:  # noqa: BLE001 - any parse failure is treated as no-moves
+        return False
+    if game is None:
+        return False
+    # game.mainline_moves() is an iterator; pulling one element is cheap and
+    # avoids materialising the whole move list for long games.
+    return next(iter(game.mainline_moves()), None) is not None
 
 
 def enqueue_analysis_job(
@@ -58,6 +95,13 @@ def enqueue_analysis_job(
         active or sufficiently-deep completed job already exists, or if a
         concurrent caller won the race for the active slot.
     """
+    if not _pgn_has_moves(game.pgn):
+        log.info(
+            "enqueue: skipping game %s for engine %s — PGN has no moves",
+            game.pk, engine,
+        )
+        return None
+
     if AnalysisJob.objects.filter(
         game=game,
         engine=engine,
