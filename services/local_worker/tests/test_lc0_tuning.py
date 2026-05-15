@@ -9,6 +9,7 @@ Description:
 Changelog:
     2026-05-13: Initial creation (issue #62).
     2026-05-13: Add regression for first-batch timeout short-circuit (issue #74).
+    2026-05-15: Cover the TensorRT (onnx-trt) L4 MinibatchSize sweep (issue #119).
 """
 from __future__ import annotations
 
@@ -285,6 +286,10 @@ def test_calibrate_trt_uses_l4_sweep():
 
     assert result is not None
     assert sorted(seen_batches) == [256, 512, 1024, 2048]
+    # Flat nps never regresses, so the full L4 sweep runs and the first
+    # (joint-highest) entry wins the strict-greater-than tie-break.
+    assert result["minibatch_size"] == 256
+    assert result["measured_nps"] == 40_000.0
 
 
 # ---------------------------------------------------------------------------
