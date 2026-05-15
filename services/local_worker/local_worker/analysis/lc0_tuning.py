@@ -100,7 +100,12 @@ def detect_host_info(backend: str, gpu_name: str = "") -> HostInfo:
 def _is_gpu_backend(backend: str) -> bool:
     """True if the backend offloads NN evaluation to a GPU."""
     lower = backend.lower()
-    return lower.startswith("cuda") or lower.startswith("metal") or "opencl" in lower
+    return (
+        lower.startswith("cuda")
+        or lower.startswith("metal")
+        or "opencl" in lower
+        or "trt" in lower
+    )
 
 
 def _batch_family(backend: str) -> Optional[str]:

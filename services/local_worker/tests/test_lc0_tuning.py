@@ -64,6 +64,18 @@ def test_heuristics_cpu_backend_uses_more_threads():
     assert opts["Threads"] == "7"
 
 
+def test_heuristics_trt_backend_is_gpu():
+    host = HostInfo(
+        backend="onnx-trt",
+        cpu_count=24,
+        ram_total_bytes=_gb(64),
+        ram_available_bytes=_gb(40),
+    )
+    opts = derive_heuristic_opts(host)
+    # GPU backends cap Threads at 3; a CPU backend on 24 cores would give 23.
+    assert opts["Threads"] == "3"
+
+
 def test_nn_cache_floor_on_low_ram():
     host = HostInfo(
         backend="metal",
