@@ -290,7 +290,7 @@ def run_batch(
     *,
     settings: Settings,
     engines: list[str],
-    batch_size: int = 5,
+    max_jobs: Optional[int] = None,
     batch_time_minutes: Optional[int] = None,
     game_id: Optional[str] = None,
     on_job_start: Optional[Callable] = None,
@@ -298,28 +298,36 @@ def run_batch(
     on_progress: Optional[Callable[..., None]] = None,
     on_jobs_claimed: Optional[Callable[[list], None]] = None,
     stop_event=None,
+    _client=None,
 ) -> WorkerStats:
     """Run the main claim->analyse->submit loop.
 
-    Processes jobs until the batch_time_minutes limit is reached, all queues
-    are empty, or stop_event is set. Heartbeats are sent every 30 seconds.
+    Claims jobs one at a time, launches the warm lc0 engine once per engine
+    run, and stops on max_jobs / batch_time_minutes / stop_event / queue-empty
+    — whichever fires first.
 
     Args:
         settings: Worker settings (API URL, key, engine paths, etc.).
         engines: List of engines to claim jobs for, e.g. ['stockfish', 'lc0'].
-        batch_size: Jobs to claim per checkout call (1-10).
+        max_jobs: Stop after this many completed jobs. None = until queue empty.
         batch_time_minutes: If set, stop after this many minutes.
         game_id: If set, request a specific game (single checkout).
         on_job_start: Optional callable(job) called before analysis.
         on_job_done: Optional callable(job, success, elapsed) called after.
         on_progress: Optional callable(ply, total_plies) for per-move progress.
+        on_jobs_claimed: Optional callable([job]) called after each checkout.
         stop_event: Optional threading.Event; loop exits when set.
+        _client: Optional pre-built WorkerClient for testing. When None, a
+            real WorkerClient is created from settings.
 
     Returns:
-        WorkerStats with totals for the batch.
+        WorkerStats with totals for the run.
     """
-    client = WorkerClient(base_url=settings.api_url, api_key=settings.api_key)
+    client = _client if _client is not None else WorkerClient(
+        base_url=settings.api_url, api_key=settings.api_key
+    )
     stats = WorkerStats()
+    processed = 0
     worker_id = _worker_id(settings)
     start_time = time.monotonic()
     last_heartbeat = 0.0
@@ -373,110 +381,96 @@ def run_batch(
         """
         return _time_limit_exceeded() or bool(stop_event and stop_event.is_set())
 
+    def _cap_reached() -> bool:
+        """True once the optional max_jobs run cap is hit."""
+        return max_jobs is not None and processed >= max_jobs
+
     def _drain_engine_queue(engine: str) -> None:
-        """Process all available jobs for one engine until queue empty or stopped.
+        """Claim one job at a time for `engine`, analyse+submit, until the
+        queue is empty / max_jobs / batch_time / stop_event — whichever
+        first. The warm lc0 engine (issue #117) is launched once for the
+        whole engine run and quit on exit; a dead engine is relaunched by
+        the existing _engine_alive guard inside the loop.
 
         Args:
             engine: Engine name ('stockfish' or 'lc0') to drain.
         """
-        while True:
-            if _should_stop():
-                break
-
-            _send_heartbeat(engine)
-
+        nonlocal processed
+        warm_engine: Optional[chess.engine.SimpleEngine] = None
+        warm_network_name = ""
+        if engine == "lc0":
             try:
-                jobs = client.checkout(
-                    engine=engine,
-                    worker_id=worker_id,
-                    batch_size=batch_size if not game_id else 1,
-                    game_id=game_id,
-                    dispatch_mode="pull",
+                warm_engine, warm_network_name = lc0_launch_engine(
+                    lc0_path=settings.lc0_path,
+                    weights_path=settings.lc0_weights_path,
+                    syzygy_path=settings.syzygy_path,
+                    backend=settings.lc0_backend or "cpu",
                 )
-            except WorkerClientError as exc:
-                log.error("Checkout failed for %s: %s", engine, exc)
-                break
-
-            if not jobs:
-                break
-
-            log.info("Claimed %d %s job(s): %s",
-                     len(jobs), engine, ", ".join(str(j.id) for j in jobs))
-            if on_jobs_claimed:
-                on_jobs_claimed(jobs)
-
-            # Warm engine reuse across the whole claimed batch — saves
-            # ~6 s per lc0 game on GPU rigs (issue #117). On launch failure
-            # fall back to per-job cold-start so the run still makes
-            # progress; lc0_analyze() will relaunch itself when
-            # ``engine=None``.
-            warm_engine: Optional[chess.engine.SimpleEngine] = None
-            warm_network_name = ""
-            if engine == "lc0":
+            except Exception:  # noqa: BLE001
+                log.warning("lc0: warm engine launch failed; per-job cold-start", exc_info=True)
+                warm_engine = None
+        try:
+            while True:
+                if _should_stop() or _cap_reached():
+                    break
+                _send_heartbeat(engine)
                 try:
-                    warm_engine, warm_network_name = lc0_launch_engine(
-                        lc0_path=settings.lc0_path,
-                        weights_path=settings.lc0_weights_path,
-                        syzygy_path=settings.syzygy_path,
-                        backend=settings.lc0_backend or "cpu",
+                    jobs = client.checkout(
+                        engine=engine,
+                        worker_id=worker_id,
+                        batch_size=1,
+                        game_id=game_id,
+                        dispatch_mode="pull",
                     )
-                except Exception:  # noqa: BLE001
-                    log.warning(
-                        "lc0: batch engine launch failed; falling back to "
-                        "per-job cold-start", exc_info=True,
-                    )
-                    warm_engine = None
-
-            try:
-                for job in jobs:
-                    if stop_event and stop_event.is_set():
-                        break
-                    if on_job_start:
-                        on_job_start(job)
-                    job_start = time.monotonic()
-                    success = run_one_job(
-                        job=job,
-                        settings=settings,
-                        stats=stats,
-                        client=client,
-                        progress_callback=on_progress,
-                        lc0_engine=warm_engine if engine == "lc0" else None,
-                        lc0_network_name=warm_network_name,
-                    )
-                    if (
-                        engine == "lc0"
-                        and warm_engine is not None
-                        and not _engine_alive(warm_engine)
-                    ):
-                        log.warning(
-                            "lc0: warm engine died mid-batch; relaunching"
-                        )
-                        try:
-                            warm_engine, warm_network_name = lc0_launch_engine(
-                                lc0_path=settings.lc0_path,
-                                weights_path=settings.lc0_weights_path,
-                                syzygy_path=settings.syzygy_path,
-                                backend=settings.lc0_backend or "cpu",
-                            )
-                        except Exception:  # noqa: BLE001
-                            log.warning(
-                                "lc0: relaunch failed; remaining jobs in "
-                                "batch will cold-start", exc_info=True,
-                            )
-                            warm_engine = None
-                            warm_network_name = ""
-                    if on_job_done:
-                        on_job_done(job, success, time.monotonic() - job_start)
-            finally:
-                if warm_engine is not None:
+                except WorkerClientError as exc:
+                    log.error("Checkout failed for %s: %s", engine, exc)
+                    break
+                if not jobs:
+                    break
+                job = jobs[0]
+                if on_jobs_claimed:
+                    on_jobs_claimed([job])
+                if on_job_start:
+                    on_job_start(job)
+                job_start = time.monotonic()
+                success = run_one_job(
+                    job=job,
+                    settings=settings,
+                    stats=stats,
+                    client=client,
+                    progress_callback=on_progress,
+                    lc0_engine=warm_engine if engine == "lc0" else None,
+                    lc0_network_name=warm_network_name,
+                )
+                processed += 1
+                if (
+                    engine == "lc0"
+                    and warm_engine is not None
+                    and not _engine_alive(warm_engine)
+                ):
+                    log.warning("lc0: warm engine died; relaunching")
                     try:
-                        warm_engine.quit()
+                        warm_engine, warm_network_name = lc0_launch_engine(
+                            lc0_path=settings.lc0_path,
+                            weights_path=settings.lc0_weights_path,
+                            syzygy_path=settings.syzygy_path,
+                            backend=settings.lc0_backend or "cpu",
+                        )
                     except Exception:  # noqa: BLE001
-                        log.warning("lc0: warm engine quit failed",
-                                    exc_info=True)
+                        log.warning("lc0: relaunch failed; remaining jobs cold-start", exc_info=True)
+                        warm_engine = None
+                        warm_network_name = ""
+                if on_job_done:
+                    on_job_done(job, success, time.monotonic() - job_start)
+        finally:
+            if warm_engine is not None:
+                try:
+                    warm_engine.quit()
+                except Exception:  # noqa: BLE001
+                    log.warning("lc0: warm engine quit failed", exc_info=True)
 
     for engine in engines:
-        if _should_stop():
+        if _should_stop() or _cap_reached():
             break
         _drain_engine_queue(engine)
 
