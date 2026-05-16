@@ -38,6 +38,7 @@ _WLW_ENV_VARS = (
     "WLW_EVAL_CACHE_MAX_MB",
     "WLW_DEFAULT_BATCH_SIZE",
     "WLW_BATCH_TIME_MINUTES",
+    "WLW_MAX_JOBS",
     "WLW_EVAL_CACHE_ENABLED",
     "WLW_DEFAULT_ENGINES",
     "WLW_DATA_DIR",
@@ -154,3 +155,31 @@ def test_json_loaded_when_no_env(tmp_path: Path) -> None:
     loaded = load_settings(cfg_file)
     assert loaded.api_url == "https://disk.example"
     assert loaded.api_key == "disk-key"
+
+
+def test_wlw_max_jobs_parses_int(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """``WLW_MAX_JOBS`` must parse an integer value."""
+    monkeypatch.setenv("WLW_MAX_JOBS", "25")
+    s = load_settings(tmp_path / "settings.json")
+    assert s.max_jobs == 25
+
+
+def test_wlw_max_jobs_blank_or_nondigit_is_none(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """``WLW_MAX_JOBS`` blank or non-digit must remain None."""
+    monkeypatch.setenv("WLW_MAX_JOBS", "")
+    assert load_settings(tmp_path / "settings.json").max_jobs is None
+    monkeypatch.setenv("WLW_MAX_JOBS", "abc")
+    assert load_settings(tmp_path / "settings.json").max_jobs is None
+
+
+def test_wlw_max_jobs_lt_one_is_none(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """``WLW_MAX_JOBS`` values < 1 must remain None."""
+    monkeypatch.setenv("WLW_MAX_JOBS", "0")
+    assert load_settings(tmp_path / "settings.json").max_jobs is None
+    monkeypatch.setenv("WLW_MAX_JOBS", "-3")
+    assert load_settings(tmp_path / "settings.json").max_jobs is None
+
+
+def test_default_max_jobs_is_none(tmp_path: Path) -> None:
+    """``max_jobs`` must default to None."""
+    assert load_settings(tmp_path / "settings.json").max_jobs is None
