@@ -128,14 +128,15 @@ else
     export WLW_LC0_BACKEND="${WLW_LC0_BACKEND:-cuda-fp16}"
 fi
 
-# onnxruntime TensorRT EP rebuilds a per-(network,GPU) engine on every
-# cold start unless cached. Persist it on the network volume.
-if [ "${LC0_VARIANT}" = "trt" ]; then
-    export ORT_TENSORRT_ENGINE_CACHE_ENABLE=1
-    export ORT_TENSORRT_CACHE_PATH="${WLW_TRT_CACHE_DIR:-${DATA_DIR}/trt-engine-cache}"
-    mkdir -p "${ORT_TENSORRT_CACHE_PATH}"
-    log "TRT engine cache at ${ORT_TENSORRT_CACHE_PATH}"
-fi
+# onnxruntime's TensorRT EP rebuilds a per-(network,GPU) engine on every
+# cold start unless cached. lc0's onnx-trt backend IGNORES the
+# ORT_TENSORRT_* env vars (verified on L4, #119) — it persists the engine
+# under <lc0-binary-dir>/trt_cache/ regardless. Since the lc0 binary lives
+# on the network volume (/workspace/bin/lc0-${LC0_VARIANT}/), that cache
+# is already volume-persistent across stop/start and serverless cold
+# starts (verified: 364M …fp16_sm89.engine written once, reused warm).
+# Nothing to export here; documented so the absence isn't mistaken for a
+# missing optimisation.
 
 export WLW_DEFAULT_ENGINES="${WLW_DEFAULT_ENGINES:-stockfish,lc0}"
 export WLW_STOCKFISH_THREADS="${WLW_STOCKFISH_THREADS:-7}"
