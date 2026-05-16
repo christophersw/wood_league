@@ -43,7 +43,6 @@ def analyze(
         result = run_batch(
             settings=settings,
             engines=[engine],
-            batch_size=1,
             game_id=game_id,
             on_progress=on_progress,
             on_jobs_claimed=on_jobs_claimed,
