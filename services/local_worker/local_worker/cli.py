@@ -19,6 +19,7 @@ Changelog:
     2026-05-13 (#52): Replaced GlitchTip telemetry init with the new
         log-upload consent prompt + crash-hook installer; registered
         the ``submit-log`` subcommand.
+    2026-05-16: Registered ``cache-merge`` subcommand for offline delta merge.
 """
 from __future__ import annotations
 
@@ -30,6 +31,7 @@ import typer
 
 from local_worker._shared import LONG_RUNNING_COMMANDS
 from local_worker.commands import analyze as analyze_cmd
+from local_worker.commands import cache_merge_cmd
 from local_worker.commands import info as info_cmd
 from local_worker.commands import logs as logs_cmd
 from local_worker.commands import run as run_cmd
@@ -138,6 +140,7 @@ app.command()(logs_cmd.logs)
 app.command()(info_cmd.version)
 app.command()(info_cmd.status)
 app.command("submit-log")(submit_log_cmd.submit_log)
+app.command("cache-merge")(cache_merge_cmd.cache_merge)
 
 
 __all__ = ["app", "_tail_lines"]
