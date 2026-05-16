@@ -10,6 +10,7 @@ Changelog:
 import sqlite3
 from pathlib import Path
 
+import local_worker.cache_sync as cs
 from local_worker.cache_sync import snapshot_db
 
 
@@ -31,9 +32,6 @@ def test_snapshot_db_produces_valid_copy_under_open_wal(tmp_path: Path):
     assert rows == [(1, "a")]
     snap.close()
     conn.close()
-
-
-import local_worker.cache_sync as cs
 
 
 def test_checkpoint_key_layout():
