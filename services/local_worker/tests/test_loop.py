@@ -14,12 +14,14 @@ Changelog:
 """
 from dataclasses import dataclass
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
 from local_worker import loop as worker_loop
 from local_worker.loop import WorkerStats, run_batch, run_one_job
+from local_worker.config import Settings
+from local_worker.worker_client import WorkerClient
 
 
 def test_stats_initial_state():
@@ -89,9 +91,9 @@ class _StubClient:
         self.failed.append(kwargs)
 
 
-def _settings_for_lc0(default_nodes: int = 10000) -> SimpleNamespace:
+def _settings_for_lc0(default_nodes: int = 10000) -> Settings:
     """Build a Settings stand-in covering only the fields run_one_job touches."""
-    return SimpleNamespace(
+    return cast(Settings, SimpleNamespace(
         worker_id="test-worker",
         lc0_path="/fake/lc0",
         lc0_nodes=default_nodes,
@@ -104,7 +106,7 @@ def _settings_for_lc0(default_nodes: int = 10000) -> SimpleNamespace:
         stockfish_depth=20,
         stockfish_threads=1,
         stockfish_hash_mb=128,
-    )
+    ))
 
 
 def _patch_lc0_analyze(
@@ -137,7 +139,7 @@ def test_lc0_uses_job_depth_when_nodes_absent(
         job=_StubJob(depth=25000, nodes=None),
         settings=_settings_for_lc0(default_nodes=10000),
         stats=WorkerStats(),
-        client=_StubClient(),
+        client=cast(WorkerClient, _StubClient()),
     )
 
     assert ok is True
@@ -155,7 +157,7 @@ def test_lc0_prefers_explicit_nodes_over_depth(
         job=_StubJob(depth=25000, nodes=50000),
         settings=_settings_for_lc0(default_nodes=10000),
         stats=WorkerStats(),
-        client=_StubClient(),
+        client=cast(WorkerClient, _StubClient()),
     )
 
     assert captured["nodes"] == 50000
@@ -172,7 +174,7 @@ def test_lc0_falls_back_to_settings_when_both_absent(
         job=_StubJob(depth=0, nodes=None),
         settings=_settings_for_lc0(default_nodes=12345),
         stats=WorkerStats(),
-        client=_StubClient(),
+        client=cast(WorkerClient, _StubClient()),
     )
 
     assert captured["nodes"] == 12345
@@ -234,13 +236,13 @@ class _FakeCheckoutClient:
         """Accept heartbeat calls without side effects."""
 
 
-def _make_batch_settings() -> SimpleNamespace:
+def _make_batch_settings() -> Settings:
     """Build a minimal Settings stand-in for run_batch tests.
 
     Returns:
-        A SimpleNamespace with all fields run_batch / run_one_job need.
+        A Settings with all fields run_batch / run_one_job need.
     """
-    return SimpleNamespace(
+    return cast(Settings, SimpleNamespace(
         api_url="http://localhost:9999",
         api_key="test-key",
         worker_id="test-worker",
@@ -256,7 +258,7 @@ def _make_batch_settings() -> SimpleNamespace:
         stockfish_depth=20,
         stockfish_threads=1,
         stockfish_hash_mb=128,
-    )
+    ))
 
 
 def _stub_lc0_jobs(n: int, engine: str = "stockfish") -> list[Any]:
