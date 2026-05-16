@@ -1,3 +1,12 @@
+"""
+Title: test_cache_sync.py — Tests for the vast.ai eval-cache sync helpers
+Description:
+    Tests for ``cache_sync.snapshot_db`` (WAL-safe SQLite snapshot). More test
+    cases added as ``cache_sync`` grows (pull/upload operations).
+
+Changelog:
+    2026-05-15: Initial creation (vast.ai bulk worker plan, sub-proj A+B).
+"""
 import sqlite3
 from pathlib import Path
 
