@@ -29,7 +29,8 @@ no host-scoped volume.
 ```bash
 vastai create instance <offer-id> \
   --image <private-registry>/vast-worker:<tag> \
-  --env '-e WLW_MAX_JOBS=<N> -e WL_CAMPAIGN_ID=<campaign-id> \
+  --env '-e WLW_API_URL=<worker-api-url> -e WLW_API_KEY=<worker-token> \
+         -e WLW_MAX_JOBS=<N> -e WL_CAMPAIGN_ID=<campaign-id> \
          -e RAILWAY_BUCKET_NAME=<bucket> -e ENDPOINT=<s3-endpoint> \
          -e REGION=<region> -e ACCESS_KEY_ID=<key> \
          -e SECRET_ACCESS_KEY=<secret> \
@@ -38,17 +39,20 @@ vastai create instance <offer-id> \
   --onstart wlw-vast-onstart --ssh
 ```
 
+> `WLW_API_URL` / `WLW_API_KEY` (and the bucket creds) are stable across
+> campaigns — store them as **vast account environment variables** so they
+> auto-inject into every instance and never touch the command line. Only
+> per-run values (`WL_CAMPAIGN_ID`, `WLW_MAX_JOBS`) then need `-e`.
+
 ### Micro batch (e.g. 20 jobs)
 
-Identical recipe, just a small cap and a cheap/interruptible offer:
+Identical recipe, just a small cap and a cheap/interruptible offer (API +
+bucket creds assumed stored as vast account env vars):
 
 ```bash
 vastai create instance <cheap-offer> \
   --image <private-registry>/vast-worker:<tag> \
-  --env '-e WLW_MAX_JOBS=20 -e WL_CAMPAIGN_ID=micro-20260516 \
-         -e RAILWAY_BUCKET_NAME=<bucket> -e ENDPOINT=<s3-endpoint> \
-         -e REGION=<region> -e ACCESS_KEY_ID=<key> \
-         -e SECRET_ACCESS_KEY=<secret>' \
+  --env '-e WLW_MAX_JOBS=20 -e WL_CAMPAIGN_ID=micro-20260516' \
   --onstart wlw-vast-onstart --ssh
 ```
 
@@ -56,6 +60,8 @@ vastai create instance <cheap-offer> \
 
 | Variable | Required | Default | Purpose |
 |---|---|---|---|
+| `WLW_API_URL` | **yes** | — | Wood League Worker API base URL. The worker is a pull client; without this both engines print `Not configured. Run \`wood-league-worker setup\` first.` and exit immediately. Supply as a vast account env var (auto-injects) or per-launch `-e`. |
+| `WLW_API_KEY` | **yes** | — | Worker API token. Same failure mode as `WLW_API_URL` if absent. Treat as a secret — prefer a vast account env var over the command line. |
 | `WL_CAMPAIGN_ID` | yes | — | Logical campaign; namespaces this instance's cache delta. |
 | `WLW_MAX_JOBS` | no | unset | Per-engine job cap (sub-project E). Unset = drain until queue-empty / batch-time. With both engines a game ≈ 2 jobs (1 lc0 + 1 Stockfish). |
 | `WL_INSTANCE_ID` | no | `<hostname>-<pid>` | Stable per-instance id; the delta object key. Set explicitly to avoid collisions if you reuse a host. |
@@ -82,6 +88,23 @@ Both engines run at once, so filter offers on:
 
 A crash of one engine does not strand the other; the entrypoint waits
 for both, then uploads the final cache delta.
+
+## Stop the instance — it does NOT self-destroy
+
+Unlike RunPod, a vast.ai **on-demand** instance keeps running (and
+billing) after the entrypoint exits. When you see
+`onstart: both engines exited; final delta uploaded; instance done` in
+the logs the work is finished, but **you must destroy the instance
+yourself** or it bills idle until the vast.ai instance is removed:
+
+```bash
+vastai destroy instance <instance-id> -y
+```
+
+`WLW_BATCH_TIME` only bounds the *worker*, not the instance — it does not
+stop billing. (An interruptible/bid instance is reclaimed by vast, but an
+on-demand one is not.) Watch the run with `vastai logs <instance-id>`;
+destroy as soon as it reports done.
 
 ## Between campaigns — merge deltas into the canonical
 

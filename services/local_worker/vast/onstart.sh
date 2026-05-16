@@ -7,9 +7,18 @@
 #   delta, and exits when both bounded workers finish. No host volume.
 # Changelog:
 #   2026-05-15: Initial creation (vast.ai bulk worker plan, A+B).
+#   2026-05-16: Fix `python`→`python3` (image has no python symlink);
+#               hard-require WLW_API_URL/WLW_API_KEY (worker is a pull
+#               client and exits "Not configured" without them).
 set -euo pipefail
 
 : "${WL_CAMPAIGN_ID:?WL_CAMPAIGN_ID is required}"
+# The worker is an HTTP pull client; without these it prints
+# "Not configured. Run `wood-league-worker setup` first." and both
+# engines exit immediately. Supply them as vast account env vars (they
+# auto-inject) or per-launch -e, exactly like the bucket creds.
+: "${WLW_API_URL:?WLW_API_URL is required (Wood League Worker API base URL)}"
+: "${WLW_API_KEY:?WLW_API_KEY is required (worker API token)}"
 export WL_INSTANCE_ID="${WL_INSTANCE_ID:-$(hostname)-$$}"
 WL_CACHE_CHECKPOINT_MINUTES="${WL_CACHE_CHECKPOINT_MINUTES:-10}"
 export WLW_DATA_DIR="${WLW_DATA_DIR:-/data/wlw}"
@@ -17,7 +26,7 @@ CACHE_DB="${WLW_DATA_DIR}/eval_cache.sqlite"
 WORK_DIR="${WLW_DATA_DIR}/.sync"
 mkdir -p "${WLW_DATA_DIR}" "${WORK_DIR}"
 
-py() { python -c "$1"; }
+py() { python3 -c "$1"; }
 
 pull_cache() {
   if [ "${WL_SKIP_CACHE_PULL:-0}" = "1" ]; then

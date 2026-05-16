@@ -2,7 +2,7 @@
 # (TensorRT operator tarball is baked; keep registry private).
 FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
 
-ARG WORKER_VERSION=0.9.8
+ARG WORKER_VERSION=0.9.9
 ARG BT4_URL=https://storage.lczero.org/files/networks-contrib/BT4-1024x15x32h-swa-6147500-policytune-332.pb.gz
 ARG LC0_URL
 ARG WLW_TRT_URL
@@ -10,7 +10,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       python3.11 python3-pip stockfish curl ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && update-alternatives --install /usr/bin/python python /usr/bin/python3.11 1
 
 # lc0 (TRT build) — baked, not volume-fetched.
 RUN curl -fsSL "${LC0_URL}" -o /tmp/lc0.tar.gz \
