@@ -2,7 +2,7 @@
 Title: run.py — ``wood-league-worker run`` analysis loop command
 Description:
     Drives the long-running analysis loop: prompts for engine selection,
-    batch size, and time limit if those flags were omitted, then attaches
+    max_jobs cap, and time limit if those flags were omitted, then attaches
     the live Rich display callbacks (built in
     :mod:`local_worker.commands._run_callbacks`) to :func:`run_batch`.
 
@@ -12,6 +12,8 @@ Changelog:
         the Halstead-effort gate.
     2026-05-14: Wire RunPod self-stop hook after queue drain (#81).
     2026-05-14: Auto-upload ``worker.log`` at graceful session end (#85).
+    2026-05-16: Replace --batch-size with --max-jobs; one-at-a-time checkout
+        refactor (E-T2).
 """
 from __future__ import annotations
 
@@ -38,18 +40,18 @@ logger = logging.getLogger(__name__)
 
 def _resolve_run_options(
     engine: Optional[str],
-    batch_size: Optional[int],
+    max_jobs: Optional[int],
     batch_time: Optional[int],
-) -> tuple[list[str], int, Optional[int]]:
+) -> tuple[list[str], Optional[int], Optional[int]]:
     """Resolve run command options, prompting interactively if needed.
 
     Args:
         engine: Engine choice from CLI or ``None`` to prompt.
-        batch_size: Batch size from CLI or ``None`` to prompt.
+        max_jobs: Job cap from CLI or ``None`` to prompt.
         batch_time: Batch time in minutes from CLI or ``None`` to prompt.
 
     Returns:
-        Tuple of (engines list, batch_size, batch_time_minutes).
+        Tuple of (engines list, max_jobs, batch_time_minutes).
     """
     if engine is None:
         engine = questionary.select(
@@ -57,13 +59,11 @@ def _resolve_run_options(
             choices=["stockfish", "lc0", "both"],
         ).ask()
 
-    if batch_size is None:
-        batch_size = int(
-            questionary.text(
-                "Batch size (jobs per checkout, 1–10):", default="5"
-            ).ask()
-            or 5
-        )
+    if max_jobs is None:
+        mj_raw = questionary.text(
+            "Max jobs this run? (blank = until queue empty):"
+        ).ask()
+        max_jobs = int(mj_raw) if mj_raw and mj_raw.strip().isdigit() else None
 
     if batch_time is None:
         bt_raw = questionary.text(
@@ -72,7 +72,7 @@ def _resolve_run_options(
         batch_time = int(bt_raw) if bt_raw and bt_raw.strip().isdigit() else None
 
     engines = ["stockfish", "lc0"] if engine == "both" else [engine]
-    return engines, batch_size, batch_time
+    return engines, max_jobs, batch_time
 
 
 def _validate_engine_paths(engines: list[str], settings: Settings) -> None:
@@ -162,7 +162,9 @@ def run(
     engine: Optional[str] = typer.Option(
         None, help="Force engine: stockfish, lc0, or both"
     ),
-    batch_size: Optional[int] = typer.Option(None, help="Jobs per checkout (1–10)"),
+    max_jobs: Optional[int] = typer.Option(
+        None, help="Stop after this many completed jobs (blank = until queue empty)"
+    ),
     batch_time: Optional[int] = typer.Option(
         None, help="Run for this many minutes then stop"
     ),
@@ -173,7 +175,7 @@ def run(
         console.print("[red]Not configured. Run `wood-league-worker setup` first.")
         raise typer.Exit(1)
 
-    engines, batch_size, batch_time = _resolve_run_options(engine, batch_size, batch_time)
+    engines, max_jobs, batch_time = _resolve_run_options(engine, max_jobs, batch_time)
     _validate_engine_paths(engines, settings)
 
     console.rule(f"[bold cyan]Starting worker — engines: {', '.join(engines)}")
@@ -188,7 +190,7 @@ def run(
                 result_stats = run_batch(
                     settings=settings,
                     engines=engines,
-                    batch_size=batch_size,
+                    max_jobs=max_jobs if max_jobs is not None else settings.max_jobs,
                     batch_time_minutes=batch_time,
                     stop_event=stop_event,
                     **callbacks,

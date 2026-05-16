@@ -43,8 +43,8 @@ class Settings:
     syzygy_path: str = ""
     lc0_backend: str = ""
     default_engines: list[str] = field(default_factory=lambda: ["stockfish"])
-    default_batch_size: int = 5
     batch_time_minutes: Optional[int] = None
+    max_jobs: Optional[int] = None
     stockfish_depth: int = 20
     stockfish_threads: int = 4
     stockfish_hash_mb: int = 512
@@ -106,7 +106,6 @@ _INT_ENV_FIELDS: dict[str, str] = {
     "WLW_STOCKFISH_THREADS": "stockfish_threads",
     "WLW_STOCKFISH_HASH_MB": "stockfish_hash_mb",
     "WLW_EVAL_CACHE_MAX_MB": "eval_cache_max_mb",
-    "WLW_DEFAULT_BATCH_SIZE": "default_batch_size",
 }
 
 
@@ -164,6 +163,23 @@ def _apply_optional_int_override(settings: Settings) -> None:
         return
 
 
+def _apply_max_jobs_override(settings: Settings) -> None:
+    """Apply the optional-int ``WLW_MAX_JOBS`` override.
+
+    Blank / non-integer → leave as-is (``None`` default). A parsed value
+    ``< 1`` (e.g. ``0`` or negative) is treated as unset so a degenerate
+    cap can never stop the run before it starts.
+    """
+    raw = os.environ.get("WLW_MAX_JOBS")
+    if not raw:
+        return
+    try:
+        parsed = int(raw)
+    except ValueError:
+        return
+    settings.max_jobs = parsed if parsed >= 1 else None
+
+
 def _apply_bool_overrides(settings: Settings) -> None:
     """Apply all bool-typed ``WLW_*`` overrides to ``settings`` in place."""
     for env_name, field_name in _BOOL_ENV_FIELDS.items():
@@ -198,6 +214,7 @@ def _apply_env_overrides(settings: Settings) -> Settings:
     _apply_string_overrides(settings)
     _apply_int_overrides(settings)
     _apply_optional_int_override(settings)
+    _apply_max_jobs_override(settings)
     _apply_bool_overrides(settings)
     _apply_engines_override(settings)
     return settings
