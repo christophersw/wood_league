@@ -10,7 +10,7 @@
 set -euo pipefail
 
 : "${WL_CAMPAIGN_ID:?WL_CAMPAIGN_ID is required}"
-WL_INSTANCE_ID="${WL_INSTANCE_ID:-$(hostname)-$$}"
+export WL_INSTANCE_ID="${WL_INSTANCE_ID:-$(hostname)-$$}"
 WL_CACHE_CHECKPOINT_MINUTES="${WL_CACHE_CHECKPOINT_MINUTES:-10}"
 export WLW_DATA_DIR="${WLW_DATA_DIR:-/data/wlw}"
 CACHE_DB="${WLW_DATA_DIR}/eval_cache.sqlite"
