@@ -79,7 +79,7 @@ wood-league-worker run [OPTIONS]
 | Option | Description |
 |--------|-------------|
 | `--engine TEXT` | Force engine: `stockfish`, `lc0`, or `both`. Prompts if omitted. |
-| `--batch-size INT` | Jobs to claim per checkout call (1–10). Prompts if omitted. |
+| `--max-jobs INT` | Stop after completing this many jobs; blank/unset = run until the queue is empty. The worker now claims exactly one job per checkout. |
 | `--batch-time INT` | Stop after this many minutes. Runs until queue empty if omitted. |
 
 **Examples:**
@@ -88,11 +88,11 @@ wood-league-worker run [OPTIONS]
 # Interactive — prompts for all options
 wood-league-worker run
 
-# Non-interactive — run Stockfish jobs in batches of 3 for 30 minutes
-wood-league-worker run --engine stockfish --batch-size 3 --batch-time 30
+# Non-interactive — run Stockfish jobs, stop after 3 completed, for 30 minutes max
+wood-league-worker run --engine stockfish --max-jobs 3 --batch-time 30
 
 # Process both engines until the queue is empty
-wood-league-worker run --engine both --batch-size 5
+wood-league-worker run --engine both
 ```
 
 The worker sends a heartbeat to the API every 30 seconds while running. A live display shows the current game, move progress, and per-session statistics.
@@ -143,7 +143,7 @@ Settings are stored as JSON. All fields can also be set by re-running `setup`. T
 | `syzygy_path` | `""` | Path to Syzygy endgame tablebases directory. `setup` offers to download 3-4-5 piece WDL + DTZ files automatically. |
 | `lc0_backend` | `""` | Lc0 backend override (e.g. `cuda`, `opencl`, `cpu`). Auto-detected during setup. |
 | `default_engines` | `["stockfish"]` | Engines to suggest when running interactively |
-| `default_batch_size` | `5` | Default jobs per checkout |
+| `default_max_jobs` | `null` | Default max jobs to complete (`null` = unlimited, drain queue) |
 | `batch_time_minutes` | `null` | Default time limit in minutes (`null` = unlimited) |
 | `stockfish_depth` | `20` | Search depth for Stockfish per move |
 | `stockfish_threads` | `4` | CPU threads for Stockfish (setup auto-suggests based on your CPU) |
