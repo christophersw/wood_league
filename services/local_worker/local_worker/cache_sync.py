@@ -77,3 +77,29 @@ def snapshot_db(src: Path, dst: Path) -> None:
         conn.execute("VACUUM INTO ?", (str(dst),))
     finally:
         conn.close()
+
+
+def pull_canonical(client: object, bucket: str, dest: Path) -> bool:
+    """Download the canonical eval cache to ``dest``. Never raises.
+
+    Fail-soft: any error (missing object, network, auth) logs a warning
+    and returns False so the worker starts with an empty cache and the
+    campaign still runs. A partially written file is removed on failure.
+
+    Args:
+        client: An S3 client exposing ``download_file(bucket, key, dest)``.
+        bucket: Bucket name.
+        dest: Local path to write the canonical cache to.
+
+    Returns:
+        True if the canonical cache was fetched, False otherwise.
+    """
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        client.download_file(bucket, CANONICAL_KEY, str(dest))
+        return True
+    except Exception as exc:  # noqa: BLE001 — fail-soft is the contract
+        log.warning("cache_sync: canonical pull failed (%s); starting empty", exc)
+        if dest.exists():
+            dest.unlink(missing_ok=True)
+        return False

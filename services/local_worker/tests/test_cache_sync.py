@@ -65,3 +65,32 @@ def test_make_s3_client_uses_railway_env(monkeypatch):
     assert captured["kwargs"]["region_name"] == "us-east-1"
     assert captured["kwargs"]["aws_access_key_id"] == "AK"
     assert captured["kwargs"]["aws_secret_access_key"] == "SK"
+
+
+class _FakeClient:
+    def __init__(self, *, raise_on_download=False):
+        self.raise_on_download = raise_on_download
+        self.downloaded = None
+
+    def download_file(self, bucket, key, dest):
+        if self.raise_on_download:
+            raise RuntimeError("no such key")
+        self.downloaded = (bucket, key, dest)
+        Path(dest).write_bytes(b"SQLITE-BYTES")
+
+
+def test_pull_canonical_writes_file_on_success(tmp_path):
+    client = _FakeClient()
+    dest = tmp_path / "eval_cache.sqlite"
+    ok = cs.pull_canonical(client, "wl-bucket", dest)
+    assert ok is True
+    assert dest.read_bytes() == b"SQLITE-BYTES"
+    assert client.downloaded == ("wl-bucket", cs.CANONICAL_KEY, str(dest))
+
+
+def test_pull_canonical_failsoft_on_missing(tmp_path):
+    client = _FakeClient(raise_on_download=True)
+    dest = tmp_path / "eval_cache.sqlite"
+    ok = cs.pull_canonical(client, "wl-bucket", dest)
+    assert ok is False           # never raises
+    assert not dest.exists()     # no partial file left behind
