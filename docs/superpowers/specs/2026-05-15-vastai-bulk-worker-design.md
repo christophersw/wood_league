@@ -3,6 +3,10 @@
 - **Date:** 2026-05-15
 - **Component:** `services/local_worker`, deployment/provisioning
 - **Status:** Draft (brainstorming) — pending spec review
+- **Changelog:** 2026-05-15 initial draft (A+B+E). 2026-05-15 revised to
+  concurrent dual-engine single-instance execution (was a sequential
+  one-engine-at-a-time assumption); added CPU-budget, shared-WAL-cache,
+  and RAM caveats.
 - **Scope:** Sub-projects **A+B** (run the existing pull worker on vast.ai for
   bulk analysis + a no-region-volume asset/cache strategy) **plus E**
   (`--max-jobs` run cap), pulled in from deferred as an in-scope prerequisite.
@@ -38,6 +42,9 @@ to make bounded, self-terminating runs the default operating model.
    (works identically for a 10-game micro batch and a 100k-game campaign).
 4. No correctness regression: the existing `eval_cache` and worker-loop
    test suites remain the backstop.
+5. Fully utilise the paid GPU instance: run lc0 (GPU) and Stockfish (CPU)
+   **concurrently** in one instance so the GPU is never idle behind a
+   Stockfish phase.
 
 ## Non-goals
 
@@ -94,15 +101,43 @@ parts this spec depends on:
   alias) per that spec; worker version bump and RunPod-script edits are
   owned by that spec's change set.
 
-**Bounded run becomes the default operating model on vast.** Every
-instance is "pull N jobs one-at-a-time, analyse, submit per job, exit."
+**Bounded run becomes the default operating model on vast.** Each engine
+process is "pull N jobs one-at-a-time, analyse, submit per job, exit."
+
+### Concurrent dual-engine execution (one instance, both engines)
+
+`run_batch` drains engines **sequentially** within a single process
+(`for engine in engines: _drain_engine_queue(engine)` —
+`services/local_worker/local_worker/loop.py:478-481`). On a GPU instance
+that idles the (paid) GPU for the entire Stockfish phase. This spec
+therefore runs the two engines as **two concurrent worker processes in
+the same container**, not as one process with two engines:
+
+- The entrypoint launches `worker … --engines lc0` (GPU-bound, TRT
+  backend) **and** `worker … --engines stockfish` (CPU-bound) in
+  parallel. **No `loop.py` change is required** — concurrency is process
+  orchestration that sidesteps the sequential engine loop entirely.
+- Both processes share the one `<user-data-dir>/eval_cache.sqlite`. This
+  is explicitly supported: the cache is WAL-mode SQLite with a
+  per-process connection — its own docstring states it is built so
+  *"concurrent worker processes (if ever introduced) can coexist"*.
+  Cross-engine key isolation is already built in (lc0 keys use the
+  network name; Stockfish keys are `sf:`-prefixed), so the two streams
+  cannot collide in the shared cache.
+- Each process gets its **own** `WLW_MAX_JOBS`, making the cap
+  unambiguous (one engine = one job stream) — this removes the
+  cross-engine cap ambiguity a single both-engines process would have.
+- **CPU thread budgeting:** lc0 search threads and Stockfish `Threads`
+  are co-tuned from the existing `detector` / `lc0_tuning` /
+  `suggest_stockfish_settings` bounds so the two do not oversubscribe the
+  instance vCPUs. Explicit splits are set in the launch config.
 
 **Games vs jobs:** the operator-facing knob is the worker's existing
-`WLW_MAX_JOBS` (a *job* count), passed straight through by the entrypoint —
-no separate "games" unit is introduced. With both engines enabled a game
-produces ≈ 2 jobs (one lc0 + one Stockfish); this 2× relationship is
-documented at the launch surface. (Open item O1 if a true games-unit knob
-is later wanted.)
+`WLW_MAX_JOBS` (a *job* count), set per engine process — no separate
+"games" unit is introduced. A game produces ≈ 2 jobs (one lc0 + one
+Stockfish), now processed *concurrently* across the two engine processes;
+the launch surface documents the relationship. (Open item O1 if a true
+games-unit knob is later wanted.)
 
 ### Eval cache lifecycle
 
@@ -170,6 +205,11 @@ vastai create instance <offer-id> \
   --onstart <entrypoint> --ssh
 ```
 
+The entrypoint passes `WLW_MAX_JOBS` to **both** engine processes (same
+value by default; optional per-engine override env if a campaign wants
+asymmetric caps). Offer selection filters on a minimum vCPU count (for
+the CPU thread split) and minimum RAM (O5).
+
 vast SSH requires the account pubkey (`vastai create/attach ssh-key`); the
 private registry requires vast registry credentials configured once.
 
@@ -178,7 +218,7 @@ private registry requires vast registry credentials configured once.
 | # | Component | Responsibility | Depends on |
 |---|---|---|---|
 | C1 | Baked private image (Dockerfile + build) | Ship all stable assets + worker | #119/#122/#123 build, private registry |
-| C2 | `--onstart` entrypoint | pull cache → export `WLW_*` → start worker; SIGTERM trap; final export on exit | C3, C4 |
+| C2 | `--onstart` entrypoint | pull cache → export `WLW_*` → launch lc0 + Stockfish worker processes concurrently → wait for **both** → single final export; SIGTERM trap | C3, C4 |
 | C3 | Boot-time-pull (fail-soft) | Fetch canonical cache; degrade to empty | bucket creds |
 | C4 | Checkpoint export | `VACUUM INTO` snapshot; periodic + on-exit upload to per-instance key | bucket creds |
 | C5 | Offline merge job (server-side, manual) | Union deltas → prune → vacuum → publish canonical | bucket creds |
@@ -189,12 +229,19 @@ private registry requires vast registry credentials configured once.
 ```
 build: assets + worker  ──▶  private image  ──▶  registry
 boot:  pull canonical eval cache (fail-soft, unless WL_SKIP_CACHE_PULL)
-       └▶ export WLW_*  └▶ start worker
-run:   WorkerClient.checkout(count=1) loop
-       └▶ analyse  └▶ eval_cache.get/put  └▶ submit per job
-       every WL_CACHE_CHECKPOINT_MINUTES: VACUUM INTO snapshot ─▶ upload own delta
-exit (max_jobs | queue empty | batch-time | SIGTERM):
-       final VACUUM INTO snapshot ─▶ upload own delta ─▶ process exits
+       └▶ export WLW_*
+       └▶ entrypoint launches 2 concurrent worker processes:
+            • worker --engines lc0        (GPU, TRT)
+            • worker --engines stockfish  (CPU)
+run:   each process: checkout(count=1) ─▶ analyse ─▶ eval_cache.get/put
+       (shared WAL eval_cache.sqlite, sf: vs network key isolation)
+       ─▶ submit per job
+       every WL_CACHE_CHECKPOINT_MINUTES: entrypoint VACUUM INTO snapshot
+       ─▶ upload own delta
+each process exits independently (its WLW_MAX_JOBS | queue empty |
+       batch-time | SIGTERM)
+entrypoint waits for BOTH ─▶ final VACUUM INTO snapshot ─▶ upload delta
+       ─▶ instance done
 between campaigns (manual, server-side):
        download all deltas ─▶ INSERT OR REPLACE into canonical
        ─▶ prune(max_bytes) ─▶ VACUUM ─▶ publish new canonical
@@ -213,6 +260,15 @@ between campaigns (manual, server-side):
   simply is not advanced this cycle.
 - **Bad/zero `WLW_MAX_JOBS`:** per E's spec, `< 1` is treated as unset
   (drain until queue empty); `--batch-time` ceiling still bounds the run.
+- **Concurrent cache writers:** the lc0 and Stockfish processes share the
+  WAL DB; WAL serialises writers. `prune()`'s `VACUUM` takes a brief
+  exclusive lock, transiently stalling the other process (acceptable).
+  The `_init_schema` corrupt-DB drop-and-recreate is unsafe if one
+  process unlinks the file while the other holds it open — guarded per
+  open item **O4**.
+- **One engine process crashes:** the other continues; the entrypoint
+  still waits for both to terminate before the final export, so a
+  crashed engine does not strand the surviving engine's cache delta.
 
 ## Testing
 
@@ -228,6 +284,12 @@ between campaigns (manual, server-side):
 - **Adopted from E's spec:** one-at-a-time checkout; warm lc0 engine
   launched once across N single-job claims; `WLW_MAX_JOBS` cap stops the
   run; blank = drain; count/time cap interaction.
+- **Concurrency:** two worker processes (`--engines lc0` and
+  `--engines stockfish`) against one shared WAL `eval_cache.sqlite` —
+  no corruption, no cross-engine key collision, both deltas present;
+  `prune()`/`VACUUM` under one process does not corrupt or crash the
+  other; entrypoint waits for both before the final export (including
+  the one-engine-crashes case).
 - Existing `eval_cache` and `loop` suites remain the correctness backstop.
 
 ## Risks
@@ -247,13 +309,31 @@ between campaigns (manual, server-side):
   loss for long runs.
 - **E coupling:** this spec is inert until E's worker-loop change lands.
   Sequencing below makes E a prerequisite, not a parallel track.
+- **CPU oversubscription:** if lc0 search threads + Stockfish `Threads`
+  exceed the instance vCPUs, both engines slow down and the GPU-idle win
+  is partly lost. Mitigation: explicit thread splits in the launch
+  config, derived from `detector` / `lc0_tuning` /
+  `suggest_stockfish_settings` bounds; validated against a real L40S
+  offer's vCPU count before a campaign.
+- **Two-writer corrupt path:** concurrent processes plus the
+  `_init_schema` unlink-and-recreate branch could let one process delete
+  the DB out from under the other. Low probability (only on a detected
+  corrupt DB) but real; O4 pins the guard (e.g. recreate under a lock /
+  single owner of the corrupt-recovery path).
+- **Instance RAM:** two engines + NN + Syzygy resident concurrently.
+  Mitigation: a minimum-RAM filter on the vast offer selection (exact
+  floor fixed in the implementation plan — O5).
 
 ## Acceptance
 
 - A vast instance launched from the private image runs bulk analysis with
   zero per-boot provisioning download of binaries/weights/Syzygy.
-- `WLW_MAX_JOBS=N` causes the instance to analyse N jobs and exit; the exit
-  path uploads the instance's cache delta without operator action.
+- The lc0 and Stockfish engines run **concurrently** in one instance; the
+  GPU is not idle behind a Stockfish phase (verified by overlapping
+  engine activity in logs/metrics).
+- Each engine process honours its own `WLW_MAX_JOBS=N` and exits; the
+  entrypoint waits for both, then uploads the single cache delta without
+  operator action.
 - A missing/failed canonical fetch does not prevent the run.
 - After a manual merge of per-instance deltas, the canonical grows and a
   subsequent boot shows a non-zero cache hit rate.
@@ -272,6 +352,13 @@ between campaigns (manual, server-side):
 - **O3 — canonical bucket path/credentials:** exact Railway bucket name and
   credential delivery (env vs mounted) to be fixed in the implementation
   plan.
+- **O4 — concurrent-cache corrupt-path guard:** decide the mechanism that
+  makes `_init_schema`'s corrupt-DB drop-and-recreate safe when two engine
+  processes share the file (e.g. advisory lock, or a single owner of the
+  recovery path). Fixed in the implementation plan.
+- **O5 — minimum-RAM offer filter:** the concrete RAM floor (two engines +
+  NN + Syzygy resident) used to filter vast offers, fixed in the
+  implementation plan.
 
 ## Dependencies & sequencing
 
