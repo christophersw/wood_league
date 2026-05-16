@@ -28,6 +28,6 @@ jobs:
           push: true
           tags: ghcr.io/${{ github.repository }}/vast-worker:${{ github.event.inputs.worker_version || github.ref_name }}
           build-args: |
-            WORKER_VERSION=${{ github.event.inputs.worker_version || '0.9.10' }}
+            WORKER_VERSION=${{ github.event.inputs.worker_version || '0.9.11' }}
             LC0_URL=${{ secrets.LC0_TRT_TARBALL_URL }}
             WLW_TRT_URL=${{ secrets.WLW_TRT_URL }}
