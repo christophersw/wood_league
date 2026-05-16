@@ -71,7 +71,9 @@ if [ ! -x "${LC0_BIN}" ]; then
     if [ -s "${LC0_TARBALL}.sha256" ]; then
         sha256sum -c "${LC0_TARBALL}.sha256" || { log "FATAL: lc0 sha256 mismatch"; exit 1; }
     fi
-    tar -xzf "${LC0_TARBALL}" -C "${LC0_DIR}"
+    # --no-same-owner: the tarball records the CI runner's uid/gid; as root
+    # GNU tar would chown to it, which the RunPod network volume rejects.
+    tar --no-same-owner -xzf "${LC0_TARBALL}" -C "${LC0_DIR}"
     chmod 0755 "${LC0_BIN}"
     cd /; rm -rf "${tmpdir}"
     log "lc0 installed at ${LC0_BIN}"
@@ -80,8 +82,19 @@ else
 fi
 export WLW_LC0_PATH="${LC0_BIN}"
 TRT_DIR="/workspace/trt"
+
+# NVIDIA's TensorRT Linux tarball puts the .so under
+# targets/x86_64-linux-gnu/lib (older packages used a top-level lib/).
+# Resolve whichever actually holds libnvinfer.so.10 instead of assuming.
+_resolve_trt_libdir() {
+    local so
+    so="$(find "${TRT_DIR}" -maxdepth 4 -name 'libnvinfer.so.10' -print -quit 2>/dev/null || true)"
+    [ -n "${so}" ] && dirname "${so}"
+}
+
 if [ "${LC0_VARIANT}" = "trt" ]; then
-    if [ ! -d "${TRT_DIR}/lib" ]; then
+    # ---- TensorRT (NVIDIA-licensed, operator-supplied; not redistributed) --
+    if [ -z "$(_resolve_trt_libdir || true)" ]; then
         log "fetching NVIDIA TensorRT ${TRT_VERSION} to ${TRT_DIR}"
         mkdir -p "${TRT_DIR}"
         trt_tmp="$(mktemp -d)"; cd "${trt_tmp}"
@@ -89,14 +102,34 @@ if [ "${LC0_VARIANT}" = "trt" ]; then
         # RunPod image ships. WLW_TRT_URL overrides for mirror/air-gapped.
         : "${WLW_TRT_URL:?set WLW_TRT_URL to the NVIDIA TensorRT ${TRT_VERSION} linux tarball URL}"
         curl -fL --retry 5 --retry-delay 10 -o trt.tar.gz "${WLW_TRT_URL}"
-        tar -xzf trt.tar.gz --strip-components=1 -C "${TRT_DIR}"
-        test -d "${TRT_DIR}/lib" || { log "FATAL: TensorRT lib/ missing after extract"; exit 1; }
+        tar --no-same-owner -xzf trt.tar.gz --strip-components=1 -C "${TRT_DIR}"
         cd /; rm -rf "${trt_tmp}"
-        log "TensorRT ready at ${TRT_DIR}"
     else
         log "TensorRT already present at ${TRT_DIR} — skipping"
     fi
-    export LD_LIBRARY_PATH="${LC0_DIR}/lib:${TRT_DIR}/lib:${LD_LIBRARY_PATH:-}"
+    TRT_LIB="$(_resolve_trt_libdir || true)"
+    [ -n "${TRT_LIB}" ] || { log "FATAL: libnvinfer.so.10 not found under ${TRT_DIR} after extract"; exit 1; }
+    log "TensorRT libs at ${TRT_LIB}"
+
+    # ---- cuDNN 9: a hard runtime dependency of onnxruntime-gpu's TensorRT
+    # execution provider, absent from the stock cuda:*-runtime image. Install
+    # the runtime lib once (idempotent — container fs is ephemeral, so this
+    # re-runs each cold start like the apt prereqs above). ---------------
+    if ! ldconfig -p 2>/dev/null | grep -q 'libcudnn\.so\.9'; then
+        log "installing cuDNN 9 (libcudnn9-cuda-12) for onnx-trt"
+        ckr_tmp="$(mktemp -d)"
+        curl -fsSL -o "${ckr_tmp}/cuda-keyring.deb" \
+            https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
+        dpkg -i "${ckr_tmp}/cuda-keyring.deb"
+        apt-get update
+        apt-get install -y --no-install-recommends libcudnn9-cuda-12
+        apt-get clean; rm -rf /var/lib/apt/lists/* "${ckr_tmp}"
+        ldconfig
+    else
+        log "cuDNN 9 already present — skipping"
+    fi
+
+    export LD_LIBRARY_PATH="${LC0_DIR}/lib:${TRT_LIB}:${LD_LIBRARY_PATH:-}"
 fi
 
 # ---- 3. wood-league-worker from PyPI ----------------------------------

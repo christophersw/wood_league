@@ -11,7 +11,11 @@ name: Build lc0 binary
 #                                  TRT_VERSION / WLW_TRT_URL).
 # The trt variant requires g++-13 (lc0 0.32 network_onnx.cc uses std::format).
 # Verify gate observed (no GPU on CI): "The ONNX backend requires a network
-# file." — classified as expected GPU/net-absence; build is correct.
+# file." — classified as expected GPU/net-absence.
+# CUDA arch: built with -Dnative_cuda=false -Dnative_arch=false so nvcc emits
+# a portable -arch=all-major fat binary (issue #122). native_* defaults key
+# off the GPU-less build host and produced an sm_50-only binary that ran
+# ~20x slow on the L4. Runtime perf is validated on the L4, not in CI.
 
 on:
   workflow_dispatch:
@@ -90,16 +94,32 @@ jobs:
         run: |
           set -euo pipefail
           cd lc0-src
+          # native_cuda/native_arch are lc0 defaults that key off the BUILD
+          # host. CI runners have no GPU, so -arch=native falls back to the
+          # oldest CUDA arch (sm_50) — the binary then has no Ada (sm_89)
+          # SASS and runs ~20x slow on the L4 (issue #122). Force lc0's
+          # portable-release flags: -arch=all-major fat CUDA binary +
+          # no host -march=native. Applies to BOTH variants.
+          PORTABLE_ARCH="-Dnative_cuda=false -Dnative_arch=false"
           if [ "${{ inputs.variant }}" = "trt" ]; then
+            # trt is built with g++-13 (lc0 0.32 network_onnx.cc needs
+            # std::format). The RunPod stock cuda:*-runtime-ubuntu22.04
+            # image ships only Ubuntu 22.04 libstdc++ (no GLIBCXX_3.4.31),
+            # so statically link the C++/GCC runtime into the binary —
+            # keeps the published artifact self-contained, no pod-side
+            # libstdc++ provisioning. (cuda-fp16 uses system g++-11 and
+            # needs no static link.)
+            LDFLAGS="-static-libstdc++ -static-libgcc ${LDFLAGS:-}" \
             CC=gcc-13 CXX=g++-13 ./build.sh release \
               -Dgtest=false \
               -Donnx=true \
               -Donnx_libdir="${ORT_DIR}/lib" \
               -Donnx_include="${ORT_DIR}/include" \
               -Ddefault_backend=onnx-trt \
-              -Dnvcc_ccbin=g++-13
+              -Dnvcc_ccbin=g++-13 \
+              ${PORTABLE_ARCH}
           else
-            CC=gcc CXX=g++ ./build.sh release -Dgtest=false
+            CC=gcc CXX=g++ ./build.sh release -Dgtest=false ${PORTABLE_ARCH}
           fi
           test -x build/release/lc0
 
@@ -113,6 +133,16 @@ jobs:
           # Do NOT dlopen it here: it needs libnvinfer (NVIDIA TensorRT),
           # which is deliberately absent on CI (split-sourcing). Assert
           # presence + that it is a valid ELF shared object instead.
+          # The RunPod cuda:*-runtime-ubuntu22.04 image's libstdc++ tops out
+          # at GLIBCXX_3.4.30. The g++-13 build must be statically linked so
+          # the binary needs no newer symbol. Fail the build if it does.
+          NEWER_GLIBCXX="$(objdump -T ./build/release/lc0 2>/dev/null \
+            | grep -oE 'GLIBCXX_3\.4\.3[1-9]' | sort -u || true)"
+          if [ -n "${NEWER_GLIBCXX}" ]; then
+            echo "FATAL: lc0 requires ${NEWER_GLIBCXX} — static libstdc++ link failed; would not run on the RunPod runtime image"
+            exit 1
+          fi
+          echo "OK: no GLIBCXX_3.4.31+ requirement (static libstdc++ link held)"
           TRT_SO="${ORT_DIR}/lib/libonnxruntime_providers_tensorrt.so"
           test -f "${TRT_SO}" || { echo "FATAL: ${TRT_SO} missing from onnxruntime-gpu package"; exit 1; }
           file "${TRT_SO}" | grep -qi "ELF .*shared object" \
