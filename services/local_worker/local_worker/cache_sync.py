@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 import os
 import sqlite3
+from typing import Any
 
 import boto3
 from pathlib import Path
@@ -79,7 +80,7 @@ def snapshot_db(src: Path, dst: Path) -> None:
         conn.close()
 
 
-def pull_canonical(client: object, bucket: str, dest: Path) -> bool:
+def pull_canonical(client: Any, bucket: str, dest: Path) -> bool:
     """Download the canonical eval cache to ``dest``. Never raises.
 
     Fail-soft: any error (missing object, network, auth) logs a warning
