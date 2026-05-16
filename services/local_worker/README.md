@@ -143,7 +143,7 @@ Settings are stored as JSON. All fields can also be set by re-running `setup`. T
 | `syzygy_path` | `""` | Path to Syzygy endgame tablebases directory. `setup` offers to download 3-4-5 piece WDL + DTZ files automatically. |
 | `lc0_backend` | `""` | Lc0 backend override (e.g. `cuda`, `opencl`, `cpu`). Auto-detected during setup. |
 | `default_engines` | `["stockfish"]` | Engines to suggest when running interactively |
-| `default_max_jobs` | `null` | Default max jobs to complete (`null` = unlimited, drain queue) |
+| `max_jobs` | `null` | Default max jobs to complete (`null` = unlimited, drain queue) |
 | `batch_time_minutes` | `null` | Default time limit in minutes (`null` = unlimited) |
 | `stockfish_depth` | `20` | Search depth for Stockfish per move |
 | `stockfish_threads` | `4` | CPU threads for Stockfish (setup auto-suggests based on your CPU) |
