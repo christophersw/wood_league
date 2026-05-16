@@ -36,7 +36,6 @@ _WLW_ENV_VARS = (
     "WLW_STOCKFISH_THREADS",
     "WLW_STOCKFISH_HASH_MB",
     "WLW_EVAL_CACHE_MAX_MB",
-    "WLW_DEFAULT_BATCH_SIZE",
     "WLW_BATCH_TIME_MINUTES",
     "WLW_MAX_JOBS",
     "WLW_EVAL_CACHE_ENABLED",
@@ -183,3 +182,15 @@ def test_wlw_max_jobs_lt_one_is_none(monkeypatch: pytest.MonkeyPatch, tmp_path: 
 def test_default_max_jobs_is_none(tmp_path: Path) -> None:
     """``max_jobs`` must default to None."""
     assert load_settings(tmp_path / "settings.json").max_jobs is None
+
+
+def test_default_batch_size_field_removed() -> None:
+    """``default_batch_size`` field must be removed from Settings dataclass."""
+    from local_worker.config import Settings
+    assert "default_batch_size" not in Settings.__dataclass_fields__
+
+
+def test_wlw_default_batch_size_no_longer_mapped() -> None:
+    """``WLW_DEFAULT_BATCH_SIZE`` must no longer be in _INT_ENV_FIELDS mapping."""
+    import local_worker.config as cfg
+    assert "WLW_DEFAULT_BATCH_SIZE" not in cfg._INT_ENV_FIELDS

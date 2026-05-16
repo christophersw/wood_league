@@ -18,7 +18,6 @@ def test_defaults_strings_are_empty(tmp_path):
 
 def test_defaults_numeric_values(tmp_path):
     s = load_settings(tmp_path / "settings.json")
-    assert s.default_batch_size == 5
     assert s.stockfish_depth == 20
     assert s.stockfish_threads == 4
     assert s.stockfish_hash_mb == 512

@@ -43,7 +43,6 @@ class Settings:
     syzygy_path: str = ""
     lc0_backend: str = ""
     default_engines: list[str] = field(default_factory=lambda: ["stockfish"])
-    default_batch_size: int = 5
     batch_time_minutes: Optional[int] = None
     max_jobs: Optional[int] = None
     stockfish_depth: int = 20
@@ -107,7 +106,6 @@ _INT_ENV_FIELDS: dict[str, str] = {
     "WLW_STOCKFISH_THREADS": "stockfish_threads",
     "WLW_STOCKFISH_HASH_MB": "stockfish_hash_mb",
     "WLW_EVAL_CACHE_MAX_MB": "eval_cache_max_mb",
-    "WLW_DEFAULT_BATCH_SIZE": "default_batch_size",
 }
 
 
