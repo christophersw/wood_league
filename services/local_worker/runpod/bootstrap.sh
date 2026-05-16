@@ -158,7 +158,7 @@ export WLW_LOG_DIR=/workspace/logs
 # engine drains its queue first must NOT kill the pod while the other is
 # still working. The bootstrap script issues the single stop call below
 # after both processes have exited.
-log "launching parallel engines: stockfish + lc0 (batch-size=10 each)"
+log "launching parallel engines: stockfish + lc0"
 
 # --telemetry is the app-level Typer flag that opts in to log uploads
 # without prompting. Required on a headless pod because the interactive
@@ -169,11 +169,11 @@ log "launching parallel engines: stockfish + lc0 (batch-size=10 each)"
 # The worker still exits early via the queue-empty path; this is just
 # the absolute upper bound.
 WLW_WORKER_ID=runpod-stockfish WLW_RUNPOD_SELF_STOP=0 \
-    wood-league-worker --telemetry run --engine stockfish --batch-size 10 --batch-time 1440 &
+    wood-league-worker --telemetry run --engine stockfish --batch-time 1440 &
 sf_pid=$!
 
 WLW_WORKER_ID=runpod-lc0 WLW_RUNPOD_SELF_STOP=0 \
-    wood-league-worker --telemetry run --engine lc0 --batch-size 10 --batch-time 1440 &
+    wood-league-worker --telemetry run --engine lc0 --batch-time 1440 &
 lc_pid=$!
 
 log "stockfish pid=${sf_pid}  lc0 pid=${lc_pid} — waiting for both to drain"
