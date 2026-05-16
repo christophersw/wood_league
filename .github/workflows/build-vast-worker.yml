@@ -1,0 +1,33 @@
+name: build-vast-worker
+on:
+  push:
+    tags: ["vast-worker-v*"]
+  workflow_dispatch:
+    inputs:
+      worker_version:
+        description: "wood-league-worker PyPI version to bake"
+        required: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: services/local_worker
+          file: services/local_worker/vast/Dockerfile
+          push: true
+          tags: ghcr.io/${{ github.repository }}/vast-worker:${{ github.event.inputs.worker_version || github.ref_name }}
+          build-args: |
+            WORKER_VERSION=${{ github.event.inputs.worker_version || '0.9.7' }}
+            LC0_URL=${{ secrets.LC0_TRT_TARBALL_URL }}
+            WLW_TRT_URL=${{ secrets.WLW_TRT_URL }}
