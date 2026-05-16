@@ -24,7 +24,7 @@ from local_worker.config import Settings
 
 def _settings(**overrides: Any) -> Settings:
     """Build a ``Settings`` instance with self-stop-relevant defaults filled in."""
-    base = dict(
+    base: dict[str, Any] = dict(
         runpod_self_stop_enabled=False,
         runpod_api_key="",
         runpod_pod_id="",
@@ -36,10 +36,15 @@ def _settings(**overrides: Any) -> Settings:
 def test_maybe_stop_runpod_noop_when_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
     """With the flag off, ``stop_self`` must not be called."""
     calls: list[tuple[str, str]] = []
+
+    def _record_stop_call(pod_id: str, api_key: str) -> bool:
+        calls.append((pod_id, api_key))
+        return True
+
     monkeypatch.setattr(
         run_cmd,
         "stop_self",
-        lambda pod_id, api_key: calls.append((pod_id, api_key)) or True,
+        _record_stop_call,
     )
 
     run_cmd._maybe_stop_runpod(
@@ -54,10 +59,15 @@ def test_maybe_stop_runpod_calls_stop_with_resolved_pod_id(
 ) -> None:
     """Enabled + creds present → exactly one ``stop_self`` call with the pod id."""
     calls: list[tuple[str, str]] = []
+
+    def _record_stop_call(pod_id: str, api_key: str) -> bool:
+        calls.append((pod_id, api_key))
+        return True
+
     monkeypatch.setattr(
         run_cmd,
         "stop_self",
-        lambda pod_id, api_key: calls.append((pod_id, api_key)) or True,
+        _record_stop_call,
     )
 
     run_cmd._maybe_stop_runpod(
@@ -77,10 +87,15 @@ def test_maybe_stop_runpod_resolves_pod_id_from_env(
     """When no explicit pod id is set, the ``RUNPOD_POD_ID`` env var is used."""
     monkeypatch.setenv("RUNPOD_POD_ID", "pod-from-env")
     calls: list[tuple[str, str]] = []
+
+    def _record_stop_call(pod_id: str, api_key: str) -> bool:
+        calls.append((pod_id, api_key))
+        return True
+
     monkeypatch.setattr(
         run_cmd,
         "stop_self",
-        lambda pod_id, api_key: calls.append((pod_id, api_key)) or True,
+        _record_stop_call,
     )
 
     run_cmd._maybe_stop_runpod(
