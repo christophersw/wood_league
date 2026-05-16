@@ -12,10 +12,50 @@ Changelog:
 from __future__ import annotations
 
 import logging
+import os
 import sqlite3
+
+import boto3
 from pathlib import Path
 
 log = logging.getLogger(__name__)
+
+CANONICAL_KEY = "eval_cache/canonical.sqlite"
+
+
+def checkpoint_key(campaign_id: str, instance_id: str) -> str:
+    """Return the per-campaign/per-instance object key for a cache delta.
+
+    Args:
+        campaign_id: Logical campaign identifier (``WL_CAMPAIGN_ID``).
+        instance_id: Stable per-instance identifier (``WL_INSTANCE_ID``).
+
+    Returns:
+        Object key, e.g. ``eval_cache/checkpoints/<campaign>/<instance>.sqlite``.
+    """
+    return f"eval_cache/checkpoints/{campaign_id}/{instance_id}.sqlite"
+
+
+def make_s3_client() -> tuple[object, str]:
+    """Build an S3 client for the Railway-compatible bucket from env.
+
+    Mirrors ``services/app/api/log_storage.py`` but reads ``os.environ``
+    directly (the worker is a standalone package and cannot import the
+    Django app). Env vars: ``RAILWAY_BUCKET_NAME``, ``ENDPOINT``,
+    ``REGION`` (default ``us-east-1``), ``ACCESS_KEY_ID``,
+    ``SECRET_ACCESS_KEY``.
+
+    Returns:
+        ``(client, bucket_name)``.
+    """
+    client = boto3.client(
+        "s3",
+        endpoint_url=os.environ.get("ENDPOINT") or None,
+        region_name=os.environ.get("REGION", "us-east-1"),
+        aws_access_key_id=os.environ.get("ACCESS_KEY_ID"),
+        aws_secret_access_key=os.environ.get("SECRET_ACCESS_KEY"),
+    )
+    return client, os.environ.get("RAILWAY_BUCKET_NAME", "")
 
 
 def snapshot_db(src: Path, dst: Path) -> None:
