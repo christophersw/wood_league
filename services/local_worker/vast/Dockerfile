@@ -2,7 +2,7 @@
 # (TensorRT operator tarball is baked; keep registry private).
 FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
 
-ARG WORKER_VERSION=0.9.9
+ARG WORKER_VERSION=0.9.10
 ARG BT4_URL=https://storage.lczero.org/files/networks-contrib/BT4-1024x15x32h-swa-6147500-policytune-332.pb.gz
 ARG LC0_URL
 ARG WLW_TRT_URL
@@ -42,7 +42,7 @@ ENV WLW_LC0_PATH=/opt/lc0/lc0 \
     WLW_LC0_WEIGHTS_PATH=/opt/weights/BT4.pb.gz \
     WLW_SYZYGY_PATH=/opt/syzygy \
     WLW_STOCKFISH_PATH=/usr/games/stockfish \
-    WLW_LC0_BACKEND=trt \
+    WLW_LC0_BACKEND=onnx-trt \
     LD_LIBRARY_PATH=/opt/trt/lib:${LD_LIBRARY_PATH:-} \
     WLW_DATA_DIR=/data/wlw
 

@@ -40,9 +40,15 @@ vastai create instance <offer-id> \
 ```
 
 > `WLW_API_URL` / `WLW_API_KEY` (and the bucket creds) are stable across
-> campaigns — store them as **vast account environment variables** so they
-> auto-inject into every instance and never touch the command line. Only
-> per-run values (`WL_CAMPAIGN_ID`, `WLW_MAX_JOBS`) then need `-e`.
+> campaigns. **Bake them into the vast Template's `env` field**
+> (`vastai update template <hash> --env '-e WLW_API_URL=… …'`) — that is
+> the *only* account-stored mechanism that actually reaches the
+> container. Vast.ai account "env vars / secrets" do **not** auto-inject
+> into instances (verified the hard way). Template `env` merges with the
+> launch `--env`, so only per-run values (`WL_CAMPAIGN_ID`,
+> `WLW_MAX_JOBS`) need `-e` at launch. Note: an interactive `ssh` session
+> will *not* show these (SSH gets a fresh shell, not the entrypoint env);
+> check `vastai logs`, not `env`, to confirm the worker got them.
 
 ### Micro batch (e.g. 20 jobs)
 
