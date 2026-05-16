@@ -94,3 +94,37 @@ def test_pull_canonical_failsoft_on_missing(tmp_path):
     ok = cs.pull_canonical(client, "wl-bucket", dest)
     assert ok is False           # never raises
     assert not dest.exists()     # no partial file left behind
+
+
+class _UploadClient:
+    def __init__(self):
+        self.uploaded = None
+
+    def upload_file(self, src, bucket, key):
+        # Simulate S3 upload by copying the file before it's deleted
+        import shutil
+        preserved = Path(src).parent / f".uploaded_{Path(src).name}"
+        shutil.copy(src, preserved)
+        self.uploaded = (str(preserved), bucket, key)
+
+
+def test_upload_delta_snapshots_then_uploads(tmp_path):
+    live = tmp_path / "eval_cache.sqlite"
+    conn = sqlite3.connect(live)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("CREATE TABLE t (k INTEGER PRIMARY KEY)")
+    conn.execute("INSERT INTO t VALUES (1)")
+    conn.commit()  # leave open (running worker)
+
+    client = _UploadClient()
+    cs.upload_delta(client, "wl-bucket", live, "camp-1", "inst-9", tmp_path)
+
+    src, bucket, key = client.uploaded
+    assert bucket == "wl-bucket"
+    assert key == "eval_cache/checkpoints/camp-1/inst-9.sqlite"
+    # uploaded artifact is a valid, separate snapshot, not the live file
+    assert src != str(live)
+    snap = sqlite3.connect(src)
+    assert snap.execute("SELECT k FROM t").fetchall() == [(1,)]
+    snap.close()
+    conn.close()

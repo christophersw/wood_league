@@ -104,3 +104,40 @@ def pull_canonical(client: Any, bucket: str, dest: Path) -> bool:
         if dest.exists():
             dest.unlink(missing_ok=True)
         return False
+
+
+def upload_delta(
+    client: Any,
+    bucket: str,
+    live_db: Path,
+    campaign_id: str,
+    instance_id: str,
+    work_dir: Path,
+) -> None:
+    """Snapshot the live cache and upload it as this instance's delta.
+
+    A WAL-safe snapshot is taken first (the worker keeps the DB open),
+    then uploaded under the per-campaign/per-instance key, overwriting
+    only this instance's own object. Errors are logged, not raised — a
+    failed checkpoint must never interrupt analysis.
+
+    Args:
+        client: S3 client exposing ``upload_file(src, bucket, key)``.
+        bucket: Bucket name.
+        live_db: Path to the live eval-cache SQLite file.
+        campaign_id: ``WL_CAMPAIGN_ID``.
+        instance_id: ``WL_INSTANCE_ID``.
+        work_dir: Directory for the transient snapshot file.
+    """
+    if not live_db.exists():
+        log.info("cache_sync: no live cache yet; skipping checkpoint")
+        return
+    snap = work_dir / "eval_cache.snapshot.sqlite"
+    try:
+        snapshot_db(live_db, snap)
+        client.upload_file(str(snap), bucket, checkpoint_key(campaign_id, instance_id))
+    except Exception as exc:  # noqa: BLE001 — checkpoint must not break the run
+        log.warning("cache_sync: delta upload failed (%s); will retry next cycle", exc)
+    finally:
+        if snap.exists():
+            snap.unlink(missing_ok=True)
