@@ -1,0 +1,48 @@
+# Baked private image for vast.ai bulk analysis. NOT for public registry
+# (TensorRT operator tarball is baked; keep registry private).
+FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
+
+ARG WORKER_VERSION=0.9.7
+ARG BT4_URL=https://storage.lczero.org/files/networks-contrib/BT4-1024x15x32h-swa-6147500.pb.gz
+ARG LC0_URL
+ARG WLW_TRT_URL
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      python3.11 python3-pip stockfish curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# lc0 (TRT build) — baked, not volume-fetched.
+RUN curl -fsSL "${LC0_URL}" -o /tmp/lc0.tar.gz \
+    && mkdir -p /opt/lc0 && tar -xzf /tmp/lc0.tar.gz -C /opt/lc0 \
+    && rm /tmp/lc0.tar.gz
+
+# TensorRT libraries (operator tarball; baked because registry is private).
+RUN if [ -n "${WLW_TRT_URL}" ]; then \
+      curl -fsSL "${WLW_TRT_URL}" -o /tmp/trt.tar.gz \
+      && mkdir -p /opt/trt && tar -xzf /tmp/trt.tar.gz -C /opt/trt \
+      && rm /tmp/trt.tar.gz ; fi
+
+# BT4 weights + Syzygy 3-4-5 — baked.
+RUN mkdir -p /opt/weights /opt/syzygy \
+    && curl -fsSL "${BT4_URL}" -o /opt/weights/BT4.pb.gz
+RUN for t in $(curl -fsSL https://tablebase.sesse.net/syzygy/3-4-5/ \
+      | grep -oE '[A-Za-z0-9_]+\.(rtbw|rtbz)' | sort -u); do \
+      curl -fsSL "https://tablebase.sesse.net/syzygy/3-4-5/$t" -o "/opt/syzygy/$t"; \
+    done
+
+RUN python3.11 -m pip install --no-cache-dir "wood-league-worker==${WORKER_VERSION}"
+
+COPY vast/onstart.sh /usr/local/bin/wlw-vast-onstart
+RUN chmod +x /usr/local/bin/wlw-vast-onstart
+
+# Worker asset paths point at the in-image bake locations.
+ENV WLW_LC0_PATH=/opt/lc0/lc0 \
+    WLW_LC0_WEIGHTS_PATH=/opt/weights/BT4.pb.gz \
+    WLW_SYZYGY_PATH=/opt/syzygy \
+    WLW_STOCKFISH_PATH=/usr/games/stockfish \
+    WLW_LC0_BACKEND=trt \
+    LD_LIBRARY_PATH=/opt/trt/lib:${LD_LIBRARY_PATH:-} \
+    WLW_DATA_DIR=/data/wlw
+
+ENTRYPOINT ["/usr/local/bin/wlw-vast-onstart"]
