@@ -9,13 +9,32 @@ Changelog:
     2026-05-04 (#16): Added queued param to build_sf_card/build_lc0_card;
                       embedded count labels in quality segments; added _rerun_button;
                       separated build_sf_card/build_lc0_card from build_stat_cards_html
+    2026-05-17 (#131): Count move classifications case-insensitively (worker
+                      stores Capitalized, legacy stored lowercase) and add the
+                      Excellent quality segment.
 """
 
 from __future__ import annotations
 
 from html import escape
 
-from games.services import GameAnalysisData
+from games.services import GameAnalysisData, MoveRow
+
+
+def _norm_classification(value: str | None) -> str:
+    """Normalize a move-classification label for case-insensitive matching.
+
+    The vast worker / API store Capitalized labels ("Brilliant", "Best",
+    "Excellent", ...) while the legacy in-app analysis path stored lowercase.
+    Mirrors games.board_builder so all consumers agree (issue #131).
+
+    Params:
+        value (str | None): Raw classification as stored on a MoveRow.
+
+    Returns:
+        Trimmed lowercase label, or "" when value is falsy.
+    """
+    return value.strip().lower() if value else ""
 
 _DUB_CSS = """<style>
 .dub{font-family:'DM Mono','Courier New',monospace;color:#1A1A1A;margin-bottom:1.6rem;}
@@ -36,6 +55,7 @@ _DUB_CSS = """<style>
 .dub-seg{display:flex;align-items:center;justify-content:center;font-size:.60rem;font-weight:700;overflow:hidden;white-space:nowrap;color:#F2E6D0;}
 .dub-win{background:#1A3A2A;}.dub-draw{background:#8B3A2A;}.dub-loss{background:#B53541;}
 .dub-bril{background:#2C6B4A;}.dub-best{background:#4A6E8A;}.dub-great{background:#4A6554;}
+.dub-exc{background:#6B8E5A;}
 .dub-neut{background:#EFE4CC;color:#5A5A5A;}.dub-inac{background:#E07B7B;color:#1A1A1A;}
 .dub-mist{background:#CE3A4A;}.dub-blun{background:#B53541;}
 .dub-lbl{font-size:.54rem;letter-spacing:.12em;text-transform:uppercase;color:#5A5A5A;margin:10px 0 4px;}
@@ -137,7 +157,7 @@ def _metric_bar(pct: float, val_str: str, fill: str | None = None) -> str:
     )
 
 
-def _quality_metric_bar(brilliant: int, best: int, great: int, inaccuracy: int, mistake: int, blunder: int, total: int) -> str:
+def _quality_metric_bar(brilliant: int, best: int, great: int, excellent: int, inaccuracy: int, mistake: int, blunder: int, total: int) -> str:
     """
     Generate HTML for move quality classification bar row without player label.
 
@@ -145,6 +165,7 @@ def _quality_metric_bar(brilliant: int, best: int, great: int, inaccuracy: int, 
         brilliant (int): Count of brilliant moves.
         best (int): Count of best moves.
         great (int): Count of great moves.
+        excellent (int): Count of excellent moves.
         inaccuracy (int): Count of inaccuracies.
         mistake (int): Count of mistakes.
         blunder (int): Count of blunders.
@@ -153,29 +174,17 @@ def _quality_metric_bar(brilliant: int, best: int, great: int, inaccuracy: int, 
     Returns:
         HTML string for the row.
     """
-    classified = brilliant + best + great + inaccuracy + mistake + blunder
+    classified = brilliant + best + great + excellent + inaccuracy + mistake + blunder
     neutral = max(0, total - classified)
 
-    def _seg(cls: str, n: int, short_lbl: str) -> str:
+    def _seg(cls: str, n: int, short_lbl: str, tooltip: str) -> str:
         """Build a single quality classification segment."""
         if n == 0 or total == 0:
             return ""
         pct = n / total * 100
         txt = f"{short_lbl} {n}" if pct >= 6 else ""
-        tooltip = ""
-        if "!!" in short_lbl:
-            tooltip = f"Brilliant moves: excellent moves that significantly improved position ({n})"
-        elif "!" in short_lbl and "?" not in short_lbl:
-            tooltip = f"Best moves: engine-recommended best moves ({n})"
-        elif "!?" in short_lbl:
-            tooltip = f"Great moves: very good moves slightly worse than best ({n})"
-        elif "?!" in short_lbl:
-            tooltip = f"Inaccuracies: suboptimal moves with small drawback ({n})"
-        elif short_lbl == "?":
-            tooltip = f"Mistakes: poor moves with significant drawback ({n})"
-        elif short_lbl == "??":
-            tooltip = f"Blunders: terrible moves with major material or positional loss ({n})"
-        return f'<div class="dub-seg {cls}" style="flex:{pct:.2f}" title="{tooltip}">{escape(txt)}</div>'
+        title = tooltip.format(n=n)
+        return f'<div class="dub-seg {cls}" style="flex:{pct:.2f}" title="{title}">{escape(txt)}</div>'
 
     neu_seg = ""
     if neutral > 0 and total > 0:
@@ -183,13 +192,14 @@ def _quality_metric_bar(brilliant: int, best: int, great: int, inaccuracy: int, 
         neu_seg = f'<div class="dub-seg dub-neut" style="flex:{pct:.2f}" title="Unclassified moves: not classified by engine or below threshold ({neutral})"></div>'
 
     segs = (
-        _seg("dub-bril", brilliant, "!!")
-        + _seg("dub-best", best, "!")
-        + _seg("dub-great", great, "!?")
+        _seg("dub-bril", brilliant, "!!", "Brilliant moves: excellent moves that significantly improved position ({n})")
+        + _seg("dub-best", best, "!", "Best moves: engine-recommended best moves ({n})")
+        + _seg("dub-great", great, "!?", "Great moves: very good moves slightly worse than best ({n})")
+        + _seg("dub-exc", excellent, "✓", "Excellent moves: accurate moves close to the engine's best ({n})")
         + neu_seg
-        + _seg("dub-inac", inaccuracy, "?!")
-        + _seg("dub-mist", mistake, "?")
-        + _seg("dub-blun", blunder, "??")
+        + _seg("dub-inac", inaccuracy, "?!", "Inaccuracies: suboptimal moves with small drawback ({n})")
+        + _seg("dub-mist", mistake, "?", "Mistakes: poor moves with significant drawback ({n})")
+        + _seg("dub-blun", blunder, "??", "Blunders: terrible moves with major material or positional loss ({n})")
     )
     return (
         f'<div class="dub-row">'
@@ -365,6 +375,164 @@ def _rerun_button(engine: str, queued: bool, in_header: bool = False) -> str:
     )
 
 
+_QUALITY_LABEL = (
+    '<div class="dub-metric-label" title="Classification of each move: '
+    '!! (brilliant), ! (best), !? (great), ✓ (excellent), '
+    '?! (inaccuracy), ? (mistake), ?? (blunder)">Move Quality</div>'
+)
+
+
+def _quality_segment(
+    side_moves: list[MoveRow],
+    *,
+    inac: int | None = None,
+    mist: int | None = None,
+    blun: int | None = None,
+) -> str:
+    """Build the Move Quality label + stacked bar for one player's moves.
+
+    Counts classifications case-insensitively so games analyzed by the vast
+    worker (Capitalized labels) and the legacy in-app path (lowercase) both
+    render their positive classes (issue #131).
+
+    Params:
+        side_moves (list[MoveRow]): This player's moves (already filtered).
+        inac (int | None): Pre-aggregated inaccuracy count; when None the
+            count is derived per-move. Same for mist/blun. Stockfish supplies
+            these aggregates; Lc0 passes None (per-move counting).
+        mist (int | None): Pre-aggregated mistake count, or None.
+        blun (int | None): Pre-aggregated blunder count, or None.
+
+    Returns:
+        HTML string for the label + bar, or "" when there is nothing to show.
+    """
+    if not (side_moves and any(m.classification for m in side_moves)):
+        return ""
+
+    def _cnt(cls: str) -> int:
+        """Count side_moves whose normalized classification equals cls."""
+        return sum(
+            1 for m in side_moves if _norm_classification(m.classification) == cls
+        )
+
+    total = len(side_moves)
+    if not total:
+        return ""
+    return _QUALITY_LABEL + _quality_metric_bar(
+        _cnt("brilliant"), _cnt("best"), _cnt("great"), _cnt("excellent"),
+        inac if inac is not None else _cnt("inaccuracy"),
+        mist if mist is not None else _cnt("mistake"),
+        blun if blun is not None else _cnt("blunder"),
+        total,
+    )
+
+
+def _sf_player_section(
+    name: str,
+    is_winner: bool,
+    has_acc: bool,
+    acc_val: float | None,
+    has_acpl: bool,
+    acpl_val: float | None,
+    side_moves: list[MoveRow],
+    inac: int | None,
+    mist: int | None,
+    blun: int | None,
+    is_white: bool,
+) -> str:
+    """Build one player's Stockfish section (name, accuracy, quality, ACPL).
+
+    Params:
+        name (str): Player display name.
+        is_winner (bool): Whether this player won the game.
+        has_acc (bool): Whether an accuracy value is available.
+        acc_val (float | None): Accuracy percentage, if available.
+        has_acpl (bool): Whether an ACPL value is available.
+        acpl_val (float | None): Average centipawn loss, if available.
+        side_moves (list[MoveRow]): This player's moves.
+        inac (int | None): Aggregate inaccuracy count, or None.
+        mist (int | None): Aggregate mistake count, or None.
+        blun (int | None): Aggregate blunder count, or None.
+        is_white (bool): Whether this is the white player (adds a divider).
+
+    Returns:
+        HTML fragment, or "" when this player has no data to show.
+    """
+    if not (has_acc or any(m.classification for m in side_moves)):
+        return ""
+    parts = [
+        f'<div class="dub-player-name">{escape(name)}{" 🏆" if is_winner else ""}</div>'
+    ]
+    if has_acc and acc_val is not None:
+        parts.append(
+            '<div class="dub-metric-label" title="Percentage of moves that '
+            "match the engine's top choice or were within 50 centipawns of "
+            'the best move">Accuracy</div>'
+        )
+        parts.append(_metric_bar(acc_val, f"{acc_val:.1f}%"))
+    parts.append(_quality_segment(side_moves, inac=inac, mist=mist, blun=blun))
+    if has_acpl and acpl_val is not None:
+        parts.append(
+            '<div class="dub-chip" style="margin-top:8px;" title="Average '
+            "Centipawn Loss: the average difference between your moves and the "
+            "engine's best move, measured in centipawns (1/100th of a pawn). "
+            f'Lower is better.">ACPL: {acpl_val:.1f}</div>'
+        )
+    if is_white:
+        parts.append('<hr class="dub-rule">')
+    return "".join(parts)
+
+
+def _lc0_player_section(
+    name: str,
+    is_winner: bool,
+    win_prob: float | None,
+    draw_prob: float,
+    loss_prob: float,
+    side_moves: list[MoveRow],
+    is_white: bool,
+) -> str:
+    """Build one player's Lc0 section (name, WDL bar, quality, avg Δ).
+
+    Params:
+        name (str): Player display name.
+        is_winner (bool): Whether this player won the game.
+        win_prob (float | None): Win probability; None skips the section.
+        draw_prob (float): Draw probability.
+        loss_prob (float): Loss probability.
+        side_moves (list[MoveRow]): This player's Lc0 moves.
+        is_white (bool): Whether this is the white player (adds a divider).
+
+    Returns:
+        HTML fragment, or "" when win_prob is None.
+    """
+    if win_prob is None:
+        return ""
+    parts = [
+        f'<div class="dub-player-name">{escape(name)}{" 🏆" if is_winner else ""}</div>',
+        '<div class="dub-metric-label" title="Probability of winning, drawing, '
+        'or losing from the average position during the game">'
+        "Win / Draw / Loss</div>",
+        _wdl_bar(win_prob, draw_prob, loss_prob),
+    ]
+    if side_moves and any(m.classification for m in side_moves):
+        parts.append(_quality_segment(side_moves))
+        valid_deltas = [
+            m.move_win_delta for m in side_moves if m.move_win_delta is not None
+        ]
+        if valid_deltas:
+            avg_delta = sum(valid_deltas) / len(valid_deltas)
+            parts.append(
+                '<div class="dub-chip" style="margin-top:8px;" title="Average '
+                "change in win probability per move. Lower is better (moves "
+                'that maintained/improved winning chances).">'
+                f"Avg Δ: {avg_delta:.1f}</div>"
+            )
+    if is_white:
+        parts.append('<hr class="dub-rule">')
+    return "".join(parts)
+
+
 def build_sf_card(data: GameAnalysisData, queued: bool = False) -> str:
     """
     Generate Stockfish analysis stat card HTML.
@@ -401,39 +569,10 @@ def build_sf_card(data: GameAnalysisData, queued: bool = False) -> str:
          [m for m in data.moves if m.ply % 2 == 0], 
          data.black_blunders, data.black_mistakes, data.black_inaccuracies, black_won),
     ]:
-        # Add player section if we have any data
-        if has_acc or any(m.classification for m in side_moves):
-            # Player name label (bigger)
-            content += f'<div class="dub-player-name">{escape(name)}{" 🏆" if is_winner else ""}</div>'
-            
-            # Accuracy bar with label
-            if has_acc and acc_val is not None:
-                content += '<div class="dub-metric-label" title="Percentage of moves that match the engine\'s top choice or were within 50 centipawns of the best move">Accuracy</div>'
-                content += _metric_bar(acc_val, f"{acc_val:.1f}%")
-            
-            # Move quality bar with label
-            if side_moves and any(m.classification for m in side_moves):
-                def _cnt(moves_list, cls):
-                    return sum(1 for m in moves_list if m.classification == cls)
-                
-                bril = _cnt(side_moves, "brilliant")
-                best = _cnt(side_moves, "best")
-                great = _cnt(side_moves, "great")
-                inaccuracy = inac if inac is not None else _cnt(side_moves, "inaccuracy")
-                mistake = mist if mist is not None else _cnt(side_moves, "mistake")
-                blunder = blun if blun is not None else _cnt(side_moves, "blunder")
-                total = len(side_moves)
-                if total:
-                    content += '<div class="dub-metric-label" title="Classification of each move: !! (brilliant), ! (best), !? (great), ?! (inaccuracy), ? (mistake), ?? (blunder)">Move Quality</div>'
-                    content += _quality_metric_bar(bril, best, great, inaccuracy, mistake, blunder, total)
-            
-            # ACPL chip if available (at bottom)
-            if has_acpl and acpl_val is not None:
-                content += f'<div class="dub-chip" style="margin-top:8px;" title="Average Centipawn Loss: the average difference between your moves and the engine\'s best move, measured in centipawns (1/100th of a pawn). Lower is better.">ACPL: {acpl_val:.1f}</div>'
-            
-            # Add spacing between players
-            if name == data.white:
-                content += '<hr class="dub-rule">'
+        content += _sf_player_section(
+            name, is_winner, has_acc, acc_val, has_acpl, acpl_val,
+            side_moves, inac, mist, blun, name == data.white,
+        )
 
     # Add rerun button row below players
     button_row = (
@@ -452,6 +591,46 @@ def build_sf_card(data: GameAnalysisData, queued: bool = False) -> str:
         + button_row
         + "</div>"
     )
+
+
+def _lc0_side_moves(moves: list[MoveRow] | None, white: bool) -> list[MoveRow]:
+    """Return one side's Lc0 moves filtered by ply parity.
+
+    Params:
+        moves (list[MoveRow] | None): All Lc0 moves, or None.
+        white (bool): True for White (odd plies), False for Black (even).
+
+    Returns:
+        The subset of moves played by that side.
+    """
+    parity = 1 if white else 0
+    return [m for m in (moves or []) if m.ply % 2 == parity]
+
+
+def _lc0_rows(
+    data: GameAnalysisData,
+) -> list[tuple[str, bool, float | None, float, float, list[MoveRow], bool]]:
+    """Build per-player argument rows for _lc0_player_section.
+
+    Params:
+        data (GameAnalysisData): Assembled game analysis data.
+
+    Returns:
+        One tuple per player: (name, is_winner, win_prob, draw_prob,
+        loss_prob, side_moves, is_white).
+    """
+    return [
+        (
+            data.white, data.result == "1-0", data.lc0_white_win_prob,
+            data.lc0_white_draw_prob or 0.0, data.lc0_white_loss_prob or 0.0,
+            _lc0_side_moves(data.lc0_moves, True), True,
+        ),
+        (
+            data.black, data.result == "0-1", data.lc0_black_win_prob,
+            data.lc0_black_draw_prob or 0.0, data.lc0_black_loss_prob or 0.0,
+            _lc0_side_moves(data.lc0_moves, False), False,
+        ),
+    ]
 
 
 def build_lc0_card(data: GameAnalysisData, queued: bool = False) -> str:
@@ -477,55 +656,9 @@ def build_lc0_card(data: GameAnalysisData, queued: bool = False) -> str:
         meta_parts.append(f"{data.lc0_engine_nodes:,} nodes/move")
     meta = " · ".join(meta_parts)
 
-    # Determine who won
-    white_won = data.result == "1-0"
-    black_won = data.result == "0-1"
-
-    # Build content organized by player
-    content = ""
-    
-    for sym, name, win_prob, draw_prob, loss_prob, inac, mist, blun, is_winner in [
-        ("♙", data.white, data.lc0_white_win_prob, data.lc0_white_draw_prob or 0.0, data.lc0_white_loss_prob or 0.0,
-         data.lc0_white_inaccuracies, data.lc0_white_mistakes, data.lc0_white_blunders, white_won),
-        ("♟", data.black, data.lc0_black_win_prob, data.lc0_black_draw_prob or 0.0, data.lc0_black_loss_prob or 0.0,
-         data.lc0_black_inaccuracies, data.lc0_black_mistakes, data.lc0_black_blunders, black_won),
-    ]:
-        # Only render if we have WDL data
-        if win_prob is not None:
-            # Player name label
-            content += f'<div class="dub-player-name">{escape(name)}{" 🏆" if is_winner else ""}</div>'
-            
-            # Win/Draw/Loss bar with label and tooltip
-            content += '<div class="dub-metric-label" title="Probability of winning, drawing, or losing from the average position during the game">Win / Draw / Loss</div>'
-            content += _wdl_bar(win_prob, draw_prob, loss_prob)
-            
-            # Move quality bar if we have LC0 moves with classifications
-            if data.lc0_moves:
-                side_moves = [m for m in data.lc0_moves if (name == data.white and m.ply % 2 == 1) or (name == data.black and m.ply % 2 == 0)]
-                if side_moves and any(m.classification for m in side_moves):
-                    def _cnt(moves_list, cls):
-                        return sum(1 for m in moves_list if m.classification == cls)
-                    
-                    bril = _cnt(side_moves, "brilliant")
-                    best = _cnt(side_moves, "best")
-                    great = _cnt(side_moves, "great")
-                    inaccuracy_lc0 = _cnt(side_moves, "inaccuracy")
-                    mistake_lc0 = _cnt(side_moves, "mistake")
-                    blunder_lc0 = _cnt(side_moves, "blunder")
-                    total = len(side_moves)
-                    if total:
-                        content += '<div class="dub-metric-label" title="Classification of each move: !! (brilliant), ! (best), !? (great), ?! (inaccuracy), ? (mistake), ?? (blunder)">Move Quality</div>'
-                        content += _quality_metric_bar(bril, best, great, inaccuracy_lc0, mistake_lc0, blunder_lc0, total)
-                    
-                    # Average Move Win Delta chip
-                    valid_deltas = [m.move_win_delta for m in side_moves if m.move_win_delta is not None]
-                    if valid_deltas:
-                        avg_delta = sum(valid_deltas) / len(valid_deltas)
-                        content += f'<div class="dub-chip" style="margin-top:8px;" title="Average change in win probability per move. Lower is better (moves that maintained/improved winning chances).">Avg Δ: {avg_delta:.1f}</div>'
-            
-            # Add spacing between players
-            if name == data.white:
-                content += '<hr class="dub-rule">'
+    content = "".join(
+        _lc0_player_section(*row) for row in _lc0_rows(data)
+    )
 
     # Add rerun button row below players
     button_row = (
