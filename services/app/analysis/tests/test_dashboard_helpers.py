@@ -569,3 +569,19 @@ def test_batch_billable_per_game_none_paths():
     assert _batch_billable_per_game(now, None, 4) is None
     assert _batch_billable_per_game(now, now + timedelta(seconds=10), 0) is None
     assert _batch_billable_per_game(now, now, 4) is None
+
+
+# ---------------------------------------------------------------------------
+# WorkerHeartbeat structured fields (issue #128 Task 4)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_workerheartbeat_has_batch_fields_with_defaults():
+    """New batch_total/batch_processed/session_started_at fields exist with correct defaults."""
+    from analysis.models import WorkerHeartbeat
+
+    wh = WorkerHeartbeat.objects.create(worker_id="wbf")
+    assert wh.batch_total is None
+    assert wh.batch_processed == 0
+    assert wh.session_started_at is None

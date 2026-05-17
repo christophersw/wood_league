@@ -263,6 +263,18 @@ class WorkerHeartbeat(models.Model):
     cpu_cores = models.IntegerField(null=True, blank=True)
     memory_mb = models.IntegerField(null=True, blank=True)
     stockfish_binary = models.CharField(max_length=512, null=True, blank=True)
+    batch_total = models.IntegerField(
+        null=True, blank=True,
+        help_text="Worker max_jobs run cap (M in N/M). Null = unlimited.",
+    )
+    batch_processed = models.IntegerField(
+        default=0,
+        help_text="Jobs completed so far this worker session (N in N/M).",
+    )
+    session_started_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text="Wall-clock start of the current worker run/session.",
+    )
 
     class Meta:
         db_table = "worker_heartbeats"
