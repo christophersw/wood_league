@@ -2,7 +2,10 @@
 # (TensorRT operator tarball is baked; keep registry private).
 FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
 
-ARG WORKER_VERSION=0.9.12
+# No default: a stale hardcoded version silently baked the wrong worker
+# into freshly tagged images (#133). CI resolves this from the tag; a
+# manual build must pass --build-arg WORKER_VERSION=<ver> explicitly.
+ARG WORKER_VERSION
 ARG BT4_URL=https://storage.lczero.org/files/networks-contrib/BT4-1024x15x32h-swa-6147500-policytune-332.pb.gz
 ARG LC0_URL
 ARG WLW_TRT_URL
@@ -51,6 +54,8 @@ RUN set -eu; \
     echo "Syzygy: listed=$want downloaded=$got"; \
     test "$got" -eq "$want" || { echo "FATAL: Syzygy incomplete ($got/$want)"; exit 1; }
 
+RUN test -n "${WORKER_VERSION}" \
+      || { echo "FATAL: WORKER_VERSION build-arg is empty — refusing to bake an unpinned worker (#133)"; exit 1; }
 RUN python3.11 -m pip install --no-cache-dir "wood-league-worker==${WORKER_VERSION}"
 
 COPY vast/onstart.sh /usr/local/bin/wlw-vast-onstart
