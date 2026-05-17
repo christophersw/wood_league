@@ -2,7 +2,7 @@
 # (TensorRT operator tarball is baked; keep registry private).
 FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
 
-ARG WORKER_VERSION=0.9.11
+ARG WORKER_VERSION=0.9.12
 ARG BT4_URL=https://storage.lczero.org/files/networks-contrib/BT4-1024x15x32h-swa-6147500-policytune-332.pb.gz
 ARG LC0_URL
 ARG WLW_TRT_URL
