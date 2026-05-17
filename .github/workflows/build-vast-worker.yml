@@ -21,6 +21,27 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      # Resolve the wood-league-worker PyPI version to bake. The tag-push
+      # path has no workflow_dispatch input, so derive it from the tag
+      # (vast-worker-v0.9.13 -> 0.9.13). A hardcoded fallback here silently
+      # baked a stale worker into freshly tagged images (#133).
+      - id: resolve
+        name: Resolve worker version
+        env:
+          DISPATCH_VERSION: ${{ github.event.inputs.worker_version }}
+        run: |
+          set -eu
+          if [ -n "${DISPATCH_VERSION}" ]; then
+            version="${DISPATCH_VERSION}"
+          else
+            version="${GITHUB_REF_NAME#vast-worker-v}"
+          fi
+          if [ -z "${version}" ] || [ "${version}" = "${GITHUB_REF_NAME}" ]; then
+            echo "::error::cannot resolve worker version from ref '${GITHUB_REF_NAME}' (expected tag vast-worker-v<version> or a workflow_dispatch input)"
+            exit 1
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "Resolved WORKER_VERSION=${version}"
       - uses: docker/build-push-action@v6
         with:
           context: services/local_worker
@@ -28,6 +49,6 @@ jobs:
           push: true
           tags: ghcr.io/${{ github.repository }}/vast-worker:${{ github.event.inputs.worker_version || github.ref_name }}
           build-args: |
-            WORKER_VERSION=${{ github.event.inputs.worker_version || '0.9.12' }}
+            WORKER_VERSION=${{ steps.resolve.outputs.version }}
             LC0_URL=${{ secrets.LC0_TRT_TARBALL_URL }}
             WLW_TRT_URL=${{ secrets.WLW_TRT_URL }}
