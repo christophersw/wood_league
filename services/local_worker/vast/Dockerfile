@@ -41,10 +41,15 @@ RUN if [ -n "${WLW_TRT_URL}" ]; then \
 # BT4 weights + Syzygy 3-4-5 — baked.
 RUN mkdir -p /opt/weights /opt/syzygy \
     && curl -fsSL "${BT4_URL}" -o /opt/weights/BT4.pb.gz
-RUN for t in $(curl -fsSL https://tablebase.sesse.net/syzygy/3-4-5/ \
-      | grep -oE '[A-Za-z0-9_]+\.(rtbw|rtbz)' | sort -u); do \
-      curl -fsSL "https://tablebase.sesse.net/syzygy/3-4-5/$t" -o "/opt/syzygy/$t"; \
-    done
+RUN set -eu; \
+    base="http://tablebase.sesse.net/syzygy/3-4-5/"; \
+    names="$(curl -fsSL "$base" | grep -oE '[A-Za-z0-9_]+\.(rtbw|rtbz)' | sort -u)"; \
+    want="$(printf '%s\n' "$names" | grep -c .)"; \
+    test "$want" -gt 0 || { echo "FATAL: Syzygy listing empty (http fetch failed)"; exit 1; }; \
+    for t in $names; do curl -fsSL "${base}${t}" -o "/opt/syzygy/$t"; done; \
+    got="$(ls -1 /opt/syzygy | grep -cE '\.(rtbw|rtbz)$' || true)"; \
+    echo "Syzygy: listed=$want downloaded=$got"; \
+    test "$got" -eq "$want" || { echo "FATAL: Syzygy incomplete ($got/$want)"; exit 1; }
 
 RUN python3.11 -m pip install --no-cache-dir "wood-league-worker==${WORKER_VERSION}"
 
