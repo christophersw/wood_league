@@ -14,12 +14,15 @@ Changelog:
     2026-05-14 (#106): Added _group_recent_by_game for recent partial.
     2026-05-17 (#128): Added LIVE_WINDOW_SECONDS, STALE_DROP_SECONDS,
         and _worker_live_state for worker card grid.
+    2026-05-17 (#128): Added _worker_engine_metrics for per-engine
+        time/ply and time/game aggregation.
 """
 from __future__ import annotations
 
 from datetime import timedelta
 from typing import Any
 
+from django.db.models import Count
 from django.urls import reverse
 from django.utils import timezone
 
@@ -45,6 +48,7 @@ __all__ = [
     "LIVE_WINDOW_SECONDS",
     "STALE_DROP_SECONDS",
     "_worker_live_state",
+    "_worker_engine_metrics",
 ]
 
 
@@ -434,3 +438,68 @@ def _group_recent_by_game(limit: int = 25) -> list[dict[str, Any]]:
 
     rows = sorted(by_game.values(), key=lambda r: r["latest_completed_at"], reverse=True)
     return rows[:limit]
+
+
+def _worker_engine_metrics(worker_id: str, sample: int = 50) -> list[dict[str, Any]]:
+    """Per-engine timing metrics for one worker, from completed jobs.
+
+    For each engine the worker has completed jobs in, computes the mean
+    wall-clock seconds per game and the mean seconds per *analyzed ply*
+    (total engine duration ÷ total plies the engine evaluated). Time/ply
+    is the length-normalised "pure engine speed" signal: dividing summed
+    duration by summed plies makes long and short games comparable.
+
+    Ply counts come from engine-specific analysis rows: ``MoveAnalysis``
+    for stockfish, ``Lc0MoveAnalysis`` for lc0.
+
+    Args:
+        worker_id: The worker whose jobs to aggregate.
+        sample: Max recent completed jobs per engine to average over.
+
+    Returns:
+        One dict per engine that has completed jobs, keys: ``engine``,
+        ``avg_seconds_per_game`` (float), ``avg_seconds_per_ply``
+        (float | None), ``completed`` (int). Engines with no jobs are
+        omitted. Order: lc0 then stockfish.
+    """
+    from analysis.models import AnalysisJob, Lc0MoveAnalysis, MoveAnalysis
+
+    rows: list[dict[str, Any]] = []
+    for engine in ("lc0", "stockfish"):
+        jobs = list(
+            AnalysisJob.objects.filter(
+                worker_id=worker_id,
+                engine=engine,
+                status=AnalysisJob.STATUS_COMPLETED,
+                duration_seconds__isnull=False,
+            )
+            .order_by("-completed_at")
+            .values("game_id", "duration_seconds")[:sample]
+        )
+        if not jobs:
+            continue
+        durations = [j["duration_seconds"] for j in jobs]
+        game_ids = [j["game_id"] for j in jobs]
+        total_duration = sum(durations)
+        avg_game = total_duration / len(durations)
+
+        move_model = Lc0MoveAnalysis if engine == "lc0" else MoveAnalysis
+        ply_rows = (
+            move_model.objects
+            .filter(analysis__game_id__in=game_ids)
+            .values("analysis__game_id")
+            .annotate(plies=Count("id"))
+        )
+        plies_by_game = {r["analysis__game_id"]: r["plies"] for r in ply_rows}
+        total_plies = sum(plies_by_game.get(gid, 0) for gid in game_ids)
+        avg_ply = (total_duration / total_plies) if total_plies else None
+
+        rows.append({
+            "engine": engine,
+            "avg_seconds_per_game": round(avg_game, 1),
+            "avg_seconds_per_ply": (
+                round(avg_ply, 3) if avg_ply is not None else None
+            ),
+            "completed": len(durations),
+        })
+    return rows

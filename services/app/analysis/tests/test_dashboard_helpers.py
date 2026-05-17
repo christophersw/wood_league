@@ -32,6 +32,7 @@ from analysis.dashboard_helpers import (
     _percentile,
     _rate_per_min,
     _throughput_for_window,
+    _worker_engine_metrics,
     _worker_live_state,
     _worker_log_url_for,
 )
@@ -417,3 +418,88 @@ def test_worker_live_state_none_when_stale_or_missing():
     """Heartbeat at or beyond STALE_DROP_SECONDS, or None delta → ``None``."""
     assert _worker_live_state(timedelta(seconds=1800)) is None
     assert _worker_live_state(None) is None
+
+
+# ---------------------------------------------------------------------------
+# _worker_engine_metrics (issue #128)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_worker_engine_metrics_per_engine_time_per_ply_and_game():
+    """Per-engine avg_seconds_per_ply and avg_seconds_per_game computed correctly."""
+    from analysis.models import (
+        AnalysisJob, GameAnalysis, Lc0GameAnalysis,
+        Lc0MoveAnalysis, MoveAnalysis,
+    )
+
+    game_a = Game.objects.create(
+        id=f"wem-{uuid.uuid4().hex[:8]}-a",
+        slug=f"wem-ga-{uuid.uuid4().hex[:6]}",
+        played_at=timezone.now(),
+        time_control="600",
+    )
+    game_b = Game.objects.create(
+        id=f"wem-{uuid.uuid4().hex[:8]}-b",
+        slug=f"wem-gb-{uuid.uuid4().hex[:6]}",
+        played_at=timezone.now(),
+        time_control="600",
+    )
+
+    # Stockfish: game_a 10s / 20 plies, game_b 30s / 40 plies
+    for g, dur in ((game_a, 10.0), (game_b, 30.0)):
+        AnalysisJob.objects.create(
+            game=g, engine="stockfish", status=AnalysisJob.STATUS_COMPLETED,
+            worker_id="w1", duration_seconds=dur, completed_at=timezone.now(),
+        )
+    sa_a = GameAnalysis.objects.create(game=game_a)
+    sa_b = GameAnalysis.objects.create(game=game_b)
+    for i in range(20):
+        MoveAnalysis.objects.create(analysis=sa_a, ply=i, san="e4", fen="x", cp_eval=0.0)
+    for i in range(40):
+        MoveAnalysis.objects.create(analysis=sa_b, ply=i, san="e4", fen="x", cp_eval=0.0)
+
+    # lc0: game_a 5s / 10 plies
+    AnalysisJob.objects.create(
+        game=game_a, engine="lc0", status=AnalysisJob.STATUS_COMPLETED,
+        worker_id="w1", duration_seconds=5.0, completed_at=timezone.now(),
+    )
+    la_a = Lc0GameAnalysis.objects.create(game=game_a)
+    for i in range(10):
+        Lc0MoveAnalysis.objects.create(analysis=la_a, ply=i, san="e4", fen="x")
+
+    rows = _worker_engine_metrics("w1")
+    by_engine = {r["engine"]: r for r in rows}
+
+    assert by_engine["stockfish"]["avg_seconds_per_ply"] == pytest.approx(0.667, abs=0.001)
+    assert by_engine["stockfish"]["avg_seconds_per_game"] == pytest.approx(20.0)
+    assert by_engine["stockfish"]["completed"] == 2
+    assert by_engine["lc0"]["avg_seconds_per_ply"] == pytest.approx(0.5)
+    assert by_engine["lc0"]["avg_seconds_per_game"] == pytest.approx(5.0)
+
+
+@pytest.mark.django_db
+def test_worker_engine_metrics_skips_engines_with_no_jobs():
+    """An unknown worker_id returns an empty list."""
+    rows = _worker_engine_metrics("nobody")
+    assert rows == []
+
+
+@pytest.mark.django_db
+def test_worker_engine_metrics_ply_none_when_no_analysis_rows():
+    """avg_seconds_per_ply is None when no MoveAnalysis rows exist for completed jobs."""
+    from analysis.models import AnalysisJob
+
+    g = Game.objects.create(
+        id=f"wem-{uuid.uuid4().hex[:8]}-x",
+        slug=f"wem-gx-{uuid.uuid4().hex[:6]}",
+        played_at=timezone.now(),
+        time_control="600",
+    )
+    AnalysisJob.objects.create(
+        game=g, engine="stockfish", status=AnalysisJob.STATUS_COMPLETED,
+        worker_id="w2", duration_seconds=12.0, completed_at=timezone.now(),
+    )
+    rows = _worker_engine_metrics("w2")
+    assert rows[0]["avg_seconds_per_ply"] is None
+    assert rows[0]["avg_seconds_per_game"] == pytest.approx(12.0)
