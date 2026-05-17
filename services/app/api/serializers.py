@@ -10,7 +10,9 @@ Changelog:
     2026-05-08: Added JobSubmitSerializer; extended Lc0MoveSerializer with arrow/pv fields
     2026-05-10: Removed DISPATCH_CHOICES and dispatch_mode field from CheckoutRequestSerializer
     2026-05-17 (#128): Add batch_total, batch_processed, session_started_at to HeartbeatSerializer
+    2026-05-17 (#141): JobSerializer resolves null lc0 nodes -> settings.LC0_NODES
 """
+from django.conf import settings
 from rest_framework import serializers
 
 
@@ -38,9 +40,31 @@ class JobSerializer(serializers.Serializer):
     pgn = serializers.CharField(source='game.pgn', required=False, allow_blank=True)
     engine = serializers.CharField()
     depth = serializers.IntegerField()   # Stockfish depth
-    nodes = serializers.IntegerField(allow_null=True)  # Lc0 nodes
+    nodes = serializers.SerializerMethodField()  # Lc0 nodes (resolved)
     worker_id = serializers.CharField()
     claimed_by_key_prefix = serializers.CharField()
+
+    def get_nodes(self, obj) -> int | None:
+        """Resolve the lc0 node budget the worker must use.
+
+        For lc0, a NULL ``nodes`` means "use the LC0_NODES setting"
+        (per AnalysisJob.nodes' help text). The worker must never
+        receive null nodes: bulk-requeued jobs (requeue_all_analysis)
+        leave nodes=NULL, and the worker would otherwise fall back to
+        the Stockfish ``depth`` (20) and run ~20-node garbage (#141).
+        Stockfish ignores nodes (it uses ``depth``), so its value is
+        passed through unchanged.
+
+        Args:
+            obj: the claimed AnalysisJob (or attr-compatible stub).
+
+        Returns:
+            The explicit job nodes, or settings.LC0_NODES for an lc0
+            job with no explicit value, or the raw value otherwise.
+        """
+        if obj.engine == 'lc0' and obj.nodes is None:
+            return settings.LC0_NODES
+        return obj.nodes
 
 
 class StockfishMoveSerializer(serializers.Serializer):

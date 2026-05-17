@@ -104,6 +104,16 @@ class RequeueAllAnalysisTests(TestCase):
             )
             self.assertEqual(engines, {"stockfish", "lc0"})
 
+        # #141: lc0 jobs must pin the node budget explicitly (NULL is
+        # what caused the worker to run ~20 nodes); stockfish uses depth
+        # so its nodes stays NULL.
+        from django.conf import settings
+
+        lc0_job = AnalysisJob.objects.filter(engine="lc0").first()
+        sf_job = AnalysisJob.objects.filter(engine="stockfish").first()
+        self.assertEqual(lc0_job.nodes, settings.LC0_NODES)
+        self.assertIsNone(sf_job.nodes)
+
         self.assertTrue(
             SystemEvent.objects.filter(
                 event_type="requeue_all_analysis", status="completed"

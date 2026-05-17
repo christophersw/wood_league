@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import json
 
+from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils import timezone
@@ -94,12 +95,18 @@ def _requeue(games) -> int:
     jobs: list[AnalysisJob] = []
     for game in games.iterator(chunk_size=_BULK_BATCH_SIZE):
         for engine in _ENGINES:
+            # Pin the lc0 node budget explicitly. Leaving it NULL is what
+            # let bulk-requeued lc0 jobs run at ~20 nodes (#141): the
+            # worker fell back to the Stockfish depth (20). Stockfish
+            # ignores nodes (it uses depth), so leave it NULL there.
+            nodes = settings.LC0_NODES if engine == "lc0" else None
             jobs.append(
                 AnalysisJob(
                     game=game,
                     engine=engine,
                     status=AnalysisJob.STATUS_PENDING,
                     priority=AnalysisJob.PRIORITY_NORMAL,
+                    nodes=nodes,
                 )
             )
     AnalysisJob.objects.bulk_create(jobs, batch_size=_BULK_BATCH_SIZE)
