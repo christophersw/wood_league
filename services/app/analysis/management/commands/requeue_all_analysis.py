@@ -21,8 +21,13 @@ Description:
     nothing. --yes performs the destructive wipe+requeue. Running with
     neither aborts with instructions (no accidental prod wipe).
 
+    --engine {all,lc0,stockfish} scopes the wipe+requeue to one engine.
+    'lc0' is the #141 remediation: it corrects the garbage 20-node lc0
+    data without touching the correct Stockfish jobs/results.
+
 Changelog:
     2026-05-17: Initial creation (issue #133 — sea-trial DB reset).
+    2026-05-17: Add --engine scoping for lc0-only remediation (#141).
 """
 from __future__ import annotations
 
@@ -65,36 +70,48 @@ def _analyzable_games(*, include_pgnless: bool):
     return qs.order_by("id")
 
 
-def _wipe_all_analysis() -> dict[str, int]:
-    """Delete every analysis-result and job row.
+def _wipe_analysis(engines: tuple[str, ...]) -> dict[str, int]:
+    """Delete analysis-result and job rows for the selected engines.
 
-    Children are deleted before parents so the operation is correct
-    regardless of each FK's on_delete configuration.
+    lc0-only remediation (#141) must NOT touch Stockfish data: its
+    jobs/results were correct (depth=20 is valid for SF). Children are
+    deleted before parents so the operation is correct regardless of
+    each FK's on_delete configuration. Only AnalysisJob rows for the
+    selected engines are removed, leaving the other engine's queue and
+    its partial-unique (game, engine) constraint intact.
+
+    Parameters:
+        engines: subset of ("stockfish", "lc0") to wipe.
 
     Returns:
         dict[str, int]: row counts deleted, keyed by model name.
     """
     deleted: dict[str, int] = {}
-    deleted["Lc0MoveAnalysis"] = Lc0MoveAnalysis.objects.all().delete()[0]
-    deleted["Lc0GameAnalysis"] = Lc0GameAnalysis.objects.all().delete()[0]
-    deleted["MoveAnalysis"] = MoveAnalysis.objects.all().delete()[0]
-    deleted["GameAnalysis"] = GameAnalysis.objects.all().delete()[0]
-    deleted["AnalysisJob"] = AnalysisJob.objects.all().delete()[0]
+    if "lc0" in engines:
+        deleted["Lc0MoveAnalysis"] = Lc0MoveAnalysis.objects.all().delete()[0]
+        deleted["Lc0GameAnalysis"] = Lc0GameAnalysis.objects.all().delete()[0]
+    if "stockfish" in engines:
+        deleted["MoveAnalysis"] = MoveAnalysis.objects.all().delete()[0]
+        deleted["GameAnalysis"] = GameAnalysis.objects.all().delete()[0]
+    deleted["AnalysisJob"] = (
+        AnalysisJob.objects.filter(engine__in=engines).delete()[0]
+    )
     return deleted
 
 
-def _requeue(games) -> int:
-    """Create one pending AnalysisJob per game per engine.
+def _requeue(games, engines: tuple[str, ...]) -> int:
+    """Create one pending AnalysisJob per game for the selected engines.
 
     Parameters:
         games (Iterable[Game]): games to enqueue.
+        engines: subset of ("stockfish", "lc0") to create jobs for.
 
     Returns:
         int: number of AnalysisJob rows created.
     """
     jobs: list[AnalysisJob] = []
     for game in games.iterator(chunk_size=_BULK_BATCH_SIZE):
-        for engine in _ENGINES:
+        for engine in engines:
             # Pin the lc0 node budget explicitly. Leaving it NULL is what
             # let bulk-requeued lc0 jobs run at ~20 nodes (#141): the
             # worker fell back to the Stockfish depth (20). Stockfish
@@ -143,6 +160,17 @@ class Command(BaseCommand):
             action="store_true",
             help="Also queue games with no PGN (default: skip them).",
         )
+        parser.add_argument(
+            "--engine",
+            choices=["all", "stockfish", "lc0"],
+            default="all",
+            help=(
+                "Which engine to wipe + requeue. 'lc0' is the #141 "
+                "remediation: corrects the garbage-node lc0 data and "
+                "leaves the correct Stockfish jobs/results untouched. "
+                "Default: all."
+            ),
+        )
 
     def handle(self, *args, **options):
         """Wipe all analysis and requeue every analyzable game.
@@ -163,6 +191,10 @@ class Command(BaseCommand):
         dry_run: bool = options["dry_run"]
         do_it: bool = options["yes"]
         include_pgnless: bool = options["include_pgnless"]
+        engine_opt: str = options["engine"]
+        engines: tuple[str, ...] = (
+            _ENGINES if engine_opt == "all" else (engine_opt,)
+        )
 
         if dry_run == do_it:  # neither, or contradictory both
             raise CommandError(
@@ -174,33 +206,40 @@ class Command(BaseCommand):
         started_at = timezone.now()
         games = _analyzable_games(include_pgnless=include_pgnless)
         game_count = games.count()
-        jobs_planned = game_count * len(_ENGINES)
+        jobs_planned = game_count * len(engines)
 
         if dry_run:
-            existing = {
-                "GameAnalysis": GameAnalysis.objects.count(),
-                "MoveAnalysis": MoveAnalysis.objects.count(),
-                "Lc0GameAnalysis": Lc0GameAnalysis.objects.count(),
-                "Lc0MoveAnalysis": Lc0MoveAnalysis.objects.count(),
-                "AnalysisJob": AnalysisJob.objects.count(),
+            existing: dict[str, int] = {
+                "AnalysisJob(%s)"
+                % ",".join(engines): AnalysisJob.objects.filter(
+                    engine__in=engines
+                ).count(),
             }
+            if "lc0" in engines:
+                existing["Lc0GameAnalysis"] = Lc0GameAnalysis.objects.count()
+                existing["Lc0MoveAnalysis"] = Lc0MoveAnalysis.objects.count()
+            if "stockfish" in engines:
+                existing["GameAnalysis"] = GameAnalysis.objects.count()
+                existing["MoveAnalysis"] = MoveAnalysis.objects.count()
             self.stdout.write(
                 self.style.SUCCESS(
-                    f"DRY RUN: would delete {existing} and create "
-                    f"{jobs_planned} pending jobs for {game_count} games "
+                    f"DRY RUN [engine={engine_opt}]: would delete "
+                    f"{existing} and create {jobs_planned} pending jobs "
+                    f"for {game_count} games "
                     f"(include_pgnless={include_pgnless})."
                 )
             )
             return
 
         with transaction.atomic():
-            deleted = _wipe_all_analysis()
-            jobs_created = _requeue(games)
+            deleted = _wipe_analysis(engines)
+            jobs_created = _requeue(games, engines)
 
         self.stdout.write(
             self.style.SUCCESS(
-                f"Requeue complete: deleted {deleted}, created "
-                f"{jobs_created} pending jobs for {game_count} games."
+                f"Requeue complete [engine={engine_opt}]: deleted "
+                f"{deleted}, created {jobs_created} pending jobs for "
+                f"{game_count} games."
             )
         )
 
@@ -217,6 +256,7 @@ class Command(BaseCommand):
                     "jobs_created": jobs_created,
                     "game_count": game_count,
                     "include_pgnless": include_pgnless,
+                    "engine": engine_opt,
                 }
             ),
         )

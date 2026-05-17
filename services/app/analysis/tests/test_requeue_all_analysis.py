@@ -129,3 +129,46 @@ class RequeueAllAnalysisTests(TestCase):
 
         call_command("requeue_all_analysis", "--yes", "--include-pgnless")
         self.assertEqual(AnalysisJob.objects.count(), 2)
+
+    def test_engine_lc0_only_leaves_stockfish_untouched(self):
+        """#141 remediation: --engine lc0 wipes/requeues only lc0.
+
+        Stockfish jobs and results were correct (depth=20 is valid for
+        SF) and must survive the lc0-only remediation untouched.
+        """
+        from django.conf import settings
+
+        from analysis.models import Lc0MoveAnalysis
+
+        game = _make_game()
+        # Pre-existing CORRECT stockfish data + a stale lc0 result.
+        sf_ga = GameAnalysis.objects.create(game=game)
+        MoveAnalysis.objects.create(
+            analysis=sf_ga, ply=1, san="e4", fen="x", cp_eval=0.1
+        )
+        sf_job = AnalysisJob.objects.create(
+            game=game, engine="stockfish", status="completed"
+        )
+        lga = Lc0GameAnalysis.objects.create(game=game)
+        Lc0MoveAnalysis.objects.create(
+            analysis=lga, ply=1, san="e4", fen="x",
+            wdl_win=10, wdl_draw=10, wdl_loss=980,
+        )
+
+        call_command("requeue_all_analysis", "--yes", "--engine", "lc0")
+
+        # Stockfish data + job preserved exactly.
+        self.assertEqual(GameAnalysis.objects.count(), 1)
+        self.assertEqual(MoveAnalysis.objects.count(), 1)
+        self.assertTrue(
+            AnalysisJob.objects.filter(
+                id=sf_job.id, status="completed"
+            ).exists()
+        )
+        # lc0 results wiped; exactly one fresh pending lc0 job, nodes pinned.
+        self.assertEqual(Lc0GameAnalysis.objects.count(), 0)
+        self.assertEqual(Lc0MoveAnalysis.objects.count(), 0)
+        lc0_jobs = AnalysisJob.objects.filter(engine="lc0")
+        self.assertEqual(lc0_jobs.count(), 1)
+        self.assertEqual(lc0_jobs.first().status, AnalysisJob.STATUS_PENDING)
+        self.assertEqual(lc0_jobs.first().nodes, settings.LC0_NODES)
