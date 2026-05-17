@@ -9,6 +9,7 @@ Changelog:
     2026-05-08: Added file header to meet documentation standards
     2026-05-08: Added JobSubmitSerializer; extended Lc0MoveSerializer with arrow/pv fields
     2026-05-10: Removed DISPATCH_CHOICES and dispatch_mode field from CheckoutRequestSerializer
+    2026-05-17 (#128): Add batch_total, batch_processed, session_started_at to HeartbeatSerializer
 """
 from rest_framework import serializers
 
@@ -145,11 +146,23 @@ class JobFailSerializer(serializers.Serializer):
 
 
 class HeartbeatSerializer(serializers.Serializer):
-    """Worker heartbeat status update."""
+    """Worker heartbeat status update.
+
+    Backward-compatible: legacy workers omit batch_total/batch_processed/
+    session_started_at and receive defaults of None/0/None. New workers
+    send all fields to report live batch progress.
+    """
 
     worker_id = serializers.CharField(max_length=64)
     engine = serializers.ChoiceField(choices=ENGINE_CHOICES)
     status_message = serializers.CharField(max_length=256, required=False, default='')
+    batch_total = serializers.IntegerField(
+        required=False, allow_null=True, default=None
+    )
+    batch_processed = serializers.IntegerField(required=False, default=0)
+    session_started_at = serializers.DateTimeField(
+        required=False, allow_null=True, default=None
+    )
 
 
 class JobSubmitSerializer(serializers.Serializer):

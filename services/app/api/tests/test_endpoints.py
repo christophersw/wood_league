@@ -8,13 +8,14 @@ Changelog:
     2026-05-08: Added JobSubmitTests for POST /api/v1/jobs/<id>/submit/
     2026-05-10: Removed dispatch_mode kwargs from AnalysisJob.objects.create calls; removed tests for dispatch_mode-specific routing
     2026-05-11 (#14): Added regression test ensuring complete_stockfish_job replaces existing MoveAnalysis rows via analysis FK
+    2026-05-17 (#128): Add test_heartbeat_view_persists_batch_fields; import WorkerHeartbeat
 """
 from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 from accounts.models import User
 from games.models import Game
-from analysis.models import AnalysisJob, GameAnalysis, MoveAnalysis
+from analysis.models import AnalysisJob, GameAnalysis, MoveAnalysis, WorkerHeartbeat
 from api.models import WorkerAPIKey
 
 
@@ -515,9 +516,31 @@ class HeartbeatTests(TestCase):
             'engine': 'stockfish',
             'status_message': 'idle',
         })
-        
+
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()['status'], 'ok')
+
+    def test_heartbeat_view_persists_batch_fields(self):
+        """Heartbeat endpoint persists batch_total, batch_processed, session_started_at.
+
+        New workers send batch progress alongside the standard heartbeat payload.
+        Asserts the view stores all three fields on the WorkerHeartbeat row and
+        returns HTTP 200.
+        """
+        response = self.client.post('/api/v1/heartbeat/', {
+            'worker_id': 'wbatch',
+            'engine': 'lc0',
+            'status_message': 'processed=2',
+            'batch_total': 6,
+            'batch_processed': 2,
+            'session_started_at': '2026-05-17T10:00:00Z',
+        })
+
+        self.assertEqual(response.status_code, 200)
+        hb = WorkerHeartbeat.objects.get(worker_id='wbatch')
+        self.assertEqual(hb.batch_total, 6)
+        self.assertEqual(hb.batch_processed, 2)
+        self.assertIsNotNone(hb.session_started_at)
 
 
 class JobSubmitTests(TestCase):
