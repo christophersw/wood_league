@@ -59,16 +59,35 @@ export _CACHE_DB="${CACHE_DB}" _WORK_DIR="${WORK_DIR}"
 
 pull_cache
 
-# --- launch both engines concurrently (mirrors runpod/bootstrap.sh) ---
+# --- compute Stockfish fan-out for this host ---
+eval "$(wood-league-worker plan-sf-fanout)"
+echo "onstart: fan-out SF_WORKERS=${SF_WORKERS} SF_THREADS=${SF_THREADS} SF_HASH_MB=${SF_HASH_MB} SF_JOB_SPLIT='${SF_JOB_SPLIT}'"
+
+declare -a engine_pids=()
+
+# lc0 — single GPU-bound process; own truncating log file (lc0.log).
+WLW_LOG_BASENAME=lc0 \
 WLW_WORKER_ID="vast-lc0-${WL_INSTANCE_ID}" \
   wood-league-worker --telemetry run --engine lc0 \
   ${WLW_MAX_JOBS:+--max-jobs "${WLW_MAX_JOBS}"} --batch-time "${WLW_BATCH_TIME:-1440}" &
-lc_pid=$!
+engine_pids+=($!)
 
-WLW_WORKER_ID="vast-sf-${WL_INSTANCE_ID}" \
-  wood-league-worker --telemetry run --engine stockfish \
-  ${WLW_MAX_JOBS:+--max-jobs "${WLW_MAX_JOBS}"} --batch-time "${WLW_BATCH_TIME:-1440}" &
-sf_pid=$!
+# Stockfish — N CPU workers sharing one appended log file (stockfish.log).
+read -r -a _sf_split <<< "${SF_JOB_SPLIT}"
+for ((i = 0; i < SF_WORKERS; i++)); do
+  _cap_arg=""
+  if [ -n "${SF_JOB_SPLIT}" ]; then
+    _cap_arg="--max-jobs ${_sf_split[$i]}"
+  elif [ -n "${WLW_MAX_JOBS:-}" ]; then
+    _cap_arg="--max-jobs ${WLW_MAX_JOBS}"
+  fi
+  WLW_LOG_BASENAME=stockfish WLW_LOG_APPEND=1 \
+  WLW_STOCKFISH_THREADS="${SF_THREADS}" WLW_STOCKFISH_HASH_MB="${SF_HASH_MB}" \
+  WLW_WORKER_ID="vast-sf-${WL_INSTANCE_ID}-${i}" \
+    wood-league-worker --telemetry run --engine stockfish \
+    ${_cap_arg} --batch-time "${WLW_BATCH_TIME:-1440}" &
+  engine_pids+=($!)
+done
 
 # --- periodic checkpoint loop ---
 ( while sleep "$((WL_CACHE_CHECKPOINT_MINUTES * 60))"; do push_delta; done ) &
@@ -80,9 +99,10 @@ final_export() {
 }
 trap 'final_export' TERM INT
 
-# Wait for BOTH engine processes (a crash of one does not strand the other).
-wait "${lc_pid}" || true
-wait "${sf_pid}" || true
+# Wait for ALL engine processes (a crash of one does not strand the rest).
+for _pid in "${engine_pids[@]}"; do
+  wait "${_pid}" || true
+done
 
 kill "${ckpt_pid}" 2>/dev/null || true
 trap - TERM INT
