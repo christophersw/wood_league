@@ -6,9 +6,12 @@ Description:
     the regression where ``Lc0MoveSerializer`` rejected empty
     ``arrow_uci_2``/``arrow_uci_3`` strings, failing whole analysis jobs
     when a position had fewer than 3 candidate PV lines (issue #59).
+    Also covers HeartbeatSerializer backward-compatibility and new batch
+    progress fields (issue #128).
 
 Changelog:
     2026-05-13: Initial creation (issue #59)
+    2026-05-17: Add HeartbeatSerializer batch-fields tests (issue #128)
 """
 from __future__ import annotations
 
@@ -99,3 +102,40 @@ class Lc0MoveSerializerArrowUciBlankTests(SimpleTestCase):
         ser = Lc0MoveSerializer(data=_valid_lc0_move_payload(arrow_uci_3='abcdefghij'))
         self.assertFalse(ser.is_valid())
         self.assertIn('arrow_uci_3', ser.errors)
+
+
+def test_heartbeat_serializer_accepts_legacy_payload_without_batch_fields():
+    """HeartbeatSerializer defaults batch fields when omitted (legacy workers).
+
+    Legacy workers send only worker_id/engine/status_message. The serializer
+    must accept the payload and produce None/0/None defaults for the three new
+    batch-progress fields so existing workers keep working without changes.
+    """
+    from api.serializers import HeartbeatSerializer
+
+    ser = HeartbeatSerializer(data={
+        "worker_id": "w1", "engine": "lc0", "status_message": "processed=3",
+    })
+    assert ser.is_valid(), ser.errors
+    assert ser.validated_data["batch_total"] is None
+    assert ser.validated_data["batch_processed"] == 0
+    assert ser.validated_data["session_started_at"] is None
+
+
+def test_heartbeat_serializer_accepts_batch_fields():
+    """HeartbeatSerializer accepts and validates all three new batch-progress fields.
+
+    New workers send batch_total, batch_processed, and session_started_at.
+    The serializer must pass them through to validated_data unchanged.
+    """
+    from api.serializers import HeartbeatSerializer
+
+    ser = HeartbeatSerializer(data={
+        "worker_id": "w1", "engine": "lc0", "status_message": "processed=3",
+        "batch_total": 6, "batch_processed": 3,
+        "session_started_at": "2026-05-17T10:00:00Z",
+    })
+    assert ser.is_valid(), ser.errors
+    assert ser.validated_data["batch_total"] == 6
+    assert ser.validated_data["batch_processed"] == 3
+    assert ser.validated_data["session_started_at"] is not None

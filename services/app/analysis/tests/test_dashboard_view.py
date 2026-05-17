@@ -9,6 +9,7 @@ Description:
 Changelog:
     2026-05-14 (#106): Initial smoke tests for the wire-up slice.
     2026-05-14 (#106): Regression test for naive last_seen TypeError.
+    2026-05-17 (#128): Test stale-drop, live/reporting flags, and card shape.
 """
 from __future__ import annotations
 
@@ -144,15 +145,15 @@ def test_banner_reports_worker_and_job_counts(client):
 
 @pytest.mark.django_db
 def test_workers_partial_lists_each_heartbeat(client):
-    """Each WorkerHeartbeat row produces a card with its worker_id."""
+    """Each live WorkerHeartbeat produces a card with its worker_id and engine."""
     admin = _make_user("admin")
     client.force_login(admin)
 
+    # last_seen auto_now → just-created → within the "live" window; no stale drop.
     WorkerHeartbeat.objects.create(
         worker_id="runpod-stockfish",
         engine="stockfish",
         status="working",
-        current_game_id="42",
         jobs_completed=6,
         jobs_failed=0,
         cpu_model="EPYC 75F3",
@@ -165,8 +166,12 @@ def test_workers_partial_lists_each_heartbeat(client):
     assert response.status_code == 200
     body = response.content.decode()
     assert "runpod-stockfish" in body
-    assert "#42" in body
-    assert "60.5 GB" in body  # _format_memory_mb output
+    assert "stockfish" in body.lower()
+    # New card shape: verify live_state is present in rendered template
+    cards = response.context["cards"]
+    assert any(c["worker_id"] == "runpod-stockfish" for c in cards)
+    card = next(c for c in cards if c["worker_id"] == "runpod-stockfish")
+    assert card["live_state"] == "live"
 
 
 @pytest.mark.django_db
@@ -262,3 +267,73 @@ def test_throughput_partial_lists_engines_and_windows(client):
     body = response.content.decode()
     for header in ("Stockfish", "Lc0", "1h", "6h", "24h"):
         assert header in body
+
+
+def _setup_workers_card_fixtures(now):
+    """Create three WorkerHeartbeat rows (live, reporting, dead) and one completed job.
+
+    Args:
+        now: TZ-aware datetime representing the test's "current" moment.
+
+    Returns:
+        None — creates rows in the DB as a side effect.
+    """
+    from analysis.models import AnalysisJob, WorkerHeartbeat
+    from games.models import Game
+
+    live = WorkerHeartbeat.objects.create(
+        worker_id="live-1", engine="lc0", batch_total=6, batch_processed=2,
+        session_started_at=now - timedelta(seconds=600),
+    )
+    WorkerHeartbeat.objects.filter(pk=live.pk).update(last_seen=now - timedelta(seconds=30))
+
+    reporting = WorkerHeartbeat.objects.create(worker_id="rep-1", engine="lc0")
+    WorkerHeartbeat.objects.filter(pk=reporting.pk).update(
+        last_seen=now - timedelta(seconds=600)
+    )
+
+    dead = WorkerHeartbeat.objects.create(worker_id="dead-1", engine="lc0")
+    WorkerHeartbeat.objects.filter(pk=dead.pk).update(
+        last_seen=now - timedelta(seconds=4000)
+    )
+
+    g = Game.objects.create(
+        id="dv-1", slug="dv-1", played_at=now, time_control="600", pgn="*",
+    )
+    AnalysisJob.objects.create(
+        game=g, engine="lc0", status=AnalysisJob.STATUS_COMPLETED,
+        worker_id="live-1", duration_seconds=12.0, completed_at=now,
+    )
+
+
+def _assert_live_card_shape(card):
+    """Assert the card dict for worker live-1 has the expected shape and values.
+
+    Args:
+        card: Card dict from ``resp.context["cards"]`` for worker_id ``"live-1"``.
+
+    Returns:
+        None — raises AssertionError if any field is unexpected.
+    """
+    assert card["batch_total"] == 6 and card["batch_processed"] == 2
+    assert card["batch_percent"] == pytest.approx(33.33, abs=0.1)
+    assert any(r["engine"] == "lc0" for r in card["engine_rows"])
+    assert card["billable_per_game"] is not None
+    assert isinstance(card["recent_games"], list)
+
+
+@pytest.mark.django_db
+def test_dashboard_workers_drops_stale_flags_live_and_builds_cards(client):
+    """Workers partial drops stale workers, flags live/reporting, and emits rich cards."""
+    client.force_login(_make_user("admin"))
+    now = timezone.now()
+    _setup_workers_card_fixtures(now)
+
+    resp = client.get(reverse("analysis:dash_workers"))
+    assert resp.status_code == 200
+    ids = {c["worker_id"]: c for c in resp.context["cards"]}
+
+    assert "dead-1" not in ids
+    assert ids["live-1"]["live_state"] == "live"
+    assert ids["rep-1"]["live_state"] == "reporting"
+    _assert_live_card_shape(ids["live-1"])

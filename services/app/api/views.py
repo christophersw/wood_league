@@ -10,6 +10,7 @@ Changelog:
     2026-05-08: Added file header to meet documentation standards
     2026-05-08: Added JobSubmitView for RunPod dispatcher integration
     2026-05-10: Removed dispatch_mode kwarg from claim_jobs call in JobCheckoutView
+    2026-05-17 (#128): HeartbeatView.post persists batch_total, batch_processed, session_started_at
 """
 from django.db.models import Count
 from django.utils import timezone
@@ -197,6 +198,9 @@ class HeartbeatView(APIView):
             defaults=dict(
                 engine=d['engine'],
                 status_message=d['status_message'],
+                batch_total=d['batch_total'],
+                batch_processed=d['batch_processed'],
+                session_started_at=d['session_started_at'],
                 last_seen=timezone.now(),
             ),
         )

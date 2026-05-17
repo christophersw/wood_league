@@ -8,6 +8,7 @@ Description:
 Changelog:
     2026-05-08: Created
     2026-05-10: Copied from packages/shared to make local_worker self-contained for PyPI
+    2026-05-17 (#128): heartbeat carries batch_total/batch_processed/session_started_at.
 """
 from __future__ import annotations
 
@@ -165,19 +166,38 @@ class WorkerClient:
         )
         return data.get('status', 'failed')
 
-    def heartbeat(self, *, worker_id: str, engine: str, status_message: str = '') -> None:
+    def heartbeat(
+        self, *, worker_id: str, engine: str, status_message: str = '',
+        batch_total: int | None = None, batch_processed: int = 0,
+        session_started_at: str | None = None,
+    ) -> None:
         """Send a worker heartbeat to indicate the worker is alive.
 
         Args:
-            worker_id: Unique worker identifier
-            engine: 'stockfish' or 'lc0'
-            status_message: Human-readable status string
+            worker_id: Unique worker identifier.
+            engine: 'stockfish' or 'lc0'.
+            status_message: Human-readable status string.
+            batch_total: max_jobs run cap (M in N/M); ``None`` = unlimited.
+            batch_processed: Jobs completed so far this session (N).
+            session_started_at: ISO-8601 wall-clock start of this run, for
+                the dashboard's billable time/game metric.
+
+        Backward compatible: the batch fields are only added to the
+        payload when supplied, so older servers ignore them and newer
+        callers that omit them behave as before.
         """
+        payload: dict[str, object] = {
+            'worker_id': worker_id,
+            'engine': engine,
+            'status_message': status_message,
+        }
+        if batch_total is not None:
+            payload['batch_total'] = batch_total
+        if batch_processed:
+            payload['batch_processed'] = batch_processed
+        if session_started_at is not None:
+            payload['session_started_at'] = session_started_at
         try:
-            self._post('/api/v1/heartbeat/', {
-                'worker_id': worker_id,
-                'engine': engine,
-                'status_message': status_message,
-            })
+            self._post('/api/v1/heartbeat/', payload)
         except WorkerClientError:
             log.warning('Heartbeat failed — continuing')

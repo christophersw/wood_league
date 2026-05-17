@@ -15,6 +15,7 @@ Changelog:
                 cache hit-rate (issue #85). ``WorkerStats`` accumulates
                 cache hits/lookups across per-job cache lifetimes via the
                 new ``record_cache`` method.
+    2026-05-17 (#128): heartbeat carries batch_total/batch_processed/session_started_at.
 """
 from __future__ import annotations
 
@@ -23,6 +24,7 @@ import os
 import socket
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone as _dt_timezone
 from typing import Callable, Optional
 
 import chess.engine
@@ -330,6 +332,7 @@ def run_batch(
     processed = 0
     worker_id = _worker_id(settings)
     start_time = time.monotonic()
+    session_started_at = datetime.now(_dt_timezone.utc).isoformat()
     last_heartbeat = 0.0
 
     def _time_limit_exceeded() -> bool:
@@ -352,6 +355,9 @@ def run_batch(
                     worker_id=worker_id,
                     engine=engine,
                     status_message=build_heartbeat_status(stats),
+                    batch_total=max_jobs,
+                    batch_processed=processed,
+                    session_started_at=session_started_at,
                 )
             except WorkerClientError:
                 pass

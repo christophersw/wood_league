@@ -18,8 +18,11 @@ import pytest
 from django.utils import timezone
 
 from analysis.dashboard_helpers import (
+    LIVE_WINDOW_SECONDS,
     LIVENESS_HEALTHY_SECONDS,
     LIVENESS_WARNING_SECONDS,
+    STALE_DROP_SECONDS,
+    _batch_billable_per_game,
     _engine_throughput_row,
     _eta_for,
     _format_memory_mb,
@@ -30,7 +33,10 @@ from analysis.dashboard_helpers import (
     _percentile,
     _rate_per_min,
     _throughput_for_window,
+    _worker_engine_metrics,
+    _worker_live_state,
     _worker_log_url_for,
+    _worker_recent_games,
 )
 from analysis.models import AnalysisJob
 from games.models import Game
@@ -385,3 +391,197 @@ def test_worker_log_url_for_returns_none_when_no_upload_in_window():
         claimed_by_key_prefix=api_key.prefix,
     )
     assert _worker_log_url_for(job) is None
+
+
+# ---------------------------------------------------------------------------
+# _worker_live_state and live-window / stale-drop constants (issue #128)
+# ---------------------------------------------------------------------------
+
+
+def test_live_window_and_stale_drop_constants():
+    """Exported constants match the documented threshold values."""
+    assert LIVE_WINDOW_SECONDS == 300
+    assert STALE_DROP_SECONDS == 1800
+
+
+def test_worker_live_state_live_within_window():
+    """Heartbeat within LIVE_WINDOW_SECONDS → ``'live'``."""
+    assert _worker_live_state(timedelta(seconds=0)) == "live"
+    assert _worker_live_state(timedelta(seconds=299)) == "live"
+
+
+def test_worker_live_state_reporting_between_window_and_drop():
+    """Heartbeat between LIVE_WINDOW_SECONDS and STALE_DROP_SECONDS → ``'reporting'``."""
+    assert _worker_live_state(timedelta(seconds=300)) == "reporting"
+    assert _worker_live_state(timedelta(seconds=1799)) == "reporting"
+
+
+def test_worker_live_state_none_when_stale_or_missing():
+    """Heartbeat at or beyond STALE_DROP_SECONDS, or None delta → ``None``."""
+    assert _worker_live_state(timedelta(seconds=1800)) is None
+    assert _worker_live_state(None) is None
+
+
+# ---------------------------------------------------------------------------
+# _worker_engine_metrics (issue #128)
+# ---------------------------------------------------------------------------
+
+
+def _make_wem_game(suffix: str) -> "Game":
+    """Create a Game row with a unique id/slug for worker-engine-metrics tests.
+
+    Args:
+        suffix: Short string appended to the id/slug to distinguish the game.
+
+    Returns:
+        Saved Game instance.
+    """
+    return Game.objects.create(
+        id=f"wem-{uuid.uuid4().hex[:8]}-{suffix}",
+        slug=f"wem-g{suffix}-{uuid.uuid4().hex[:6]}",
+        played_at=timezone.now(),
+        time_control="600",
+    )
+
+
+def _bulk_move_rows(move_model, analysis_obj, count: int, **extra) -> None:
+    """Bulk-create *count* placeholder move rows for the given analysis object.
+
+    Args:
+        move_model: Django model class (MoveAnalysis or Lc0MoveAnalysis).
+        analysis_obj: The parent GameAnalysis / Lc0GameAnalysis instance.
+        count: Number of move rows to create.
+        **extra: Additional field values forwarded to each model constructor
+            (e.g. ``cp_eval=0.0`` for MoveAnalysis which has no field default).
+
+    Returns:
+        None. Rows are written directly to the database.
+    """
+    move_model.objects.bulk_create(
+        [move_model(analysis=analysis_obj, ply=i, san="e4", fen="x", **extra) for i in range(count)]
+    )
+
+
+@pytest.mark.django_db
+def test_worker_engine_metrics_per_engine_time_per_ply_and_game():
+    """Per-engine avg_seconds_per_ply and avg_seconds_per_game computed correctly."""
+    from analysis.models import (
+        AnalysisJob, GameAnalysis, Lc0GameAnalysis,
+        Lc0MoveAnalysis, MoveAnalysis,
+    )
+
+    game_a = _make_wem_game("a")
+    game_b = _make_wem_game("b")
+
+    # Stockfish: game_a 10s / 20 plies, game_b 30s / 40 plies
+    AnalysisJob.objects.create(
+        game=game_a, engine="stockfish", status=AnalysisJob.STATUS_COMPLETED,
+        worker_id="w1", duration_seconds=10.0, completed_at=timezone.now(),
+    )
+    AnalysisJob.objects.create(
+        game=game_b, engine="stockfish", status=AnalysisJob.STATUS_COMPLETED,
+        worker_id="w1", duration_seconds=30.0, completed_at=timezone.now(),
+    )
+    sa_a = GameAnalysis.objects.create(game=game_a)
+    sa_b = GameAnalysis.objects.create(game=game_b)
+    _bulk_move_rows(MoveAnalysis, sa_a, 20, cp_eval=0.0)
+    _bulk_move_rows(MoveAnalysis, sa_b, 40, cp_eval=0.0)
+
+    # lc0: game_a 5s / 10 plies
+    AnalysisJob.objects.create(
+        game=game_a, engine="lc0", status=AnalysisJob.STATUS_COMPLETED,
+        worker_id="w1", duration_seconds=5.0, completed_at=timezone.now(),
+    )
+    la_a = Lc0GameAnalysis.objects.create(game=game_a)
+    _bulk_move_rows(Lc0MoveAnalysis, la_a, 10)
+
+    rows = _worker_engine_metrics("w1")
+    by_engine = {r["engine"]: r for r in rows}
+
+    assert by_engine["stockfish"]["avg_seconds_per_ply"] == pytest.approx(0.667, abs=0.001)
+    assert by_engine["stockfish"]["avg_seconds_per_game"] == pytest.approx(20.0)
+    assert by_engine["stockfish"]["completed"] == 2
+    assert by_engine["lc0"]["avg_seconds_per_ply"] == pytest.approx(0.5)
+    assert by_engine["lc0"]["avg_seconds_per_game"] == pytest.approx(5.0)
+
+
+@pytest.mark.django_db
+def test_worker_engine_metrics_skips_engines_with_no_jobs():
+    """An unknown worker_id returns an empty list."""
+    rows = _worker_engine_metrics("nobody")
+    assert rows == []
+
+
+@pytest.mark.django_db
+def test_worker_engine_metrics_ply_none_when_no_analysis_rows():
+    """avg_seconds_per_ply is None when no MoveAnalysis rows exist for completed jobs."""
+    from analysis.models import AnalysisJob
+
+    g = Game.objects.create(
+        id=f"wem-{uuid.uuid4().hex[:8]}-x",
+        slug=f"wem-gx-{uuid.uuid4().hex[:6]}",
+        played_at=timezone.now(),
+        time_control="600",
+    )
+    AnalysisJob.objects.create(
+        game=g, engine="stockfish", status=AnalysisJob.STATUS_COMPLETED,
+        worker_id="w2", duration_seconds=12.0, completed_at=timezone.now(),
+    )
+    rows = _worker_engine_metrics("w2")
+    assert rows[0]["avg_seconds_per_ply"] is None
+    assert rows[0]["avg_seconds_per_game"] == pytest.approx(12.0)
+
+
+# ---------------------------------------------------------------------------
+# _worker_recent_games + _batch_billable_per_game (issue #128 Task 3)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_worker_recent_games_newest_first_limited():
+    """Returns ≤limit rows newest-first with expected keys."""
+    now = timezone.now()
+    for i in range(12):
+        g = _make_wem_game(f"rg-{i}")
+        AnalysisJob.objects.create(
+            game=g, engine="stockfish", status=AnalysisJob.STATUS_COMPLETED,
+            worker_id="wr", duration_seconds=float(i),
+            completed_at=now - timedelta(minutes=i),
+        )
+    rows = _worker_recent_games("wr", limit=10)
+    assert len(rows) == 10
+    assert rows[0]["duration_seconds"] == 0.0
+    assert rows[0]["game_label"].startswith("#")
+    assert "engine" in rows[0] and "completed_at" in rows[0]
+
+
+def test_batch_billable_per_game_basic():
+    """600s span / 4 games = 150.0 s/game."""
+    start = timezone.now()
+    last = start + timedelta(seconds=600)
+    assert _batch_billable_per_game(start, last, 4) == pytest.approx(150.0)
+
+
+def test_batch_billable_per_game_none_paths():
+    """Returns None for missing/invalid inputs."""
+    now = timezone.now()
+    assert _batch_billable_per_game(None, now, 4) is None
+    assert _batch_billable_per_game(now, None, 4) is None
+    assert _batch_billable_per_game(now, now + timedelta(seconds=10), 0) is None
+    assert _batch_billable_per_game(now, now, 4) is None
+
+
+# ---------------------------------------------------------------------------
+# WorkerHeartbeat structured fields (issue #128 Task 4)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_workerheartbeat_has_batch_fields_with_defaults():
+    """New batch_total/batch_processed/session_started_at fields exist with correct defaults."""
+    from analysis.models import WorkerHeartbeat
+
+    wh = WorkerHeartbeat.objects.create(worker_id="wbf")
+    assert wh.batch_total is None
+    assert wh.batch_processed == 0
+    assert wh.session_started_at is None

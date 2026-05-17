@@ -12,12 +12,17 @@ Changelog:
         dashboard-specific helpers.
     2026-05-14 (#106): Added _rate_per_min and _eta_for for queues partial.
     2026-05-14 (#106): Added _group_recent_by_game for recent partial.
+    2026-05-17 (#128): Added LIVE_WINDOW_SECONDS, STALE_DROP_SECONDS,
+        and _worker_live_state for worker card grid.
+    2026-05-17 (#128): Added _worker_engine_metrics for per-engine
+        time/ply and time/game aggregation.
 """
 from __future__ import annotations
 
 from datetime import timedelta
 from typing import Any
 
+from django.db.models import Count
 from django.urls import reverse
 from django.utils import timezone
 
@@ -40,11 +45,22 @@ __all__ = [
     "_rate_per_min",
     "_eta_for",
     "_group_recent_by_game",
+    "LIVE_WINDOW_SECONDS",
+    "STALE_DROP_SECONDS",
+    "_worker_live_state",
+    "_worker_engine_metrics",
+    "_worker_recent_games",
+    "_batch_billable_per_game",
 ]
 
 
 LIVENESS_HEALTHY_SECONDS = 60
 LIVENESS_WARNING_SECONDS = 120
+
+# Workers-dashboard windows (issue #128). Distinct from the banner's
+# 60s/120s health buckets above — these only gate the workers card grid.
+LIVE_WINDOW_SECONDS = 300       # heartbeat within this → "live" highlight
+STALE_DROP_SECONDS = 1800       # heartbeat older than this → not rendered
 
 
 def _percentile(sorted_values: list[float], fraction: float) -> float | None:
@@ -237,6 +253,32 @@ def _liveness_for(delta: timedelta | None) -> str:
     return "stale"
 
 
+def _worker_live_state(delta: timedelta | None) -> str | None:
+    """Classify a worker's heartbeat recency for the workers dashboard.
+
+    Distinct from :func:`_liveness_for` (which drives the banner's
+    60s/120s health buckets). Here we only need three outcomes:
+    genuinely live, reporting-but-not-live, or too stale to render.
+
+    Args:
+        delta: ``now - last_seen``, or ``None`` if no heartbeat exists.
+
+    Returns:
+        ``"live"`` when within ``LIVE_WINDOW_SECONDS``; ``"reporting"``
+        when older but within ``STALE_DROP_SECONDS``; ``None`` when the
+        worker is too stale to show (caller should drop it) or ``delta``
+        is ``None``.
+    """
+    if delta is None:
+        return None
+    seconds = delta.total_seconds()
+    if seconds < LIVE_WINDOW_SECONDS:
+        return "live"
+    if seconds < STALE_DROP_SECONDS:
+        return "reporting"
+    return None
+
+
 def _format_uptime(delta: timedelta | None) -> str:
     """Format ``now - started_at`` as a compact human string.
 
@@ -398,3 +440,142 @@ def _group_recent_by_game(limit: int = 25) -> list[dict[str, Any]]:
 
     rows = sorted(by_game.values(), key=lambda r: r["latest_completed_at"], reverse=True)
     return rows[:limit]
+
+
+def _worker_engine_metrics(worker_id: str, sample: int = 50) -> list[dict[str, Any]]:
+    """Per-engine timing metrics for one worker, from completed jobs.
+
+    For each engine the worker has completed jobs in, computes the mean
+    wall-clock seconds per game and the mean seconds per *analyzed ply*
+    (total engine duration ÷ total plies the engine evaluated). Time/ply
+    is the length-normalised "pure engine speed" signal: dividing summed
+    duration by summed plies makes long and short games comparable.
+
+    Ply counts come from engine-specific analysis rows: ``MoveAnalysis``
+    for stockfish, ``Lc0MoveAnalysis`` for lc0.
+
+    Args:
+        worker_id: The worker whose jobs to aggregate.
+        sample: Max recent completed jobs per engine to average over.
+
+    Returns:
+        One dict per engine that has completed jobs, keys: ``engine``,
+        ``avg_seconds_per_game`` (float), ``avg_seconds_per_ply``
+        (float | None), ``completed`` (int). Engines with no jobs are
+        omitted. Order: lc0 then stockfish.
+    """
+    from analysis.models import AnalysisJob, Lc0MoveAnalysis, MoveAnalysis
+
+    rows: list[dict[str, Any]] = []
+    for engine in ("lc0", "stockfish"):
+        jobs = list(
+            AnalysisJob.objects.filter(
+                worker_id=worker_id,
+                engine=engine,
+                status=AnalysisJob.STATUS_COMPLETED,
+                duration_seconds__isnull=False,
+            )
+            .order_by("-completed_at")
+            .values("game_id", "duration_seconds")[:sample]
+        )
+        if not jobs:
+            continue
+        durations = [j["duration_seconds"] for j in jobs]
+        game_ids = [j["game_id"] for j in jobs]
+        total_duration = sum(durations)
+        avg_game = total_duration / len(durations)
+
+        move_model = Lc0MoveAnalysis if engine == "lc0" else MoveAnalysis
+        ply_rows = (
+            move_model.objects
+            .filter(analysis__game_id__in=game_ids)
+            .values("analysis__game_id")
+            .annotate(plies=Count("id"))
+        )
+        plies_by_game = {r["analysis__game_id"]: r["plies"] for r in ply_rows}
+        total_plies = sum(plies_by_game.get(gid, 0) for gid in game_ids)
+        avg_ply = (total_duration / total_plies) if total_plies else None
+
+        rows.append({
+            "engine": engine,
+            "avg_seconds_per_game": round(avg_game, 1),
+            "avg_seconds_per_ply": (
+                round(avg_ply, 3) if avg_ply is not None else None
+            ),
+            "completed": len(durations),
+        })
+    return rows
+
+
+def _worker_recent_games(worker_id: str, limit: int = 10) -> list[dict[str, Any]]:
+    """Most recently completed games for one worker, across engines.
+
+    Args:
+        worker_id: The worker whose completed jobs to list.
+        limit: Maximum rows to return (default 10, newest first).
+
+    Returns:
+        List of dicts, keys: ``game_label`` (``"#<id>"``), ``game_url``
+        (str | None — game analysis page when slug resolvable),
+        ``engine``, ``duration_seconds`` (float | None), ``completed_at``
+        (datetime).
+    """
+    from analysis.models import AnalysisJob as _AnalysisJob
+
+    jobs = (
+        _AnalysisJob.objects
+        .filter(
+            worker_id=worker_id,
+            status=_AnalysisJob.STATUS_COMPLETED,
+            completed_at__isnull=False,
+        )
+        .select_related("game")
+        .order_by("-completed_at")[:limit]
+    )
+    out: list[dict[str, Any]] = []
+    for job in jobs:
+        game = job.game
+        url = (
+            reverse("games:analysis", kwargs={"slug": game.slug})
+            if game and game.slug else None
+        )
+        out.append({
+            "game_label": f"#{job.game_id}",
+            "game_url": url,
+            "engine": job.engine,
+            "duration_seconds": (
+                round(job.duration_seconds, 1)
+                if job.duration_seconds is not None else None
+            ),
+            "completed_at": job.completed_at,
+        })
+    return out
+
+
+def _batch_billable_per_game(
+    session_started_at: Any, last_seen: Any, games_processed: int
+) -> float | None:
+    """Billable wall-clock seconds per game for a worker's batch.
+
+    Computes ``(last_seen - session_started_at) / games_processed``.
+    Unlike per-engine time/game (pure engine duration), this folds in
+    in-session infrastructure overhead — job checkout, model/network
+    load, result upload, and idle gaps between jobs — i.e. the time the
+    instance is billed for while running. It excludes pre-process image
+    build and post-run teardown, which happen outside the worker.
+
+    Args:
+        session_started_at: Worker run start (TZ-aware) or ``None``.
+        last_seen: Most recent heartbeat time (TZ-aware) or ``None``.
+        games_processed: Games completed this session.
+
+    Returns:
+        Seconds per game (1 dp), or ``None`` when inputs are missing,
+        ``games_processed`` <= 0, or the span is non-positive.
+    """
+    if session_started_at is None or last_seen is None or games_processed <= 0:
+        return None
+    span = (last_seen - session_started_at).total_seconds()
+    if span <= 0:
+        return None
+    return round(span / games_processed, 1)

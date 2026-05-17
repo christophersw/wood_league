@@ -3,7 +3,8 @@ Title: test_loop.py — Tests for the worker loop stats tracking
 Description:
     Tests that WorkerStats accumulates counts correctly and that
     run_one_job dispatches to the right engine analyser. Also covers
-    run_batch one-at-a-time checkout behaviour and max_jobs cap (E-T2).
+    run_batch one-at-a-time checkout behaviour and max_jobs cap (E-T2),
+    and WorkerClient.heartbeat batch-field forwarding (issue #128).
 
 Changelog:
     2026-05-09: Initial creation
@@ -11,6 +12,7 @@ Changelog:
         depth=N nodes=None still analyse at N nodes/move (issue #111).
     2026-05-16: Add run_batch TDD tests for one-at-a-time checkout and
         max_jobs run cap (task E-T2).
+    2026-05-17 (#128): Add heartbeat batch-field tests.
 """
 from dataclasses import dataclass
 from types import SimpleNamespace
@@ -412,3 +414,57 @@ def test_run_batch_time_cap_fires_before_max_jobs(
         _client=fake_client,
     )
     assert stats.games_processed < 100
+
+
+# ---------------------------------------------------------------------------
+# Test 6: WorkerClient.heartbeat forwards batch fields when supplied
+# ---------------------------------------------------------------------------
+
+
+def test_heartbeat_includes_batch_fields(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify heartbeat payload carries batch_total/batch_processed/session_started_at.
+
+    When the caller passes the three new kwargs, the underlying _post call
+    must include them in the payload dict.
+    """
+    captured: dict[str, Any] = {}
+
+    def fake_post(self: WorkerClient, path: str, payload: dict) -> dict:
+        captured["path"] = path
+        captured["payload"] = payload
+        return {}
+
+    monkeypatch.setattr(WorkerClient, "_post", fake_post)
+    c = WorkerClient(base_url="http://x", api_key="k")
+    c.heartbeat(
+        worker_id="w1",
+        engine="lc0",
+        status_message="processed=2",
+        batch_total=6,
+        batch_processed=2,
+        session_started_at="2026-05-17T10:00:00+00:00",
+    )
+    assert captured["path"] == "/api/v1/heartbeat/"
+    assert captured["payload"]["batch_total"] == 6
+    assert captured["payload"]["batch_processed"] == 2
+    assert captured["payload"]["session_started_at"] == "2026-05-17T10:00:00+00:00"
+
+
+def test_heartbeat_legacy_call_omits_batch_fields(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify legacy heartbeat calls omit batch fields entirely from the payload.
+
+    When batch_total/batch_processed/session_started_at are not supplied,
+    they must NOT appear in the payload dict so older servers are unaffected.
+    """
+    captured: dict[str, Any] = {}
+
+    def fake_post(self: WorkerClient, path: str, payload: dict) -> dict:
+        captured["payload"] = payload
+        return {}
+
+    monkeypatch.setattr(WorkerClient, "_post", fake_post)
+    c = WorkerClient(base_url="http://x", api_key="k")
+    c.heartbeat(worker_id="w1", engine="lc0", status_message="processed=2")
+    assert "batch_total" not in captured["payload"]
+    assert "batch_processed" not in captured["payload"]
+    assert "session_started_at" not in captured["payload"]

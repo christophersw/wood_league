@@ -20,6 +20,8 @@ build/
 
 # Environment
 .env
+.env.test
+.env.local
 
 # vexp runtime (index files tracked separately)
 .vexp/daemon.log
