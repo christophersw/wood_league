@@ -18,8 +18,10 @@ import pytest
 from django.utils import timezone
 
 from analysis.dashboard_helpers import (
+    LIVE_WINDOW_SECONDS,
     LIVENESS_HEALTHY_SECONDS,
     LIVENESS_WARNING_SECONDS,
+    STALE_DROP_SECONDS,
     _engine_throughput_row,
     _eta_for,
     _format_memory_mb,
@@ -30,6 +32,7 @@ from analysis.dashboard_helpers import (
     _percentile,
     _rate_per_min,
     _throughput_for_window,
+    _worker_live_state,
     _worker_log_url_for,
 )
 from analysis.models import AnalysisJob
@@ -385,3 +388,32 @@ def test_worker_log_url_for_returns_none_when_no_upload_in_window():
         claimed_by_key_prefix=api_key.prefix,
     )
     assert _worker_log_url_for(job) is None
+
+
+# ---------------------------------------------------------------------------
+# _worker_live_state and live-window / stale-drop constants (issue #128)
+# ---------------------------------------------------------------------------
+
+
+def test_live_window_and_stale_drop_constants():
+    """Exported constants match the documented threshold values."""
+    assert LIVE_WINDOW_SECONDS == 300
+    assert STALE_DROP_SECONDS == 1800
+
+
+def test_worker_live_state_live_within_window():
+    """Heartbeat within LIVE_WINDOW_SECONDS → ``'live'``."""
+    assert _worker_live_state(timedelta(seconds=0)) == "live"
+    assert _worker_live_state(timedelta(seconds=299)) == "live"
+
+
+def test_worker_live_state_reporting_between_window_and_drop():
+    """Heartbeat between LIVE_WINDOW_SECONDS and STALE_DROP_SECONDS → ``'reporting'``."""
+    assert _worker_live_state(timedelta(seconds=300)) == "reporting"
+    assert _worker_live_state(timedelta(seconds=1799)) == "reporting"
+
+
+def test_worker_live_state_none_when_stale_or_missing():
+    """Heartbeat at or beyond STALE_DROP_SECONDS, or None delta → ``None``."""
+    assert _worker_live_state(timedelta(seconds=1800)) is None
+    assert _worker_live_state(None) is None

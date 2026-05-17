@@ -12,6 +12,8 @@ Changelog:
         dashboard-specific helpers.
     2026-05-14 (#106): Added _rate_per_min and _eta_for for queues partial.
     2026-05-14 (#106): Added _group_recent_by_game for recent partial.
+    2026-05-17 (#128): Added LIVE_WINDOW_SECONDS, STALE_DROP_SECONDS,
+        and _worker_live_state for worker card grid.
 """
 from __future__ import annotations
 
@@ -40,11 +42,19 @@ __all__ = [
     "_rate_per_min",
     "_eta_for",
     "_group_recent_by_game",
+    "LIVE_WINDOW_SECONDS",
+    "STALE_DROP_SECONDS",
+    "_worker_live_state",
 ]
 
 
 LIVENESS_HEALTHY_SECONDS = 60
 LIVENESS_WARNING_SECONDS = 120
+
+# Workers-dashboard windows (issue #128). Distinct from the banner's
+# 60s/120s health buckets above — these only gate the workers card grid.
+LIVE_WINDOW_SECONDS = 300       # heartbeat within this → "live" highlight
+STALE_DROP_SECONDS = 1800       # heartbeat older than this → not rendered
 
 
 def _percentile(sorted_values: list[float], fraction: float) -> float | None:
@@ -235,6 +245,32 @@ def _liveness_for(delta: timedelta | None) -> str:
     if seconds < LIVENESS_WARNING_SECONDS:
         return "warning"
     return "stale"
+
+
+def _worker_live_state(delta: timedelta | None) -> str | None:
+    """Classify a worker's heartbeat recency for the workers dashboard.
+
+    Distinct from :func:`_liveness_for` (which drives the banner's
+    60s/120s health buckets). Here we only need three outcomes:
+    genuinely live, reporting-but-not-live, or too stale to render.
+
+    Args:
+        delta: ``now - last_seen``, or ``None`` if no heartbeat exists.
+
+    Returns:
+        ``"live"`` when within ``LIVE_WINDOW_SECONDS``; ``"reporting"``
+        when older but within ``STALE_DROP_SECONDS``; ``None`` when the
+        worker is too stale to show (caller should drop it) or ``delta``
+        is ``None``.
+    """
+    if delta is None:
+        return None
+    seconds = delta.total_seconds()
+    if seconds < LIVE_WINDOW_SECONDS:
+        return "live"
+    if seconds < STALE_DROP_SECONDS:
+        return "reporting"
+    return None
 
 
 def _format_uptime(delta: timedelta | None) -> str:
