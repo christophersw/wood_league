@@ -125,14 +125,16 @@ def _patch_lc0_analyze(
     monkeypatch.setattr(worker_loop, "_open_eval_cache", lambda *_a, **_k: None)
 
 
-def test_lc0_uses_job_depth_when_nodes_absent(
+def test_lc0_ignores_depth_uses_settings_when_nodes_absent(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Issue #111: server emits depth=25000 nodes=None — run at 25k, not the default.
+    """#141: lc0 must NOT treat ``job.depth`` as a node budget.
 
-    Reproduces the RunPod log where every lc0 job arrived with
-    ``depth=25000 nodes=None`` and was silently analysed at 10,000
-    nodes/move because the worker only consulted ``job.nodes``.
+    The prior #111 behaviour (depth-as-nodes) is exactly what made
+    bulk-requeued jobs (nodes=None, depth=20) run ~20 nodes. With the
+    server now sending nodes correctly, an lc0 job whose ``nodes`` is
+    absent must fall back to ``settings.lc0_nodes`` and ignore
+    ``depth`` entirely — never run at the depth value.
     """
     captured: dict[str, Any] = {}
     _patch_lc0_analyze(monkeypatch, captured)
@@ -145,7 +147,33 @@ def test_lc0_uses_job_depth_when_nodes_absent(
     )
 
     assert ok is True
-    assert captured["nodes"] == 25000
+    assert captured["nodes"] == 10000  # settings, NOT depth (25000)
+
+
+def test_lc0_absurdly_low_nodes_fails_job(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#141 guard: a sub-floor lc0 node budget fails the job loudly.
+
+    Reproduces the production incident shape (job arrives nodes=20)
+    and asserts the worker refuses to write garbage analysis:
+    lc0_analyze is never called, the job is failed, run returns False.
+    """
+    captured: dict[str, Any] = {}
+    _patch_lc0_analyze(monkeypatch, captured)
+    client = _StubClient()
+
+    ok = run_one_job(
+        job=_StubJob(depth=20, nodes=20),
+        settings=_settings_for_lc0(default_nodes=10000),
+        stats=WorkerStats(),
+        client=cast(WorkerClient, client),
+    )
+
+    assert ok is False
+    assert captured == {}  # analyser never invoked
+    assert len(client.failed) == 1
+    assert client.completed == []
 
 
 def test_lc0_prefers_explicit_nodes_over_depth(
