@@ -12,12 +12,65 @@ Description:
 Changelog:
     2026-05-13: Initial creation (issue #59)
     2026-05-17: Add HeartbeatSerializer batch-fields tests (issue #128)
+    2026-05-17: Add JobSerializer lc0 null-nodes resolution tests (issue #141)
 """
 from __future__ import annotations
 
-from django.test import SimpleTestCase
+from types import SimpleNamespace
 
-from api.serializers import Lc0MoveSerializer
+from django.test import SimpleTestCase, override_settings
+
+from api.serializers import JobSerializer, Lc0MoveSerializer
+
+
+def _job_stub(*, engine: str, nodes, depth: int = 20) -> SimpleNamespace:
+    """Build a lightweight stand-in for an AnalysisJob row.
+
+    JobSerializer is a plain (non-ModelSerializer) Serializer that only
+    reads attributes, so a SimpleNamespace avoids any DB dependency.
+
+    Args:
+        engine: 'lc0' or 'stockfish'.
+        nodes: the job's stored nodes value (int or None).
+        depth: the job's stored Stockfish depth (default 20).
+
+    Returns:
+        SimpleNamespace shaped like a claimed AnalysisJob.
+    """
+    return SimpleNamespace(
+        id=1,
+        game=SimpleNamespace(id='g-1', pgn='*'),
+        engine=engine,
+        depth=depth,
+        nodes=nodes,
+        worker_id='w-1',
+        claimed_by_key_prefix='abcd1234',
+    )
+
+
+@override_settings(LC0_NODES=25000)
+class JobSerializerNodesResolutionTests(SimpleTestCase):
+    """Issue #141 — the worker must never receive null nodes for lc0.
+
+    requeue_all_analysis created lc0 jobs with nodes=NULL; the server
+    forwarded {nodes: null, depth: 20} and the worker ran ~20 nodes.
+    """
+
+    def test_lc0_null_nodes_resolves_to_setting(self):
+        """An lc0 job with nodes=None serializes as settings.LC0_NODES."""
+        data = JobSerializer(_job_stub(engine='lc0', nodes=None)).data
+        self.assertEqual(data['nodes'], 25000)
+
+    def test_lc0_explicit_nodes_is_respected(self):
+        """An lc0 job with an explicit nodes value is left untouched."""
+        data = JobSerializer(_job_stub(engine='lc0', nodes=12345)).data
+        self.assertEqual(data['nodes'], 12345)
+
+    def test_stockfish_nodes_stays_null(self):
+        """Stockfish ignores nodes (uses depth); null must stay null."""
+        data = JobSerializer(_job_stub(engine='stockfish', nodes=None)).data
+        self.assertIsNone(data['nodes'])
+        self.assertEqual(data['depth'], 20)
 
 
 def _valid_lc0_move_payload(**overrides) -> dict:
