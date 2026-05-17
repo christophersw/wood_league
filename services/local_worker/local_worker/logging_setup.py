@@ -69,6 +69,19 @@ def _log_directory() -> Path:
     return base
 
 
+def _log_basename() -> str:
+    """Primary log file stem. ``WLW_LOG_BASENAME`` (set per engine by the
+    vast entrypoint) selects ``lc0`` / ``stockfish``; default ``worker``."""
+    name = os.environ.get("WLW_LOG_BASENAME", "").strip()
+    return name or "worker"
+
+
+def _log_append() -> bool:
+    """True when the primary sink must append (shared multi-process file,
+    e.g. the N Stockfish workers). Set via ``WLW_LOG_APPEND=1``."""
+    return os.environ.get("WLW_LOG_APPEND", "").strip() in {"1", "true", "yes"}
+
+
 def _normalize_level(level: str | int) -> str:
     """Coerce a user-supplied level into a canonical loguru level name.
 
@@ -91,12 +104,23 @@ def _normalize_level(level: str | int) -> str:
 
 
 def _add_primary_sink(log_file: Path, level: str) -> None:
-    """Reset ``log_file`` and attach the per-session loguru sink.
+    """Attach the per-session primary sink.
 
-    Args:
-        log_file: Path that will be truncated and re-opened in write mode.
-        level: Normalised loguru level name.
+    Default (lc0 / local): truncate + ``enqueue=False`` (unchanged).
+    Append mode (shared Stockfish file across N procs): open in append
+    mode with ``enqueue=True`` so concurrent-process writes stay
+    record-atomic and the first worker doesn't truncate the others.
     """
+    if _log_append():
+        logger.add(
+            log_file,
+            level=level,
+            format=_LOG_FORMAT,
+            mode="a",
+            encoding="utf-8",
+            enqueue=True,
+        )
+        return
     try:
         log_file.unlink(missing_ok=True)
     except OSError:
@@ -159,8 +183,9 @@ def configure_logging(level: str = "INFO", reset_file: bool = False) -> Path:
     normalized = _normalize_level(level)
     _current_level = normalized
     log_dir = _log_directory()
-    log_file = log_dir / "worker.log"
-    diagnostics_file = log_dir / "worker.diagnostics.log"
+    basename = _log_basename()
+    log_file = log_dir / f"{basename}.log"
+    diagnostics_file = log_dir / f"{basename}.diagnostics.log"
 
     logger.remove()
     if reset_file:
