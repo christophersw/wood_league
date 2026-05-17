@@ -186,7 +186,7 @@ class WorkerClient:
         payload when supplied, so older servers ignore them and newer
         callers that omit them behave as before.
         """
-        payload = {
+        payload: dict[str, object] = {
             'worker_id': worker_id,
             'engine': engine,
             'status_message': status_message,
