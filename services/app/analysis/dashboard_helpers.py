@@ -49,6 +49,8 @@ __all__ = [
     "STALE_DROP_SECONDS",
     "_worker_live_state",
     "_worker_engine_metrics",
+    "_worker_recent_games",
+    "_batch_billable_per_game",
 ]
 
 
@@ -503,3 +505,77 @@ def _worker_engine_metrics(worker_id: str, sample: int = 50) -> list[dict[str, A
             "completed": len(durations),
         })
     return rows
+
+
+def _worker_recent_games(worker_id: str, limit: int = 10) -> list[dict[str, Any]]:
+    """Most recently completed games for one worker, across engines.
+
+    Args:
+        worker_id: The worker whose completed jobs to list.
+        limit: Maximum rows to return (default 10, newest first).
+
+    Returns:
+        List of dicts, keys: ``game_label`` (``"#<id>"``), ``game_url``
+        (str | None — game analysis page when slug resolvable),
+        ``engine``, ``duration_seconds`` (float | None), ``completed_at``
+        (datetime).
+    """
+    from analysis.models import AnalysisJob as _AnalysisJob
+
+    jobs = (
+        _AnalysisJob.objects
+        .filter(
+            worker_id=worker_id,
+            status=_AnalysisJob.STATUS_COMPLETED,
+            completed_at__isnull=False,
+        )
+        .select_related("game")
+        .order_by("-completed_at")[:limit]
+    )
+    out: list[dict[str, Any]] = []
+    for job in jobs:
+        game = job.game
+        url = (
+            reverse("games:analysis", kwargs={"slug": game.slug})
+            if game and game.slug else None
+        )
+        out.append({
+            "game_label": f"#{job.game_id}",
+            "game_url": url,
+            "engine": job.engine,
+            "duration_seconds": (
+                round(job.duration_seconds, 1)
+                if job.duration_seconds is not None else None
+            ),
+            "completed_at": job.completed_at,
+        })
+    return out
+
+
+def _batch_billable_per_game(
+    session_started_at: Any, last_seen: Any, games_processed: int
+) -> float | None:
+    """Billable wall-clock seconds per game for a worker's batch.
+
+    Computes ``(last_seen - session_started_at) / games_processed``.
+    Unlike per-engine time/game (pure engine duration), this folds in
+    in-session infrastructure overhead — job checkout, model/network
+    load, result upload, and idle gaps between jobs — i.e. the time the
+    instance is billed for while running. It excludes pre-process image
+    build and post-run teardown, which happen outside the worker.
+
+    Args:
+        session_started_at: Worker run start (TZ-aware) or ``None``.
+        last_seen: Most recent heartbeat time (TZ-aware) or ``None``.
+        games_processed: Games completed this session.
+
+    Returns:
+        Seconds per game (1 dp), or ``None`` when inputs are missing,
+        ``games_processed`` <= 0, or the span is non-positive.
+    """
+    if session_started_at is None or last_seen is None or games_processed <= 0:
+        return None
+    span = (last_seen - session_started_at).total_seconds()
+    if span <= 0:
+        return None
+    return round(span / games_processed, 1)

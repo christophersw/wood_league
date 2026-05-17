@@ -22,6 +22,7 @@ from analysis.dashboard_helpers import (
     LIVENESS_HEALTHY_SECONDS,
     LIVENESS_WARNING_SECONDS,
     STALE_DROP_SECONDS,
+    _batch_billable_per_game,
     _engine_throughput_row,
     _eta_for,
     _format_memory_mb,
@@ -35,6 +36,7 @@ from analysis.dashboard_helpers import (
     _worker_engine_metrics,
     _worker_live_state,
     _worker_log_url_for,
+    _worker_recent_games,
 )
 from analysis.models import AnalysisJob
 from games.models import Game
@@ -528,3 +530,42 @@ def test_worker_engine_metrics_ply_none_when_no_analysis_rows():
     rows = _worker_engine_metrics("w2")
     assert rows[0]["avg_seconds_per_ply"] is None
     assert rows[0]["avg_seconds_per_game"] == pytest.approx(12.0)
+
+
+# ---------------------------------------------------------------------------
+# _worker_recent_games + _batch_billable_per_game (issue #128 Task 3)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_worker_recent_games_newest_first_limited():
+    """Returns ≤limit rows newest-first with expected keys."""
+    now = timezone.now()
+    for i in range(12):
+        g = _make_wem_game(f"rg-{i}")
+        AnalysisJob.objects.create(
+            game=g, engine="stockfish", status=AnalysisJob.STATUS_COMPLETED,
+            worker_id="wr", duration_seconds=float(i),
+            completed_at=now - timedelta(minutes=i),
+        )
+    rows = _worker_recent_games("wr", limit=10)
+    assert len(rows) == 10
+    assert rows[0]["duration_seconds"] == 0.0
+    assert rows[0]["game_label"].startswith("#")
+    assert "engine" in rows[0] and "completed_at" in rows[0]
+
+
+def test_batch_billable_per_game_basic():
+    """600s span / 4 games = 150.0 s/game."""
+    start = timezone.now()
+    last = start + timedelta(seconds=600)
+    assert _batch_billable_per_game(start, last, 4) == pytest.approx(150.0)
+
+
+def test_batch_billable_per_game_none_paths():
+    """Returns None for missing/invalid inputs."""
+    now = timezone.now()
+    assert _batch_billable_per_game(None, now, 4) is None
+    assert _batch_billable_per_game(now, None, 4) is None
+    assert _batch_billable_per_game(now, now + timedelta(seconds=10), 0) is None
+    assert _batch_billable_per_game(now, now, 4) is None
