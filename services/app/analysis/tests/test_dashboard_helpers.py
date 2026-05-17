@@ -425,6 +425,41 @@ def test_worker_live_state_none_when_stale_or_missing():
 # ---------------------------------------------------------------------------
 
 
+def _make_wem_game(suffix: str) -> "Game":
+    """Create a Game row with a unique id/slug for worker-engine-metrics tests.
+
+    Args:
+        suffix: Short string appended to the id/slug to distinguish the game.
+
+    Returns:
+        Saved Game instance.
+    """
+    return Game.objects.create(
+        id=f"wem-{uuid.uuid4().hex[:8]}-{suffix}",
+        slug=f"wem-g{suffix}-{uuid.uuid4().hex[:6]}",
+        played_at=timezone.now(),
+        time_control="600",
+    )
+
+
+def _bulk_move_rows(move_model, analysis_obj, count: int, **extra) -> None:
+    """Bulk-create *count* placeholder move rows for the given analysis object.
+
+    Args:
+        move_model: Django model class (MoveAnalysis or Lc0MoveAnalysis).
+        analysis_obj: The parent GameAnalysis / Lc0GameAnalysis instance.
+        count: Number of move rows to create.
+        **extra: Additional field values forwarded to each model constructor
+            (e.g. ``cp_eval=0.0`` for MoveAnalysis which has no field default).
+
+    Returns:
+        None. Rows are written directly to the database.
+    """
+    move_model.objects.bulk_create(
+        [move_model(analysis=analysis_obj, ply=i, san="e4", fen="x", **extra) for i in range(count)]
+    )
+
+
 @pytest.mark.django_db
 def test_worker_engine_metrics_per_engine_time_per_ply_and_game():
     """Per-engine avg_seconds_per_ply and avg_seconds_per_game computed correctly."""
@@ -433,31 +468,22 @@ def test_worker_engine_metrics_per_engine_time_per_ply_and_game():
         Lc0MoveAnalysis, MoveAnalysis,
     )
 
-    game_a = Game.objects.create(
-        id=f"wem-{uuid.uuid4().hex[:8]}-a",
-        slug=f"wem-ga-{uuid.uuid4().hex[:6]}",
-        played_at=timezone.now(),
-        time_control="600",
-    )
-    game_b = Game.objects.create(
-        id=f"wem-{uuid.uuid4().hex[:8]}-b",
-        slug=f"wem-gb-{uuid.uuid4().hex[:6]}",
-        played_at=timezone.now(),
-        time_control="600",
-    )
+    game_a = _make_wem_game("a")
+    game_b = _make_wem_game("b")
 
     # Stockfish: game_a 10s / 20 plies, game_b 30s / 40 plies
-    for g, dur in ((game_a, 10.0), (game_b, 30.0)):
-        AnalysisJob.objects.create(
-            game=g, engine="stockfish", status=AnalysisJob.STATUS_COMPLETED,
-            worker_id="w1", duration_seconds=dur, completed_at=timezone.now(),
-        )
+    AnalysisJob.objects.create(
+        game=game_a, engine="stockfish", status=AnalysisJob.STATUS_COMPLETED,
+        worker_id="w1", duration_seconds=10.0, completed_at=timezone.now(),
+    )
+    AnalysisJob.objects.create(
+        game=game_b, engine="stockfish", status=AnalysisJob.STATUS_COMPLETED,
+        worker_id="w1", duration_seconds=30.0, completed_at=timezone.now(),
+    )
     sa_a = GameAnalysis.objects.create(game=game_a)
     sa_b = GameAnalysis.objects.create(game=game_b)
-    for i in range(20):
-        MoveAnalysis.objects.create(analysis=sa_a, ply=i, san="e4", fen="x", cp_eval=0.0)
-    for i in range(40):
-        MoveAnalysis.objects.create(analysis=sa_b, ply=i, san="e4", fen="x", cp_eval=0.0)
+    _bulk_move_rows(MoveAnalysis, sa_a, 20, cp_eval=0.0)
+    _bulk_move_rows(MoveAnalysis, sa_b, 40, cp_eval=0.0)
 
     # lc0: game_a 5s / 10 plies
     AnalysisJob.objects.create(
@@ -465,8 +491,7 @@ def test_worker_engine_metrics_per_engine_time_per_ply_and_game():
         worker_id="w1", duration_seconds=5.0, completed_at=timezone.now(),
     )
     la_a = Lc0GameAnalysis.objects.create(game=game_a)
-    for i in range(10):
-        Lc0MoveAnalysis.objects.create(analysis=la_a, ply=i, san="e4", fen="x")
+    _bulk_move_rows(Lc0MoveAnalysis, la_a, 10)
 
     rows = _worker_engine_metrics("w1")
     by_engine = {r["engine"]: r for r in rows}
