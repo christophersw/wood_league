@@ -853,9 +853,98 @@
     margin-top: 0.3rem;
     padding-top: 0.4rem;
     border-top: 1px dotted color-mix(in srgb, var(--color-ebony) 18%, transparent);
+    font-family: var(--font-mono);
     font-size: 0.58rem;
     line-height: 1.5;
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
   }
+
+  /* ── Dashboard: worker card states — #128 live/reporting ──────────────── */
+
+  .dash-worker-card--live {
+    border-top-color: var(--color-forest);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-forest) 30%, transparent);
+    background: color-mix(in srgb, var(--color-forest) 4%, var(--color-cream));
+  }
+  .dash-worker-card--reporting {
+    border-top-color: var(--color-slate);
+  }
+
+  .dash-badge-live,
+  .dash-badge-reporting {
+    font-family: var(--font-mono);
+    font-size: 0.55rem;
+    letter-spacing: 0.12em;
+    padding: 0.08rem 0.4rem;
+    border-radius: 0;
+    white-space: nowrap;
+  }
+  .dash-badge-live {
+    color: var(--color-cream);
+    background: var(--color-forest);
+  }
+  .dash-badge-reporting {
+    color: var(--color-peat);
+    background: color-mix(in srgb, var(--color-slate) 22%, transparent);
+  }
+
+  /* ── Dashboard: batch progress bar — #128 ─────────────────────────────── */
+
+  .dash-progress {
+    height: 0.5rem;
+    background: color-mix(in srgb, var(--color-ebony) 12%, transparent);
+    overflow: hidden;
+  }
+  .dash-progress__bar {
+    height: 100%;
+    background: var(--color-forest);
+    transition: width 0.4s ease;
+  }
+
+  /* ── Dashboard: per-engine metrics table — #128 ───────────────────────── */
+
+  .dash-engine-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    color: var(--color-ebony);
+  }
+  .dash-engine-table th {
+    text-align: left;
+    font-weight: 600;
+    color: var(--color-peat);
+    border-bottom: 1px solid color-mix(in srgb, var(--color-ebony) 14%, transparent);
+    padding: 0.15rem 0.3rem;
+    cursor: help;
+  }
+  .dash-engine-table td {
+    padding: 0.15rem 0.3rem;
+    border-bottom: 1px dotted color-mix(in srgb, var(--color-ebony) 10%, transparent);
+  }
+
+  /* ── Dashboard: recent-games list — #128 ──────────────────────────────── */
+
+  .dash-recent-list {
+    list-style: none;
+    margin: 0.25rem 0 0;
+    padding: 0;
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    line-height: 1.6;
+  }
+  .dash-recent-list li {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+  .dash-recent-list__meta { color: var(--color-peat); }
+
+  /* ── Dashboard: tooltip targets (batch/billable captions) — #128 ──────── */
+
+  .dash-worker-card__row .pg-caption[title] { cursor: help; }
 
   /* ── Dashboard: empty-state ───────────────────────────────────────────── */
 

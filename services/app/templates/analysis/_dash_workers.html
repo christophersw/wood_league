@@ -1,64 +1,111 @@
 {% comment %}
   Title: _dash_workers.html — Worker heartbeat cards
-  Description: Grid of cards (one per ``WorkerHeartbeat`` row) with status
-      dot, worker id, seconds-since-seen, status / status_message line,
-      current-game link, completed / failed counters, and a hardware footer
-      (uptime, engine, cores, memory). Card border-top color encodes
-      liveness (healthy=forest, warning=gold, stale=crimson). Uses the
-      ``.dash-worker-*`` utility classes defined in main.css.
-  Context: ``cards`` — list of dicts from ``_build_worker_cards``.
+  Description: Grid of cards (one per live/reporting WorkerHeartbeat).
+      Card shows a LIVE badge (green) when live, per-engine timing rows
+      (time/ply = pure engine speed; time/game = engine wall-clock),
+      a batch-progress bar (N/M), billable time/game (in-session infra
+      time), and the 10 most recently completed games. Stale workers
+      are filtered out server-side.
+  Context: ``cards`` — list of dicts from ``dashboard_workers``.
   Changelog:
-      2026-05-14 (#106): Initial real implementation.
-      2026-05-14 (#106): Visual polish — Du Bois palette, mono labels,
-          structured head/body/foot, dot pulses on warning state.
+      2026-05-14 (#106): Initial real implementation + visual polish.
+      2026-05-17 (#128): Live/reporting states, per-engine rows,
+          batch progress bar, recent games, metric tooltips.
 {% endcomment %}
 <div class="pg-section">
   <div class="pg-head">
     <span class="pg-title">Workers ({{ cards|length }})</span>
-    <span class="pg-caption">live heartbeats · refresh 5s</span>
+    <span class="pg-caption">live = heartbeat &lt; 5m · refresh 5s</span>
   </div>
 
   {% if cards %}
     <div class="dash-worker-grid">
       {% for card in cards %}
-        <div class="dash-worker-card dash-worker-card--{{ card.liveness }}">
+        <div class="dash-worker-card dash-worker-card--{{ card.live_state }}">
           <div class="dash-worker-card__head">
-            <span class="dash-dot dash-dot--{{ card.liveness }}" aria-hidden="true"></span>
+            <span class="dash-dot dash-dot--{% if card.live_state == 'live' %}healthy{% else %}warning{% endif %}" aria-hidden="true"></span>
             <strong title="{{ card.worker_id }}">{{ card.worker_id }}</strong>
+            {% if card.live_state == 'live' %}
+              <span class="dash-badge-live">LIVE</span>
+            {% else %}
+              <span class="dash-badge-reporting">REPORTING</span>
+            {% endif %}
             <span class="dash-worker-card__seen">
               {% if card.seconds_since_seen is not None %}{{ card.seconds_since_seen }}s ago{% else %}—{% endif %}
             </span>
           </div>
 
+          {% if card.batch_total %}
           <div class="dash-worker-card__row">
-            <span class="pg-caption">{{ card.status }}</span>
-            {% if card.status_message %}
-              <span style="color: var(--color-peat);">· {{ card.status_message }}</span>
-            {% endif %}
+            <span class="pg-caption" title="Jobs completed this run / the worker's max_jobs cap (WLW_MAX_JOBS).">
+              batch {{ card.batch_processed }}/{{ card.batch_total }}
+            </span>
           </div>
+          <div class="dash-progress" role="progressbar"
+               aria-valuenow="{{ card.batch_processed }}"
+               aria-valuemin="0" aria-valuemax="{{ card.batch_total }}">
+            <div class="dash-progress__bar" style="width: {{ card.batch_percent }}%;"></div>
+          </div>
+          {% else %}
+          <div class="dash-worker-card__row">
+            <span class="pg-caption" title="Worker has no max_jobs cap (drains the queue).">
+              batch {{ card.batch_processed }} · uncapped
+            </span>
+          </div>
+          {% endif %}
 
           <div class="dash-worker-card__row">
-            <span class="pg-caption">Game</span>
-            {% if card.current_game_url %}
-              <a href="{{ card.current_game_url }}">{{ card.current_game_label }}</a>
+            <span class="pg-caption"
+                  title="Wall-clock seconds per game across the whole run, including job checkout, model load, result upload and idle gaps — the in-session time the instance is billed for. Excludes pre-run image build and post-run teardown.">
+              billable/game
+            </span>
+            <span>{% if card.billable_per_game is not None %}{{ card.billable_per_game }}s{% else %}—{% endif %}</span>
+          </div>
+
+          {% if card.engine_rows %}
+            <table class="dash-engine-table">
+              <thead>
+                <tr>
+                  <th>engine</th>
+                  <th title="Pure engine speed: total engine duration ÷ total plies analyzed. Length-normalised so long and short games compare fairly.">s/ply</th>
+                  <th title="Mean engine duration per game (not length-normalised; varies with game length).">s/game</th>
+                  <th title="Completed jobs sampled for these averages (most recent up to 50).">n</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in card.engine_rows %}
+                  <tr>
+                    <td>{{ row.engine }}</td>
+                    <td>{% if row.avg_seconds_per_ply is not None %}{{ row.avg_seconds_per_ply }}{% else %}—{% endif %}</td>
+                    <td>{{ row.avg_seconds_per_game }}</td>
+                    <td>{{ row.completed }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          {% else %}
+            <div class="dash-worker-card__row"><span class="pg-caption">no completed jobs yet</span></div>
+          {% endif %}
+
+          <div class="dash-worker-card__foot">
+            <span class="pg-caption">last 10 games</span>
+            {% if card.recent_games %}
+              <ul class="dash-recent-list">
+                {% for g in card.recent_games %}
+                  <li>
+                    {% if g.game_url %}<a href="{{ g.game_url }}">{{ g.game_label }}</a>{% else %}{{ g.game_label }}{% endif %}
+                    <span class="dash-recent-list__meta">{{ g.engine }} · {% if g.duration_seconds is not None %}{{ g.duration_seconds }}s{% else %}—{% endif %}</span>
+                  </li>
+                {% endfor %}
+              </ul>
             {% else %}
-              <span>{{ card.current_game_label }}</span>
+              <span class="pg-caption">—</span>
             {% endif %}
-          </div>
-
-          <div class="dash-worker-card__counters">
-            <span class="dash-ok">&#10003; {{ card.jobs_completed }}</span>
-            <span class="dash-fail">&#10007; {{ card.jobs_failed }}</span>
-          </div>
-
-          <div class="dash-worker-card__foot pg-caption">
-            up {{ card.uptime }} · {{ card.engine }}<br>
-            {{ card.cpu_cores|default:"—" }}c · {{ card.memory }}
           </div>
         </div>
       {% endfor %}
     </div>
   {% else %}
-    <p class="dash-empty">No worker heartbeats yet.</p>
+    <p class="dash-empty">No live or recently-reporting workers.</p>
   {% endif %}
 </div>
