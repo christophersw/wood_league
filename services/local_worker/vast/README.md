@@ -1,10 +1,11 @@
 # vast.ai Bulk Analysis Worker — Operator Runbook
 
 Self-contained private image that runs the Wood League chess analysis
-worker on vast.ai for bulk campaigns. lc0 (GPU, TensorRT) and Stockfish
-(CPU) run **concurrently** in one instance against a shared WAL eval
-cache that is pulled at boot and checkpointed back to object storage —
-no host-scoped volume.
+worker on vast.ai for bulk campaigns. 1 lc0 (GPU, TensorRT) and **N**
+Stockfish (CPU) workers — N auto-derived from the host — run
+**concurrently** in one instance against a shared WAL eval cache that is
+pulled at boot and checkpointed back to object storage — no host-scoped
+volume.
 
 > Prerequisite: sub-project **E** (`--max-jobs` / `WLW_MAX_JOBS`) gives
 > each engine a deterministic job-count stop. Until E ships, a run is
@@ -16,7 +17,11 @@ no host-scoped volume.
 1. **Private registry.** The image bakes the operator-supplied TensorRT
    tarball, so the registry MUST be private (GHCR private package or a
    Docker Hub private repo). Build/push is automated by
-   `.github/workflows/build-vast-worker.yml`.
+   `.github/workflows/build-vast-worker.yml`. The Syzygy 3-4-5
+   tablebase is baked over **`http://`** (the `https://` mirror serves
+   an empty listing and used to ship a tablebase-less image silently);
+   the build now hard-fails if the listing is empty or the download
+   count doesn't match (#129).
 2. **vast.ai registry auth.** Configure pull credentials for the private
    registry on the vast.ai account.
 3. **vast.ai SSH key.** `vastai create ssh-key` / `vastai attach ssh-key`
@@ -69,7 +74,7 @@ vastai create instance <cheap-offer> \
 | `WLW_API_URL` | **yes** | — | Wood League Worker API base URL. The worker is a pull client; without this both engines print `Not configured. Run \`wood-league-worker setup\` first.` and exit immediately. Supply as a vast account env var (auto-injects) or per-launch `-e`. |
 | `WLW_API_KEY` | **yes** | — | Worker API token. Same failure mode as `WLW_API_URL` if absent. Treat as a secret — prefer a vast account env var over the command line. |
 | `WL_CAMPAIGN_ID` | yes | — | Logical campaign; namespaces this instance's cache delta. |
-| `WLW_MAX_JOBS` | no | unset | Per-engine job cap (sub-project E). Unset = drain until queue-empty / batch-time. With both engines a game ≈ 2 jobs (1 lc0 + 1 Stockfish). |
+| `WLW_MAX_JOBS` | no | unset | Per-engine job cap. Unset = drain until queue-empty / batch-time. With both engines a game ≈ 2 jobs (1 lc0 + 1 Stockfish). **Auto-fan-out:** this stays the *total* Stockfish cap; the entrypoint partitions it across the N Stockfish workers it spawns (e.g. cap 12 over 7 workers → `[2,2,2,2,2,1,1]`). You do **not** set Stockfish threads/workers/hash — they are derived from the host. |
 | `WL_INSTANCE_ID` | no | `<hostname>-<pid>` | Stable per-instance id; the delta object key. Set explicitly to avoid collisions if you reuse a host. |
 | `WL_SKIP_CACHE_PULL` | no | `0` | `1` skips the boot-time canonical pull (tiny / known-disjoint runs). |
 | `WL_CACHE_CHECKPOINT_MINUTES` | no | `10` | Periodic cache snapshot+upload interval. |
@@ -82,18 +87,42 @@ vastai create instance <cheap-offer> \
 
 ## Choosing an offer
 
-Both engines run at once, so filter offers on:
+1 lc0 + **N** Stockfish workers run at once (N is auto-derived from the
+host at boot — see *Auto-fan-out* below), so filter offers on:
 
-- **vCPUs:** enough for the lc0 search threads **plus** Stockfish
-  `Threads` without oversubscription (the worker derives sane splits from
-  its tuning/detector logic; size for the larger of the two plus headroom).
-- **RAM:** lc0 + the BT4 network + Syzygy + Stockfish hash resident
-  concurrently. (Concrete floor is fixed in the implementation plan —
-  spec open item **O5**.)
+- **vCPUs:** more is better — every spare core becomes another Stockfish
+  worker. The entrypoint reserves a few cores for lc0 + the OS and turns
+  the rest into 4-thread Stockfish workers (capped for cache safety).
+- **RAM:** lc0 + the BT4 network + Syzygy, plus ~0.75 GB per Stockfish
+  worker. RAM can legitimately cap N below what the CPU count allows.
 - **GPU:** an Ada-class card (the TensorRT backend's payoff target).
 
-A crash of one engine does not strand the other; the entrypoint waits
-for both, then uploads the final cache delta.
+A crash of one engine does not strand the rest; the entrypoint waits for
+**all** engine processes, then uploads the final cache delta.
+
+### Auto-fan-out (no manual sizing)
+
+At boot the entrypoint runs `wood-league-worker plan-sf-fanout`, which
+reads the host vCPU + available RAM and prints the resolved
+`SF_WORKERS` / `SF_THREADS` / `SF_HASH_MB` / `SF_JOB_SPLIT`. The
+entrypoint then launches 1 lc0 + that many Stockfish workers. You no
+longer set `WLW_STOCKFISH_THREADS` / `WLW_STOCKFISH_HASH_MB` / a worker
+count — they are computed. The chosen values are echoed once near the
+top of the log (`onstart: fan-out SF_WORKERS=… …`).
+
+### Logs are per-engine
+
+Each engine writes its **own** file under
+`/root/.local/state/wood-league-worker/log/`:
+
+- `lc0.log` — the single lc0 process (truncated each session).
+- `stockfish.log` — **all N** Stockfish workers, appended to one shared
+  file (record-atomic across processes).
+
+`vastai logs <instance-id>` shows the boot/stdout TUI; for real
+per-engine detail SSH in and `tail -f` the file above. The session-log
+uploader ships *both* `lc0.log` and `stockfish.log` (no longer a single
+`worker.log`).
 
 ## Stop the instance — it does NOT self-destroy
 

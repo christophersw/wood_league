@@ -42,7 +42,7 @@ BT4_PATH="${WEIGHTS_DIR}/${BT4_FILENAME}"
 
 # Syzygy 3-4-5 piece WDL+DTZ. Sesse mirrors the full set as individual
 # files; we loop because there's no tarball at this tier.
-SYZYGY_BASE_URL="${WLW_SYZYGY_BASE_URL:-https://tablebase.sesse.net/syzygy/3-4-5}"
+SYZYGY_BASE_URL="${WLW_SYZYGY_BASE_URL:-http://tablebase.sesse.net/syzygy/3-4-5}"
 
 # ---- 1. Workspace sanity ------------------------------------------------
 log "verifying workspace at ${WORKSPACE}"

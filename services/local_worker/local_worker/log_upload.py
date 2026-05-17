@@ -22,8 +22,8 @@ from local_worker._crash_hook import install_crash_hook
 from local_worker._log_upload_meta import (
     Reason,
     build_metadata,
-    log_file_path,
     preflight,
+    resolve_engine_log_paths,
 )
 from local_worker.config import load_settings
 
@@ -53,6 +53,28 @@ def _parse_response(response: Any) -> int:
     return int(upload_id) if isinstance(upload_id, int) else -1
 
 
+def _post_one_log(
+    url: str, log_path: Any, note: str, reason: Reason, api_key: str,
+) -> int:
+    """POST a single log file. Returns its upload id, or ``-1`` on any
+    failure (missing/oversized/network/IO). Never raises."""
+    if preflight(log_path) < 0:
+        return -1
+    try:
+        with log_path.open('rb') as fh:
+            response = httpx.post(
+                url,
+                files={'log': (log_path.name, fh, 'text/plain')},
+                data={'note': note, 'metadata': build_metadata(reason)},
+                headers={'X-Api-Key': api_key},
+                timeout=60.0,
+            )
+    except (httpx.RequestError, OSError) as exc:
+        log.warning('Log upload network/IO error: %s', exc)
+        return -1
+    return _parse_response(response)
+
+
 def upload_log(reason: Reason, note: str = '') -> int:
     """Upload the current ``worker.log`` to the Wood League server.
 
@@ -70,26 +92,18 @@ def upload_log(reason: Reason, note: str = '') -> int:
         log.warning('Cannot upload log: worker is not configured (run setup).')
         return -1
 
-    log_path = log_file_path()
-    if preflight(log_path) < 0:
+    present = resolve_engine_log_paths()
+    if not present:
         return -1
 
     query = '?force=true' if reason == 'crash' else ''
     url = settings.api_url.rstrip('/') + '/api/v1/worker/logs/' + query
-    try:
-        with log_path.open('rb') as fh:
-            response = httpx.post(
-                url,
-                files={'log': (log_path.name, fh, 'text/plain')},
-                data={'note': note, 'metadata': build_metadata(reason)},
-                headers={'X-Api-Key': settings.api_key},
-                timeout=60.0,
-            )
-    except (httpx.RequestError, OSError) as exc:
-        log.warning('Log upload network/IO error: %s', exc)
-        return -1
-
-    return _parse_response(response)
+    last_id = -1
+    for log_path in present:
+        rid = _post_one_log(url, log_path, note, reason, settings.api_key)
+        if rid >= 0:
+            last_id = rid
+    return last_id
 
 
 __all__ = ['upload_log', 'install_crash_hook']

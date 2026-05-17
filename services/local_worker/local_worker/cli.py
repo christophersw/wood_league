@@ -34,6 +34,7 @@ from local_worker.commands import analyze as analyze_cmd
 from local_worker.commands import cache_merge_cmd
 from local_worker.commands import info as info_cmd
 from local_worker.commands import logs as logs_cmd
+from local_worker.commands import plan_sf_fanout_cmd
 from local_worker.commands import run as run_cmd
 from local_worker.commands import setup as setup_cmd
 from local_worker.commands import submit_log as submit_log_cmd
@@ -141,6 +142,7 @@ app.command()(info_cmd.version)
 app.command()(info_cmd.status)
 app.command("submit-log")(submit_log_cmd.submit_log)
 app.command("cache-merge")(cache_merge_cmd.cache_merge)
+app.command("plan-sf-fanout")(plan_sf_fanout_cmd.plan_sf_fanout)
 
 
 __all__ = ["app", "_tail_lines"]

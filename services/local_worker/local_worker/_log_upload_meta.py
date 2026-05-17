@@ -106,7 +106,30 @@ def preflight(log_path: Path) -> int:
     return size
 
 
+def resolve_engine_log_paths() -> list[Path]:
+    """Return the log files to upload for this session.
+
+    Under the vast fan-out a session writes per-engine logs
+    (``lc0.log`` + ``stockfish.log``) rather than a single
+    ``worker.log``. Returns every present, non-empty engine log in the
+    log directory; falls back to the single configured log (validated
+    via :func:`preflight`) for non-vast callers.
+
+    Returns:
+        Ordered list of existing log paths. Empty when nothing is
+        uploadable.
+    """
+    base = log_file_path()  # <log_dir>/worker.log
+    candidates = [base.parent / name for name in
+                  ('lc0.log', 'stockfish.log', 'worker.log')]
+    present = [p for p in candidates if p.exists() and p.stat().st_size > 0]
+    if present:
+        return present
+    return [base] if preflight(base) >= 0 else []
+
+
 __all__ = [
     'Reason', 'SESSION_END',
     'log_file_path', 'host_summary', 'build_metadata', 'preflight',
+    'resolve_engine_log_paths',
 ]
