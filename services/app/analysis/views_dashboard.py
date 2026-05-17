@@ -14,6 +14,9 @@ Changelog:
     2026-05-14 (#106): Coerce naive datetimes in banner + workers views.
     2026-05-14: Add ``dashboard_logs`` partial listing recent worker log
         uploads with per-row download links.
+    2026-05-17 (#128): Rebuild ``dashboard_workers`` — filter stale workers,
+        flag live vs reporting, emit per-engine cards with batch progress,
+        billable time/game, and recent games.
 """
 from __future__ import annotations
 
@@ -115,11 +118,15 @@ def dashboard_banner(request: HttpRequest) -> HttpResponse:
 
 @staff_member_required
 def dashboard_workers(request: HttpRequest) -> HttpResponse:
-    """Render the workers partial (one card per WorkerHeartbeat).
+    """Render the workers partial — one card per live/reporting worker.
 
-    Each card carries: status dot color (from liveness bucket), seconds
-    since last_seen, current game (linked when resolvable), jobs
-    completed/failed counters, uptime, engine, hardware footer.
+    Workers whose last heartbeat is older than ``STALE_DROP_SECONDS`` are
+    dropped entirely. Survivors are flagged ``"live"`` (heartbeat within
+    ``LIVE_WINDOW_SECONDS``) or ``"reporting"``. Each card carries
+    per-engine timing (time/ply, time/game) derived from completed
+    ``AnalysisJob`` rows, a batch-progress fraction (N/M from the
+    heartbeat), a billable time/game figure, and the worker's 10 most
+    recently completed games.
 
     Args:
         request: The incoming Django HTTP request.
@@ -129,35 +136,49 @@ def dashboard_workers(request: HttpRequest) -> HttpResponse:
     """
     from analysis.models import WorkerHeartbeat
     from analysis.dashboard_helpers import (
-        _format_memory_mb,
-        _format_uptime,
-        _game_link_for,
-        _liveness_for,
+        _batch_billable_per_game,
+        _worker_engine_metrics,
+        _worker_live_state,
+        _worker_recent_games,
     )
 
     now = timezone.now()
     cards: list[dict[str, Any]] = []
     for w in WorkerHeartbeat.objects.order_by("-last_seen"):
         last_seen = _aware(w.last_seen)
-        started_at = _aware(w.started_at)
         delta_seen = now - last_seen if last_seen else None
-        uptime = now - started_at if started_at else None
-        game_label, game_url = _game_link_for(w.current_game_id)
+        live_state = _worker_live_state(delta_seen)
+        if live_state is None:
+            continue  # stale-dropped or never seen
+
+        session_started_at = _aware(w.session_started_at)
+        billable = _batch_billable_per_game(
+            session_started_at, last_seen, w.batch_processed
+        )
+
+        batch_total = w.batch_total
+        batch_processed = w.batch_processed or 0
+        if batch_total and batch_total > 0:
+            batch_percent = round(
+                min(batch_processed / batch_total, 1.0) * 100, 2
+            )
+        else:
+            batch_percent = None
+
         cards.append({
             "worker_id": w.worker_id,
             "engine": w.engine,
-            "status": w.status,
             "status_message": w.status_message,
-            "liveness": _liveness_for(delta_seen),
-            "seconds_since_seen": int(delta_seen.total_seconds()) if delta_seen else None,
-            "current_game_label": game_label,
-            "current_game_url": game_url,
-            "jobs_completed": w.jobs_completed,
-            "jobs_failed": w.jobs_failed,
-            "uptime": _format_uptime(uptime),
-            "cpu_model": w.cpu_model or "—",
-            "cpu_cores": w.cpu_cores,
-            "memory": _format_memory_mb(w.memory_mb),
+            "live_state": live_state,
+            "seconds_since_seen": (
+                int(delta_seen.total_seconds()) if delta_seen else None
+            ),
+            "engine_rows": _worker_engine_metrics(w.worker_id),
+            "batch_total": batch_total,
+            "batch_processed": batch_processed,
+            "batch_percent": batch_percent,
+            "billable_per_game": billable,
+            "recent_games": _worker_recent_games(w.worker_id, limit=10),
         })
     return render(request, "analysis/_dash_workers.html", {"cards": cards})
 
