@@ -315,7 +315,8 @@ class EvalCache:
         self._conn: Optional[sqlite3.Connection] = None
         if enabled:
             db_path.parent.mkdir(parents=True, exist_ok=True)
-            self._conn = sqlite3.connect(str(db_path))
+            self._conn = sqlite3.connect(str(db_path), timeout=5.0)
+            self._conn.execute("PRAGMA busy_timeout=5000")
             self._init_schema()
 
     def _init_schema(self) -> None:
@@ -344,13 +345,22 @@ class EvalCache:
             )
             self._conn.commit()
         except sqlite3.DatabaseError:
-            # Corrupt database: drop + recreate. Loss of cache is
-            # cheaper than crashing a worker.
-            log.warning("eval_cache: corrupt DB at %s; recreating", self.db_path)
-            self._conn.close()
-            self.db_path.unlink(missing_ok=True)
-            self._conn = sqlite3.connect(str(self.db_path))
-            self._init_schema()
+            # Corrupt/unreadable DB. NEVER unlink — other worker
+            # processes may hold this shared file open (O4). Disable
+            # this process's cache instead; true corruption is repaired
+            # offline (the canonical is rebuilt server-side between
+            # campaigns).
+            log.warning(
+                "eval_cache: corrupt/unreadable DB at %s; disabling cache "
+                "for this process (file left intact)", self.db_path,
+            )
+            try:
+                if self._conn is not None:
+                    self._conn.close()
+            except sqlite3.Error:
+                pass
+            self._conn = None
+            self.enabled = False
 
     def get(
         self,
@@ -388,12 +398,18 @@ class EvalCache:
         except (ValueError, KeyError, TypeError):
             self._misses += 1
             return None
-        self._conn.execute(
-            "UPDATE eval_cache SET last_used_at=? "
-            "WHERE zobrist=? AND network=? AND nodes=? AND multipv=?",
-            (int(time.time()), zobrist_signed, network, nodes, multipv),
-        )
-        self._conn.commit()
+        try:
+            self._conn.execute(
+                "UPDATE eval_cache SET last_used_at=? "
+                "WHERE zobrist=? AND network=? AND nodes=? AND multipv=?",
+                (int(time.time()), zobrist_signed, network, nodes, multipv),
+            )
+            self._conn.commit()
+        except sqlite3.OperationalError as exc:
+            # Lock contention from a concurrent SF worker. The cache is
+            # an optimization — skip the last_used_at bump, still serve
+            # the hit. (O4 best-effort degrade.)
+            log.debug("eval_cache: skipped last_used_at under lock: %s", exc)
         self._hits += 1
         return entries
 
@@ -418,13 +434,18 @@ class EvalCache:
             return
         now = int(time.time())
         payload = _encode_payload(entries)
-        self._conn.execute(
-            "INSERT OR REPLACE INTO eval_cache "
-            "(zobrist, network, nodes, multipv, payload, created_at, last_used_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (_to_signed64(zobrist), network, nodes, multipv, payload, now, now),
-        )
-        self._conn.commit()
+        try:
+            self._conn.execute(
+                "INSERT OR REPLACE INTO eval_cache "
+                "(zobrist, network, nodes, multipv, payload, created_at, last_used_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (_to_signed64(zobrist), network, nodes, multipv, payload, now, now),
+            )
+            self._conn.commit()
+        except sqlite3.OperationalError as exc:
+            # Concurrent-writer lock; dropping one cache write is
+            # harmless (O4 best-effort degrade).
+            log.debug("eval_cache: skipped put under lock: %s", exc)
 
     def stats(self) -> CacheStats:
         """Return current hit/miss counters and on-disk footprint."""

@@ -145,13 +145,18 @@ def test_corrupt_payload_treated_as_miss(tmp_path: Path) -> None:
     cache.close()
 
 
-def test_corrupt_db_recreates(tmp_path: Path) -> None:
-    """A corrupt SQLite file is deleted and recreated, not propagated."""
+def test_corrupt_db_disables_and_leaves_file(tmp_path: Path) -> None:
+    """A corrupt SQLite file disables this process's cache and is left
+    intact — never unlinked (O4: other worker processes may hold the
+    shared file open). get()/put() degrade to silent no-ops."""
     db_path = tmp_path / "cache.sqlite"
     db_path.write_bytes(b"this is not a valid sqlite database")
+    inode_before = db_path.stat().st_ino
     cache = EvalCache(db_path)
+    assert cache.enabled is False
+    assert db_path.exists() and db_path.stat().st_ino == inode_before
     cache.put(1, "BT4", 25000, 3, _make_entries())
-    assert cache.get(1, "BT4", 25000, 3) is not None
+    assert cache.get(1, "BT4", 25000, 3) is None
     cache.close()
 
 
