@@ -12,6 +12,9 @@ Description:
 
 Changelog:
     2026-05-16: Initial creation (#130).
+    2026-05-17: Clamp host CPU to the real slice via CPU affinity +
+        cgroup quota — os.cpu_count() over-reports on sliced vast
+        containers and over-subscribed Stockfish (#134).
 """
 from __future__ import annotations
 
@@ -19,12 +22,8 @@ import os
 
 import typer
 
+from local_worker.analysis.host_cpu import host_vcpu as _host_vcpu
 from local_worker.analysis.sf_fanout import plan_fanout
-
-
-def _host_vcpu() -> int | None:
-    """Host logical CPU count (``os.cpu_count()``)."""
-    return os.cpu_count()
 
 
 def _host_avail_ram_mb() -> int:

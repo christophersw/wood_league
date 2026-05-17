@@ -1,5 +1,40 @@
 """Tests for the pure Stockfish fan-out sizing helper."""
-from local_worker.analysis.sf_fanout import FanoutPlan, plan_fanout
+from local_worker.analysis.sf_fanout import FanoutPlan, effective_vcpu, plan_fanout
+
+
+def test_effective_vcpu_cgroup_binds_below_cpu_count():
+    # Sliced vast container: os.cpu_count() sees the 64-core host but the
+    # cgroup quota is 4 CPUs — the quota must win (#134).
+    assert effective_vcpu(cpu_count=64, affinity=64, cgroup_cpus=4.0) == 4
+
+
+def test_effective_vcpu_affinity_binds():
+    assert effective_vcpu(cpu_count=64, affinity=8, cgroup_cpus=None) == 8
+
+
+def test_effective_vcpu_cpu_count_only():
+    assert effective_vcpu(cpu_count=32, affinity=None, cgroup_cpus=None) == 32
+
+
+def test_effective_vcpu_all_unknown_falls_back_to_one():
+    assert effective_vcpu(cpu_count=None, affinity=None, cgroup_cpus=None) == 1
+
+
+def test_effective_vcpu_fractional_cgroup_floors_min_one():
+    assert effective_vcpu(cpu_count=64, affinity=64, cgroup_cpus=1.5) == 1
+
+
+def test_effective_vcpu_ignores_nonpositive_signals():
+    # cpu_count=0 / affinity=0 are bogus and must be ignored, not picked.
+    assert effective_vcpu(cpu_count=0, affinity=0, cgroup_cpus=12.0) == 12
+
+
+def test_effective_vcpu_feeds_plan_fanout_smaller_workers():
+    # 64-core host but 16-CPU slice → fan-out sizes off 16, not 64.
+    vcpu = effective_vcpu(cpu_count=64, affinity=16, cgroup_cpus=16.0)
+    p = plan_fanout(vcpu=vcpu, avail_ram_mb=120_000, max_jobs=None)
+    assert vcpu == 16
+    assert p.workers == 3  # (16-4)//4
 
 
 def test_big_box_cpu_bound():

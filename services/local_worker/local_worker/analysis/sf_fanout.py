@@ -50,6 +50,36 @@ class FanoutPlan:
     job_split: list[int]
 
 
+def effective_vcpu(
+    *,
+    cpu_count: Optional[int],
+    affinity: Optional[int],
+    cgroup_cpus: Optional[float],
+) -> int:
+    """Smallest credible logical-CPU count for fan-out sizing.
+
+    On a sliced container ``os.cpu_count()`` reports the *physical host*,
+    not the rented allocation, which over-subscribes Stockfish (#134).
+    The process CPU affinity and the cgroup CPU quota both reflect the
+    real slice, so the binding constraint is the min of whichever
+    signals are present. Absent/None or non-positive signals are
+    ignored; the result is always >= 1.
+
+    Args:
+        cpu_count: ``os.cpu_count()`` (host view), or None.
+        affinity: ``len(os.sched_getaffinity(0))``, or None where the
+            platform lacks it (macOS/Windows).
+        cgroup_cpus: cgroup CPU quota in whole-CPU equivalents
+            (quota/period), or None when unset/unlimited.
+
+    Returns:
+        Clamped logical CPU count, >= 1.
+    """
+    signals = (cpu_count, affinity, cgroup_cpus)
+    candidates = [max(1, int(s)) for s in signals if s and s > 0]
+    return min(candidates) if candidates else 1
+
+
 def _split_jobs(total: int, workers: int) -> list[int]:
     """Partition ``total`` jobs across ``workers`` as evenly as possible.
 
