@@ -44,6 +44,12 @@ log = logging.getLogger(__name__)
 
 _HEARTBEAT_INTERVAL = 30.0
 
+# Hard floor for an lc0 job's MCTS node budget. Real configs run
+# 10k–25k nodes/move; anything this low means the budget was resolved
+# wrongly (e.g. the #141 nodes=None→depth=20 bug). Below this we fail
+# the job loudly rather than write statistically meaningless analysis.
+_MIN_LC0_NODES = 1000
+
 
 def build_heartbeat_status(stats: "WorkerStats") -> str:
     """Render the worker-heartbeat ``status_message`` from session stats.
@@ -240,12 +246,30 @@ def run_one_job(
             payload = build_stockfish_payload(result, worker_id=worker_id)
             client.complete_stockfish(job_id=job.id, worker_id=worker_id, payload=payload)
         elif job.engine == "lc0":
-            # The server currently encodes the lc0 node budget into the
-            # ``depth`` field (e.g. depth=25000 nodes=None). Honour
-            # ``job.depth`` as a fallback so we run at the requested
-            # strength instead of silently defaulting to lc0_nodes
-            # (issue #111).
-            nodes = job.nodes or job.depth or settings.lc0_nodes
+            # lc0 strength is its MCTS node budget. The server resolves
+            # this (JobSerializer): an lc0 job carries an explicit
+            # ``nodes`` and never null post-#141. ``job.depth`` is a
+            # Stockfish-only concept — treating it as an lc0 node count
+            # is exactly what made bulk-requeued jobs (nodes=None,
+            # depth=20) run ~20 nodes of garbage (#141). It is therefore
+            # deliberately NOT a fallback here; the prior #111 behaviour
+            # is removed now that the server sends nodes correctly.
+            nodes = job.nodes or settings.lc0_nodes
+            if nodes < _MIN_LC0_NODES:
+                msg = (
+                    f"lc0 node budget {nodes} below {_MIN_LC0_NODES} "
+                    f"floor (job.nodes={job.nodes}, job.depth={job.depth})"
+                )
+                log.error(
+                    "lc0 job %s: %s — refusing to write garbage analysis",
+                    job.id, msg,
+                )
+                client.fail(job_id=job.id, worker_id=worker_id, error=msg)
+                return False
+            log.info(
+                "lc0 job %s — effective nodes=%d (job.nodes=%s)",
+                job.id, nodes, job.nodes,
+            )
             cache = _open_eval_cache(settings)
             try:
                 result = lc0_analyze(
