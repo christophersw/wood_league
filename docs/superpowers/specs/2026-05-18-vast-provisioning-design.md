@@ -59,8 +59,11 @@ Each run, in strict order:
 
 1. **Reap first.** For every `AnalysisInstance` not in a terminal state:
    - If past `hard_deadline` → destroy (cost backstop, unconditional).
-   - Else if its batch is drained (no remaining queued/in-progress
-     `AnalysisJob` for the campaign) → destroy (happy path).
+   - Else if its batch is **drained** → destroy (happy path). Drained is
+     detected via the **worker's heartbeat going stale**, not a job-count
+     query (there is no campaign/run scoping on `AnalysisJob` — only global
+     status counts and `WorkerHeartbeat` rows exist). See "Drained
+     detection" below.
    - On a successful vast destroy, set status `destroyed` and stamp
      `destroyed_at`. Destroy is retried with backoff within the run; a
      run that fails to destroy leaves the row non-terminal so the **next**
@@ -101,6 +104,44 @@ lost." Mitigations, layered:
 - A `launching` row older than `VAST_LAUNCH_GRACE_MINUTES` with no vast id
   is reconciled: attempt orphan discovery by label, then mark `failed`.
 
+### Drained detection (happy-path teardown trigger)
+
+There is **no `campaign` field on `AnalysisJob`** — `WL_CAMPAIGN_ID` is a
+worker-side env only. The data model exposes only global job-status counts
+(`analysis.services_queries.queue_totals()`) and `WorkerHeartbeat` rows
+(`worker_id` PK, `last_seen` auto-updated, `status`, `batch_total`,
+`batch_processed`). Global "queue empty" is the **wrong** signal: the
+worker is capped at `WLW_MAX_JOBS` and self-exits after its slice while a
+backlog-fed queue may still have thousands pending — that would never
+trip a drained signal and would waste GPU until `hard_deadline`.
+
+Correct signal — **worker gone via stale heartbeat** (chosen by user):
+
+- The vast worker self-exits when its `WLW_MAX_JOBS` batch is drained;
+  once the process is gone it stops updating its `WorkerHeartbeat`, so
+  `last_seen` ages.
+- **Correlation** (unambiguous because of the ≤1-live-instance invariant):
+  at launch the command snapshots the set of existing
+  `WorkerHeartbeat.worker_id`s into the new `AnalysisInstance.worker_id`
+  as *unset*; on a later tick, the first `WorkerHeartbeat` whose
+  `last_seen >= AnalysisInstance.launched_at` and whose `worker_id` was
+  **not** in the launch snapshot is bound to this instance
+  (`AnalysisInstance.worker_id` is set). Only one instance is ever live,
+  so "a worker that appeared after this launch" is unambiguous.
+- **Drained** = the bound worker's `WorkerHeartbeat.last_seen` is older
+  than `VAST_WORKER_STALE_MINUTES` (worker exited), **or** the bound
+  heartbeat reports `batch_total` is not null and
+  `batch_processed >= batch_total` (worker reported its cap done).
+- If no worker has bound yet and the instance is older than
+  `VAST_WORKER_STALE_MINUTES` past `launched_at` (worker never started /
+  failed to register), the instance is treated as drained-failed and
+  destroyed — no separate hang case needed before `hard_deadline`.
+- `hard_deadline` remains the unconditional absolute backstop above all
+  of this.
+
+The launch snapshot is stored on the `AnalysisInstance` so detection is
+still stateless-per-run (re-derivable every tick from the tables).
+
 ### Data model (two tables, `analysis` app)
 
 `AnalysisSchedule` — app-written intent (this *is* the "manual trigger";
@@ -116,6 +157,10 @@ no UI button):
 - `vast_instance_id` (nullable until create succeeds)
 - `launched_at`, `hard_deadline`, `destroyed_at` (nullable)
 - `offer_dph` (the $/hr actually accepted, for cost visibility)
+- `launch_worker_ids` (JSON list — snapshot of existing
+  `WorkerHeartbeat.worker_id`s at launch, for drained correlation)
+- `worker_id` (nullable str — the `WorkerHeartbeat` bound to this
+  instance once a post-launch worker appears; null until correlated)
 
 Both registered in Django admin (read-mostly; `AnalysisSchedule` insertable)
 — Django admin is the lightweight "app provides input" surface and the
@@ -162,6 +207,9 @@ New Django settings (env-backed), mirroring the `RUNPOD_*` gating idiom:
 - `VAST_MAX_JOBS` (default **100**)
 - `VAST_HARD_DEADLINE_HOURS` (absolute kill regardless of job state)
 - `VAST_LAUNCH_GRACE_MINUTES` (stale-`launching` reconcile threshold)
+- `VAST_WORKER_STALE_MINUTES` (heartbeat-staleness window that means the
+  worker exited → batch drained; also the "worker never registered"
+  failure window measured from `launched_at`)
 
 ### Railway cron
 
