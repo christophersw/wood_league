@@ -77,10 +77,15 @@ Each run, in strict order:
    (statuses `launching`/`running`) — never two boxes at once — **and** the
    oldest `pending` `AnalysisSchedule` row exists (FIFO; one schedule at a
    time):
-   - Write an `AnalysisInstance` row with status `launching` *before*
-     calling vast (so a crash mid-create is still visible to the reaper).
-   - Search vast offers, pick one, create the instance from the configured
-     template hash with per-run env, label it with the schedule id.
+   - Search vast offers first. On no qualifying offer, record **nothing**
+     and leave the schedule `pending` (a search creates no box, so there
+     is nothing to recover; retried next tick). This avoids accumulating
+     dead rows on repeated no-offer ticks.
+   - Once an offer is in hand, write an `AnalysisInstance` row with status
+     `launching` *before* the create call (the create is the billable,
+     crash-sensitive step the reaper must be able to recover).
+   - Create the instance from the configured template hash with per-run
+     env, label it with the schedule id.
    - On success: store the vast instance id, set status `running`, set
      `hard_deadline = now + VAST_HARD_DEADLINE_HOURS`, mark the schedule
      `running`. On failure: set the row `failed`, mark the schedule
@@ -95,8 +100,10 @@ caps spend.
 The dangerous gap is "vast instance created but the DB write of its id was
 lost." Mitigations, layered:
 
-- The `launching` row is written before the vast call, so the reaper sees
-  *something* is in flight.
+- The `launching` row is written after a successful offer search but
+  before the (billable) create call, so the reaper sees *something* is in
+  flight for any box that could exist. A no-offer tick writes no row
+  because no box was created.
 - The vast instance is created with a label/env `WL_SCHEDULE_ID=<id>`. The
   reap pass also lists live vast instances via the API and destroys any
   carrying a `WL_SCHEDULE_ID` whose `AnalysisInstance` is terminal/absent —
