@@ -5,12 +5,13 @@ Description:
     GameAnalysis, Lc0GameAnalysis, AnalysisJob, and WorkerHeartbeat.
 
 Changelog:
+    2026-05-18: Register RecurringAnalysisSchedule (#155 B).
     2026-05-18: Register AnalysisSchedule/AnalysisInstance (#155).
     2026-05-08: Added file header to meet documentation standards
 """
 from django.contrib import admin
 
-from .models import AnalysisInstance, AnalysisSchedule
+from .models import AnalysisInstance, AnalysisSchedule, RecurringAnalysisSchedule
 
 
 @admin.register(AnalysisSchedule)
@@ -36,3 +37,13 @@ class AnalysisInstanceAdmin(admin.ModelAdmin):
         "hard_deadline", "destroyed_at", "offer_dph",
         "launch_worker_ids", "worker_id",
     )
+
+
+@admin.register(RecurringAnalysisSchedule)
+class RecurringAnalysisScheduleAdmin(admin.ModelAdmin):
+    """Operator fallback for editing recurring rules."""
+
+    list_display = ("id", "name", "crontab", "timezone", "enabled",
+                    "max_jobs", "last_materialized_at")
+    list_filter = ("enabled",)
+    readonly_fields = ("created_at", "updated_at", "last_materialized_at")
