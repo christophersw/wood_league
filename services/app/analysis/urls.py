@@ -5,6 +5,7 @@ Description:
     per-engine queues management pages.
 
 Changelog:
+    2026-05-18: Add /schedule/ routes (#155 B).
     2026-05-14 (#106): Add /dashboard/ + 6 HTMX partial routes; convert
         /diagnostics/ to a redirect to /dashboard/.
     2026-05-14 (#101): Remove legacy /queues/<engine>/submit/ route.
@@ -15,7 +16,7 @@ Changelog:
 from django.urls import path
 from django.views.generic import RedirectView
 
-from . import views, views_dashboard, views_queue
+from . import views, views_dashboard, views_queue, views_schedule
 
 app_name = "analysis"
 
@@ -35,6 +36,21 @@ urlpatterns = [
     path("dashboard/recent/", views_dashboard.dashboard_recent, name="dash_recent"),
     path("dashboard/failures/", views_dashboard.dashboard_failures, name="dash_failures"),
     path("dashboard/logs/", views_dashboard.dashboard_logs, name="dash_logs"),
+
+    # Scheduling admin — recurring rules, one-off runs, HTMX preview.
+    path("schedule/", views_schedule.scheduling_page, name="scheduling"),
+    path("schedule/rule/new/", views_schedule.rule_create,
+         name="rule_create"),
+    path("schedule/rule/<int:pk>/edit/", views_schedule.rule_edit,
+         name="rule_edit"),
+    path("schedule/rule/<int:pk>/delete/", views_schedule.rule_delete,
+         name="rule_delete"),
+    path("schedule/rule/<int:pk>/toggle/", views_schedule.rule_toggle,
+         name="rule_toggle"),
+    path("schedule/run-once/", views_schedule.run_once, name="run_once"),
+    path("schedule/<int:pk>/rerun/", views_schedule.rerun, name="rerun"),
+    path("schedule/preview/", views_schedule.schedule_preview,
+         name="schedule_preview"),
 
     # Legacy diagnostics URL — preserved as a redirect for bookmarks.
     path(
