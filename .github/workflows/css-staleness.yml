@@ -1,0 +1,54 @@
+name: css-staleness
+
+# Guards against shipping a stale services/app/static/css/tailwind.css.
+# That file is a *committed* compiled artifact (base.html links it
+# directly; nothing in the Railway deploy rebuilds it). If main.css or
+# any template that uses a Tailwind utility changes but tailwind.css is
+# not regenerated, the affected UI ships unstyled — issue #140, where
+# the worker dashboard cards and "last ten games" table rendered as raw
+# unstyled text. This job rebuilds the CSS the one supported way and
+# fails if the result differs from what was committed.
+
+on:
+  pull_request:
+    paths:
+      - "services/app/static/css/main.css"
+      - "services/app/templates/**"
+      - "services/app/package.json"
+      - "services/app/package-lock.json"
+      - "services/app/bin/build_tailwind.sh"
+      - ".github/workflows/css-staleness.yml"
+  push:
+    branches: ["main"]
+    paths:
+      - "services/app/static/css/main.css"
+      - "services/app/templates/**"
+      - "services/app/package.json"
+      - "services/app/package-lock.json"
+      - "services/app/bin/build_tailwind.sh"
+      - ".github/workflows/css-staleness.yml"
+  workflow_dispatch: {}
+
+jobs:
+  rebuild-and-diff:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Rebuild tailwind.css from main.css
+        run: services/app/bin/build_tailwind.sh
+
+      - name: Fail if the committed tailwind.css is stale
+        run: |
+          if ! git diff --exit-code -- services/app/static/css/tailwind.css; then
+            echo "::error::services/app/static/css/tailwind.css is STALE."
+            echo "main.css (or a template/toolchain file) changed but the"
+            echo "compiled stylesheet was not regenerated. Run"
+            echo "  services/app/bin/build_tailwind.sh"
+            echo "and commit the updated services/app/static/css/tailwind.css."
+            exit 1
+          fi

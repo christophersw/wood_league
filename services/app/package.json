@@ -1,0 +1,13 @@
+{
+  "name": "wood-league-app-css",
+  "version": "0.0.0",
+  "private": true,
+  "description": "CSS-only toolchain for the Wood League Django app: compiles static/css/main.css (Tailwind v4 source) into the committed static/css/tailwind.css that base.html serves. Not a Node app — Railway deploys via the Python (RAILPACK) builder and never runs this. See bin/build_tailwind.sh and the css-staleness CI guard (#140).",
+  "scripts": {
+    "build:css": "tailwindcss --input ./static/css/main.css --output ./static/css/tailwind.css --minify"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "4.3.0",
+    "tailwindcss": "4.3.0"
+  }
+}
