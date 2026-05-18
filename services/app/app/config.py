@@ -9,6 +9,7 @@ Changelog:
     2026-05-08: Added file header to meet documentation standards
     2026-05-14: Added RUNPOD_API_KEY / RUNPOD_WORKER_POD_ID / RUNPOD_ENABLED
         fields for the admin start-pod endpoint (issue #83).
+    2026-05-18: Added VAST_* settings (issue #155 Sub-project A).
 """
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -39,6 +40,16 @@ class Settings(BaseSettings):
     runpod_api_key: str = ""
     runpod_worker_pod_id: str = ""
     runpod_enabled: bool = False
+    vast_enabled: bool = False
+    vast_api_key: str = ""
+    vast_template_hash: str = ""
+    vast_campaign_id: str = ""
+    vast_offer_gpu_name: str = "L40S"
+    vast_offer_max_dph: float = 1.50
+    vast_max_jobs: int = 100
+    vast_hard_deadline_hours: float = 6.0
+    vast_launch_grace_minutes: int = 20
+    vast_worker_stale_minutes: int = 15
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
