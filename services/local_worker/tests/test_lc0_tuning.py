@@ -483,3 +483,25 @@ def test_on_calibrated_not_fired_on_cache_hit(tmp_path):
         on_calibrated=calls.append,
     )
     assert calls == []
+
+
+def test_on_calibrated_exception_is_swallowed(tmp_path):
+    """A raising callback must not propagate; tuning result is still returned."""
+    from local_worker.analysis import lc0_tuning
+
+    cache_file = tmp_path / "lc0_tuning.json"
+
+    def bad_callback(path):
+        raise RuntimeError("storage unavailable")
+
+    def fake_runner(cmd):
+        import subprocess
+        return subprocess.CompletedProcess(cmd, 0, stdout="1000 nps\n", stderr="")
+
+    result = lc0_tuning.get_tuned_opts(
+        lc0_path="/bin/sh", weights_path="/w/BT4.pb.gz",
+        backend="onnx-trt", gpu_name="", lc0_version="",
+        cache_file=cache_file, runner=fake_runner,
+        on_calibrated=bad_callback,
+    )
+    assert "MinibatchSize" in result  # opts returned despite callback failure
