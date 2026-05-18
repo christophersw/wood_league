@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% comment %}
+  Title: scheduling.html — analysis scheduling admin page (#155 B)
+  Description: Recurring-rule CRUD + run-once, plus "future planned runs"
+      and "recent runs" tables. Data-dense admin tables use
+      .wc-table .wc-table--zebra (no .pg-table). Failed rows use the
+      existing text-crimson utility.
+  Changelog:
+      2026-05-18: Initial — issue #155 Sub-project B.
+{% endcomment %}
+{% block title %}Analysis Scheduling{% endblock %}
+{% block content %}
+<section class="pg-section">
+  <h1>Analysis Scheduling</h1>
+
+  <h2>Recurring rules</h2>
+  <table class="wc-table wc-table--zebra">
+    <thead><tr><th>Name</th><th>Crontab</th><th>TZ</th>
+      <th>Max jobs</th><th>Enabled</th><th>Actions</th></tr></thead>
+    <tbody>
+    {% for r in rules %}
+      <tr>
+        <td>{{ r.name }}</td><td><code>{{ r.crontab }}</code></td>
+        <td>{{ r.timezone }}</td><td>{{ r.max_jobs|default:"—" }}</td>
+        <td>{{ r.enabled|yesno:"yes,no" }}</td>
+        <td>
+          <form method="post"
+                action="{% url 'analysis:rule_toggle' r.pk %}"
+                style="display:inline">{% csrf_token %}
+            <button type="submit">{{ r.enabled|yesno:"Disable,Enable" }}</button>
+          </form>
+          <form method="post"
+                action="{% url 'analysis:rule_delete' r.pk %}"
+                style="display:inline">{% csrf_token %}
+            <button type="submit">Delete</button>
+          </form>
+        </td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="6">No rules yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+
+  <h2>New rule</h2>
+  <form method="post" action="{% url 'analysis:rule_create' %}">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <div id="cron-preview"
+         hx-get="{% url 'analysis:schedule_preview' %}"
+         hx-trigger="load, change from:#id_crontab,
+                     change from:#id_timezone"
+         hx-include="#id_crontab,#id_timezone">
+    </div>
+    <button type="submit">Create rule</button>
+  </form>
+
+  <form method="post" action="{% url 'analysis:run_once' %}">
+    {% csrf_token %}
+    <button type="submit">Run once now</button>
+  </form>
+
+  <h2>Future planned runs</h2>
+  <table class="wc-table wc-table--zebra">
+    <thead><tr><th>When</th><th>Source</th><th>Max jobs</th>
+      <th>Status</th></tr></thead>
+    <tbody>
+    {% for row in future_rows %}
+      <tr><td>{{ row.when }}</td><td>{{ row.source }}</td>
+        <td>{{ row.max_jobs|default:"—" }}</td>
+        <td>{{ row.status }}</td></tr>
+    {% empty %}
+      <tr><td colspan="4">Nothing scheduled.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+
+  <h2>Recent runs</h2>
+  <table class="wc-table wc-table--zebra">
+    <thead><tr><th>When</th><th>Source</th><th>Status</th>
+      <th>Instance</th><th>$/hr</th><th></th></tr></thead>
+    <tbody>
+    {% for row in recent_rows %}
+      <tr{% if row.failed %} class="text-crimson"{% endif %}>
+        <td>{{ row.when }}</td><td>{{ row.source }}</td>
+        <td>{{ row.status }}</td>
+        <td>{{ row.instance_id|default:"—" }}</td>
+        <td>{{ row.offer_dph|default:"—" }}</td>
+        <td>
+          <form method="post"
+                action="{% url 'analysis:rerun' row.id %}"
+                style="display:inline">{% csrf_token %}
+            <button type="submit">Re-run</button>
+          </form>
+        </td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="6">No runs yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

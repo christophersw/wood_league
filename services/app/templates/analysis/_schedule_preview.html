@@ -1,0 +1,9 @@
+{% comment %}HTMX partial: next-runs preview for a candidate rule.{% endcomment %}
+{% if error %}
+  <p class="text-crimson">Invalid: {{ error }}</p>
+{% else %}
+  <p>Next runs:</p>
+  <ul>
+    {% for dt in runs %}<li>{{ dt }}</li>{% endfor %}
+  </ul>
+{% endif %}
