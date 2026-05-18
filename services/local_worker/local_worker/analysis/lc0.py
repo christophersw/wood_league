@@ -45,6 +45,7 @@ import chess.engine
 import chess.pgn
 
 from .lc0_tuning import get_tuned_opts
+from ..lc0_tuning_sync import push_after_calibrate
 from .eval_cache import (
     EvalCache,
     cached_pvs_to_info_list,
@@ -509,6 +510,7 @@ def _merge_tuned_opts(
         backend=backend,
         gpu_name="",
         lc0_version="",
+        on_calibrated=push_after_calibrate,
     )
     for key, value in tuned.items():
         base_opts.setdefault(key, value)

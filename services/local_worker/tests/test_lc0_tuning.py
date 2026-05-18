@@ -435,3 +435,73 @@ def test_module_exports_expected_helpers():
     assert callable(lc0_tuning.compute_fingerprint)
     assert callable(lc0_tuning.calibrate)
     assert callable(lc0_tuning.get_tuned_opts)
+
+
+def test_on_calibrated_fires_once_on_cache_miss(tmp_path):
+    """on_calibrated is invoked with the cache path exactly once when a
+    calibration is freshly computed (cache miss)."""
+    from local_worker.analysis import lc0_tuning
+
+    calls = []
+    cache_file = tmp_path / "lc0_tuning.json"
+
+    def fake_runner(cmd):
+        import subprocess
+        return subprocess.CompletedProcess(cmd, 0, stdout="1000 nps\n", stderr="")
+
+    lc0_tuning.get_tuned_opts(
+        lc0_path="/bin/sh",  # exists → calibration not skipped
+        weights_path="/w/BT4.pb.gz",
+        backend="onnx-trt",
+        gpu_name="",
+        lc0_version="",
+        cache_file=cache_file,
+        runner=fake_runner,
+        on_calibrated=calls.append,
+    )
+
+    assert calls == [cache_file]
+
+
+def test_on_calibrated_not_fired_on_cache_hit(tmp_path):
+    """A pre-populated, fingerprint-matching cache must not recalibrate,
+    so on_calibrated must not fire."""
+    import json
+    from local_worker.analysis import lc0_tuning
+
+    cache_file = tmp_path / "lc0_tuning.json"
+    fp = lc0_tuning.compute_fingerprint("", "", "/w/BT4.pb.gz", "onnx-trt")
+    cache_file.write_text(json.dumps({
+        "fingerprint": fp, "minibatch_size": 256, "max_prefetch": 32,
+        "measured_nps": 1.0, "calibrated_at": "x",
+    }))
+
+    calls = []
+    lc0_tuning.get_tuned_opts(
+        lc0_path="/bin/sh", weights_path="/w/BT4.pb.gz", backend="onnx-trt",
+        gpu_name="", lc0_version="", cache_file=cache_file,
+        on_calibrated=calls.append,
+    )
+    assert calls == []
+
+
+def test_on_calibrated_exception_is_swallowed(tmp_path):
+    """A raising callback must not propagate; tuning result is still returned."""
+    from local_worker.analysis import lc0_tuning
+
+    cache_file = tmp_path / "lc0_tuning.json"
+
+    def bad_callback(path):
+        raise RuntimeError("storage unavailable")
+
+    def fake_runner(cmd):
+        import subprocess
+        return subprocess.CompletedProcess(cmd, 0, stdout="1000 nps\n", stderr="")
+
+    result = lc0_tuning.get_tuned_opts(
+        lc0_path="/bin/sh", weights_path="/w/BT4.pb.gz",
+        backend="onnx-trt", gpu_name="", lc0_version="",
+        cache_file=cache_file, runner=fake_runner,
+        on_calibrated=bad_callback,
+    )
+    assert "MinibatchSize" in result  # opts returned despite callback failure

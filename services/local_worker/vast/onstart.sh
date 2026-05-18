@@ -59,6 +59,14 @@ export _CACHE_DB="${CACHE_DB}" _WORK_DIR="${WORK_DIR}"
 
 pull_cache
 
+# Pull this image's lc0 calibration (fail-soft; never blocks boot). A
+# hit lets the lc0 worker skip the ~7.5-min MinibatchSize sweep (#150).
+if [ "${WL_SKIP_LC0_TUNING_PULL:-0}" = "1" ]; then
+  echo "onstart: WL_SKIP_LC0_TUNING_PULL=1, skipping lc0 calibration pull"
+else
+  wood-league-worker lc0-tuning-pull || true
+fi
+
 # --- compute Stockfish fan-out for this host ---
 eval "$(wood-league-worker plan-sf-fanout)"
 echo "onstart: fan-out SF_WORKERS=${SF_WORKERS} SF_THREADS=${SF_THREADS} SF_HASH_MB=${SF_HASH_MB} SF_JOB_SPLIT='${SF_JOB_SPLIT}'"

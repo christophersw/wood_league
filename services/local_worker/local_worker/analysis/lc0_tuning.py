@@ -435,6 +435,7 @@ def get_tuned_opts(
     cache_file: Optional[Path] = None,
     runner: Optional[BenchmarkRunner] = None,
     force_recalibrate: bool = False,
+    on_calibrated: Optional[Callable[[Path], None]] = None,
 ) -> dict[str, str]:
     """Merge heuristic + calibration options for the current host.
 
@@ -451,6 +452,10 @@ def get_tuned_opts(
         cache_file: Optional cache path override (tests).
         runner: Optional benchmark runner override (tests).
         force_recalibrate: If True, ignore any cached calibration.
+        on_calibrated: Optional callback invoked with the cache file
+            path immediately after a *fresh* calibration is persisted
+            (cache miss only). Used to push the result to durable
+            storage; never called on a cache hit. Default None (no-op).
 
     Returns:
         Dict of UCI option name → string value ready for engine.configure().
@@ -477,6 +482,7 @@ def get_tuned_opts(
     opts["MinibatchSize"] = str(calibration["minibatch_size"])
     opts["MaxPrefetch"] = str(calibration["max_prefetch"])
 
+    target_cache = cache_file or cache_path()
     save_cache(
         {
             "fingerprint": fingerprint,
@@ -485,6 +491,11 @@ def get_tuned_opts(
             "measured_nps": calibration["measured_nps"],
             "calibrated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         },
-        cache_file,
+        target_cache,
     )
+    if on_calibrated is not None:
+        try:
+            on_calibrated(target_cache)
+        except Exception:  # noqa: BLE001 — callback must never break tuning
+            log.warning("lc0_tuning: on_calibrated callback raised; ignored")
     return opts
