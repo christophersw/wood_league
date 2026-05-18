@@ -31,8 +31,13 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         """Entry point. No-op when disabled or unconfigured.
 
+        Parameters:
+            args: Positional arguments (unused).
+            options (dict): Parsed CLI options (none defined; unused).
+
         Side effects:
-            When enabled+configured: runs reap then launch (Tasks 6, 7).
+            Writes one status line to stdout. When enabled + configured:
+            runs the reap pass then the launch pass (Tasks 6, 7).
         """
         if not getattr(settings, "VAST_ENABLED", False):
             self.stdout.write("vast reconcile disabled (VAST_ENABLED off)")
