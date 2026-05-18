@@ -29,6 +29,9 @@ boto3>=1.34
 # and app/services/*.py. Pinned to the same source as pyproject.toml.
 wood-league-shared @ git+https://github.com/christophersw/wood_league.git#subdirectory=packages/shared
 
+# Scheduling
+croniter>=2.0.0
+
 # Pinned by Snyk to avoid known vulnerabilities
 pyarrow>=14.0.1
 pillow>=10.3.0
