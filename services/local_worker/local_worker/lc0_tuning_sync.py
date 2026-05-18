@@ -29,7 +29,7 @@ log = logging.getLogger(__name__)
 _KEY_PREFIX = "lc0_tuning"
 
 
-def tuning_object_key(fingerprint: dict) -> str:
+def tuning_object_key(fingerprint: dict[str, str]) -> str:
     """Object key for a calibration fingerprint.
 
     Args:
@@ -47,7 +47,7 @@ def tuning_object_key(fingerprint: dict) -> str:
 
 
 def pull_tuning(
-    client: Any, bucket: str, fingerprint: dict, dest: Path
+    client: Any, bucket: str, fingerprint: dict[str, str], dest: Path
 ) -> bool:
     """Download this fingerprint's calibration JSON to ``dest``. Never raises.
 
@@ -95,8 +95,13 @@ def push_tuning(client: Any, bucket: str, cache_path: Path) -> None:
     try:
         payload = json.loads(cache_path.read_text())
         fingerprint = payload["fingerprint"]
-        client.upload_file(
-            str(cache_path), bucket, tuning_object_key(fingerprint)
+        key = tuning_object_key(fingerprint)
+        client.upload_file(str(cache_path), bucket, key)
+        log.info("lc0_tuning_sync: pushed %s", key)
+    except KeyError:
+        log.warning(
+            "lc0_tuning_sync: cache file %s missing 'fingerprint'; cannot push",
+            cache_path,
         )
     except Exception as exc:  # noqa: BLE001 — push must not break the run
         log.warning("lc0_tuning_sync: push failed (%s); ignored", exc)
