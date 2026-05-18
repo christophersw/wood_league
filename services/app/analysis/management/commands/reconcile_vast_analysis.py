@@ -245,9 +245,76 @@ def _reap(api_key: str) -> int:
 
 
 def _launch(api_key: str) -> int:
-    """Launch one instance if scheduled and none live. Implemented in Task 7.
+    """Launch one vast instance for the oldest pending schedule.
+
+    No-op when an instance is already live (≤1-instance invariant) or
+    no schedule is pending.
 
     Returns:
         int: 1 if an instance was launched, else 0.
     """
-    return 0
+    if AnalysisInstance.objects.filter(
+            status__in=AnalysisInstance._LIVE_STATES).exists():
+        return 0
+    sched = (
+        AnalysisSchedule.objects
+        .filter(status=AnalysisSchedule.STATUS_PENDING)
+        .order_by("created_at")
+        .first()
+    )
+    if sched is None:
+        return 0
+
+    now = timezone.now()
+    snapshot = list(
+        WorkerHeartbeat.objects.values_list("worker_id", flat=True))
+    inst = AnalysisInstance.objects.create(
+        schedule=sched,
+        status=AnalysisInstance.STATUS_LAUNCHING,
+        launched_at=now,
+        launch_worker_ids=snapshot,
+    )
+
+    try:
+        offer = vast_dispatch.search_cheapest_offer(
+            api_key=api_key,
+            gpu_name=settings.VAST_OFFER_GPU_NAME,
+            max_dph=settings.VAST_OFFER_MAX_DPH,
+        )
+    except vast_dispatch.NoVastOfferError:
+        # No capacity under the ceiling now — fail this launch attempt
+        # but leave the schedule pending so the next tick retries.
+        inst.status = AnalysisInstance.STATUS_FAILED
+        inst.save(update_fields=["status"])
+        return 0
+
+    env = {
+        "WL_CAMPAIGN_ID": settings.VAST_CAMPAIGN_ID,
+        "WLW_MAX_JOBS": str(sched.effective_max_jobs()),
+        "WL_SCHEDULE_ID": str(sched.id),
+    }
+    result = vast_dispatch.create_instance(
+        api_key=api_key,
+        offer_id=offer["id"],
+        template_hash=settings.VAST_TEMPLATE_HASH,
+        label=_label_for(sched.id),
+        env=env,
+    )
+    if not result["ok"]:
+        inst.status = AnalysisInstance.STATUS_FAILED
+        inst.save(update_fields=["status"])
+        sched.status = AnalysisSchedule.STATUS_FAILED
+        sched.save(update_fields=["status"])
+        return 0
+
+    inst.vast_instance_id = result["vast_instance_id"]
+    inst.offer_dph = float(offer.get("dph_total")) \
+        if offer.get("dph_total") is not None else None
+    inst.status = AnalysisInstance.STATUS_RUNNING
+    inst.hard_deadline = now + timedelta(
+        hours=settings.VAST_HARD_DEADLINE_HOURS)
+    inst.save(update_fields=[
+        "vast_instance_id", "offer_dph", "status", "hard_deadline"])
+    sched.status = AnalysisSchedule.STATUS_RUNNING
+    sched.save(update_fields=["status"])
+    return 1
