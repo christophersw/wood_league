@@ -1,7 +1,11 @@
-"""Title: test_lc0.py — lc0 analysis wiring tests
-Description: Tests for lc0.py analysis module wiring and integration points.
+"""
+Title: test_lc0.py — lc0 analysis module wiring tests
+Description:
+    Tests for lc0.py wiring/integration points — currently that
+    _merge_tuned_opts hands get_tuned_opts the push_after_calibrate
+    hook so a fresh calibration is persisted to object storage.
 Changelog:
-    2026-05-17: on_calibrated push wiring (#150).
+    2026-05-17: Initial creation — on_calibrated push wiring (#150).
 """
 
 
