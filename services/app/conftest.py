@@ -13,6 +13,9 @@ Changelog:
     2026-05-08: Created to fix AppRegistryNotReady in api/tests/
     2026-05-11: Auto-load .env/.env.test, inject test defaults, and force
                 DEBUG=True so the test client isn't 301-redirected.
+    2026-05-17 (#147): Tests connect only to TEST_DATABASE_URL (or the
+                sqlite default); guard aborts otherwise (prevents the #9
+                .env-fallback leak; prod + test are both Railway).
 """
 
 import os
@@ -86,4 +89,31 @@ def pytest_configure(config):
     if not _load_env_file(".env.test"):
         _load_env_file(".env")
     _apply_test_defaults()
+
+    # Tests connect ONLY to TEST_DATABASE_URL (or the sqlite default).
+    # prod and the test DB are both Railway Postgres with near-identical
+    # connection strings, so we discriminate by a distinct variable name
+    # rather than fragile host matching: overwrite DATABASE_URL with
+    # TEST_DATABASE_URL so the prod DATABASE_URL that .env may carry can
+    # never be what the suite uses (issue #9; guard is #147).
+    test_db_url = os.environ.get("TEST_DATABASE_URL", "").strip()
+    os.environ["DATABASE_URL"] = test_db_url or "sqlite:///:memory:"
+
+    import pytest
+
+    from _pytest_db_guard import (
+        OVERRIDE_ENV,
+        ProdDatabaseGuardError,
+        assert_test_db_safe,
+    )
+
+    try:
+        assert_test_db_safe(
+            database_url=os.environ["DATABASE_URL"],
+            test_database_url=test_db_url,
+            allow_override=os.environ.get(OVERRIDE_ENV) == "1",
+        )
+    except ProdDatabaseGuardError as exc:
+        raise pytest.UsageError(str(exc)) from exc
+
     django.setup()
