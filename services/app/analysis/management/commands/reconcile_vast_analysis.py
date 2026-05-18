@@ -143,6 +143,83 @@ class Command(BaseCommand):
             f"vast reconcile done: reaped={reaped} launched={launched}")
 
 
+def _reap_decision(inst: AnalysisInstance, now, stale_cutoff) -> str | None:
+    """Return why ``inst`` should be reaped, or None to keep it.
+
+    Reasons (priority order): ``"overdue"`` (past hard_deadline,
+    unconditional), ``"drained"`` (worker exited / cap done),
+    ``"never_registered"`` (launched into an empty-worker environment
+    and no worker ever appeared within the stale window).
+    """
+    if inst.hard_deadline is not None and now >= inst.hard_deadline:
+        return "overdue"
+    if _is_drained(inst, stale_cutoff):
+        return "drained"
+    if (not inst.worker_id and not inst.launch_worker_ids
+            and inst.launched_at is not None
+            and inst.launched_at < stale_cutoff):
+        return "never_registered"
+    return None
+
+
+def _reap_one(inst: AnalysisInstance, api_key: str, now,
+              stale_cutoff) -> int:
+    """Reap a single live instance if warranted. Return 1 if destroyed.
+
+    Binds the worker first (so drained detection can fire), then acts on
+    the reap decision. A ``never_registered`` reap also fails the
+    schedule (the run never actually started).
+    """
+    _bind_worker(inst)
+    reason = _reap_decision(inst, now, stale_cutoff)
+    if reason is None:
+        return 0
+    if not _destroy(inst, api_key):
+        return 0
+    if reason == "never_registered":
+        inst.schedule.status = AnalysisSchedule.STATUS_FAILED
+        inst.schedule.save(update_fields=["status"])
+    return 1
+
+
+def _orphan_vast_id(vinst: dict) -> str | None:
+    """Return the vast id to destroy if ``vinst`` is an orphan, else None.
+
+    Orphan = a live vast instance whose label is ``wl-sched-<id>`` but
+    whose matching AnalysisInstance is terminal or absent (covers a lost
+    create-time DB write).
+    """
+    label = vinst.get("label") or ""
+    if not label.startswith(_LABEL_PREFIX):
+        return None
+    try:
+        sched_id = int(label[len(_LABEL_PREFIX):])
+    except ValueError:
+        return None
+    rec = (
+        AnalysisInstance.objects
+        .filter(schedule_id=sched_id,
+                vast_instance_id=str(vinst.get("id")))
+        .first()
+    )
+    if rec is None or not rec.is_live:
+        return str(vinst.get("id"))
+    return None
+
+
+def _reap_orphans(api_key: str) -> int:
+    """Destroy any orphaned live vast instances. Return count destroyed."""
+    destroyed = 0
+    for vinst in vast_dispatch.list_instances(api_key=api_key):
+        vid = _orphan_vast_id(vinst)
+        if vid is None:
+            continue
+        if vast_dispatch.destroy_instance(
+                api_key=api_key, vast_instance_id=vid)["ok"]:
+            destroyed += 1
+    return destroyed
+
+
 def _reap(api_key: str) -> int:
     """Destroy finished/overdue instances; recover schedules; kill orphans.
 
@@ -153,51 +230,11 @@ def _reap(api_key: str) -> int:
     stale_cutoff = now - timedelta(
         minutes=settings.VAST_WORKER_STALE_MINUTES)
     destroyed = 0
-
     for inst in AnalysisInstance.objects.filter(
             status__in=AnalysisInstance._LIVE_STATES):
-        _bind_worker(inst)
-        overdue = inst.hard_deadline is not None and now >= inst.hard_deadline
-        drained = _is_drained(inst, stale_cutoff)
-        never_registered = (
-            not inst.worker_id and inst.launched_at is not None
-            and inst.launched_at < stale_cutoff
-            and not inst.launch_worker_ids
-        )
-        if not (overdue or drained or never_registered):
-            continue
-        if _destroy(inst, api_key):
-            destroyed += 1
-            if never_registered and not overdue and not drained:
-                inst.schedule.status = AnalysisSchedule.STATUS_FAILED
-                inst.schedule.save(update_fields=["status"])
-
+        destroyed += _reap_one(inst, api_key, now, stale_cutoff)
     _recover_schedules()
-
-    # Orphan-by-label: kill any live vast instance whose AnalysisInstance
-    # is terminal/absent (covers a lost create-time DB write).
-    terminal_or_absent = []
-    for vinst in vast_dispatch.list_instances(api_key=api_key):
-        label = vinst.get("label") or ""
-        if not label.startswith(_LABEL_PREFIX):
-            continue
-        try:
-            sched_id = int(label[len(_LABEL_PREFIX):])
-        except ValueError:
-            continue
-        rec = (
-            AnalysisInstance.objects
-            .filter(schedule_id=sched_id,
-                    vast_instance_id=str(vinst.get("id")))
-            .first()
-        )
-        if rec is None or not rec.is_live:
-            terminal_or_absent.append(str(vinst.get("id")))
-    for vid in terminal_or_absent:
-        if vast_dispatch.destroy_instance(
-                api_key=api_key, vast_instance_id=vid)["ok"]:
-            destroyed += 1
-
+    destroyed += _reap_orphans(api_key)
     return destroyed
 
 
