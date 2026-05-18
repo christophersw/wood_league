@@ -78,6 +78,10 @@ def _destroy(inst: AnalysisInstance, api_key: str) -> bool:
 
     On success: status=destroyed + destroyed_at stamped. On failure:
     row left non-terminal so the next tick retries.
+
+    Special case: when ``inst`` has no ``vast_instance_id`` (nothing was
+    ever created), the row is marked STATUS_FAILED and False is returned
+    — i.e. a False return can still mutate the row.
     """
     if not inst.vast_instance_id:
         # Nothing was ever created — mark terminal without a vast call.
@@ -196,6 +200,8 @@ def _orphan_vast_id(vinst: dict) -> str | None:
         sched_id = int(label[len(_LABEL_PREFIX):])
     except ValueError:
         return None
+    # vast ids are ints; AnalysisInstance.vast_instance_id stores the
+    # str() form (see vast_dispatch.create_instance) — stringify to match.
     rec = (
         AnalysisInstance.objects
         .filter(schedule_id=sched_id,
