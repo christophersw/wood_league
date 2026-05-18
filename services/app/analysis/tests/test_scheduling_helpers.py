@@ -52,6 +52,11 @@ class NextRunsTests(TestCase):
         with self.assertRaises(ValueError):
             scheduling.next_runs("bogus", "UTC", 1)
 
+    def test_next_runs_bad_timezone_raises_valueerror(self):
+        """An unknown timezone raises ValueError (uniform contract)."""
+        with self.assertRaises(ValueError):
+            scheduling.next_runs("0 2 * * 1", "Not/AZone", 1)
+
     def test_prev_fire_before_now(self):
         """prev_fire returns the most recent fire <= the given instant."""
         now = datetime(2026, 5, 20, 3, 0, tzinfo=ZoneInfo("UTC"))  # Wed

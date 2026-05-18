@@ -5,6 +5,7 @@ Description:
     reconcile cron (prev_fire) and the scheduling UI (next_runs preview
     + future-planned table). No Django models; pure and unit-testable.
 Changelog:
+    2026-05-18: _base raises ValueError (not KeyError) for unknown tz.
     2026-05-18: Initial — issue #155 Sub-project B.
 """
 from __future__ import annotations
@@ -27,11 +28,16 @@ def _base(crontab: str, tz: str, anchor: datetime) -> croniter:
         croniter: iterator positioned at ``anchor`` in ``tz``.
 
     Raises:
-        ValueError: if ``crontab`` is not a valid expression.
+        ValueError: if ``crontab`` is invalid or ``tz`` is not a known
+            IANA timezone.
     """
     if not croniter.is_valid(crontab):
         raise ValueError(f"invalid cron expression: {crontab!r}")
-    local = anchor.astimezone(ZoneInfo(tz))
+    try:
+        zone = ZoneInfo(tz)
+    except KeyError as exc:
+        raise ValueError(f"unknown timezone: {tz!r}") from exc
+    local = anchor.astimezone(zone)
     return croniter(crontab, local)
 
 
@@ -50,7 +56,8 @@ def next_runs(
         list[datetime]: ``count`` tz-aware datetimes in ``tz``, ascending.
 
     Raises:
-        ValueError: if ``crontab`` is invalid.
+        ValueError: if ``crontab`` is invalid or ``tz`` is not a known
+            IANA timezone.
     """
     anchor = after or datetime.now(ZoneInfo("UTC"))
     it = _base(crontab, tz, anchor)
@@ -69,7 +76,8 @@ def prev_fire(crontab: str, tz: str, now: datetime) -> datetime:
         datetime: the tz-aware previous fire time (in ``tz``).
 
     Raises:
-        ValueError: if ``crontab`` is invalid.
+        ValueError: if ``crontab`` is invalid or ``tz`` is not a known
+            IANA timezone.
     """
     it = _base(crontab, tz, now)
     return it.get_prev(datetime)
