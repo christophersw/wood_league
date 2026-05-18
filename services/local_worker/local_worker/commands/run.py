@@ -18,6 +18,7 @@ Changelog:
 from __future__ import annotations
 
 import logging
+import sys
 import threading
 from typing import Optional
 
@@ -38,6 +39,48 @@ from local_worker.runpod_lifecycle import resolve_pod_id, stop_self
 logger = logging.getLogger(__name__)
 
 
+def _prompt_optional_int(question: str) -> Optional[int]:
+    """Ask an interactive question and parse an optional integer answer.
+
+    Args:
+        question: Prompt text shown to the user.
+
+    Returns:
+        The parsed integer, or ``None`` when the answer is blank or
+        non-numeric (the documented "until queue empty" sentinel).
+    """
+    raw = questionary.text(question).ask()
+    return int(raw) if raw and raw.strip().isdigit() else None
+
+
+def _resolve_engine(engine: Optional[str], interactive: bool) -> str:
+    """Return the engine selection, prompting only when interactive.
+
+    Args:
+        engine: Engine from the CLI, or ``None``.
+        interactive: ``True`` when stdin is a TTY.
+
+    Returns:
+        The chosen engine string ("stockfish" | "lc0" | "both").
+
+    Raises:
+        typer.Exit: code 1 if ``engine`` is ``None`` and non-interactive
+            — a clear error instead of a cryptic questionary abort (#152).
+    """
+    if engine is not None:
+        return engine
+    if not interactive:
+        console.print(
+            "[red]--engine is required in non-interactive mode "
+            "(no TTY to prompt). Pass --engine stockfish|lc0|both."
+        )
+        raise typer.Exit(1)
+    return questionary.select(
+        "Which engines should this worker process?",
+        choices=["stockfish", "lc0", "both"],
+    ).ask()
+
+
 def _resolve_run_options(
     engine: Optional[str],
     max_jobs: Optional[int],
@@ -45,31 +88,39 @@ def _resolve_run_options(
 ) -> tuple[list[str], Optional[int], Optional[int]]:
     """Resolve run command options, prompting interactively if needed.
 
+    In a non-interactive context (no TTY — e.g. the vast.ai headless
+    onstart), prompting is impossible: questionary aborts the process
+    ("Aborted.") before any job is claimed. So when stdin is not a TTY
+    we never prompt — a missing ``max_jobs``/``batch_time`` falls back
+    to ``None`` (run until the queue empties), and a missing ``engine``
+    is a clear, explicit error rather than a cryptic abort (#152).
+
     Args:
-        engine: Engine choice from CLI or ``None`` to prompt.
-        max_jobs: Job cap from CLI or ``None`` to prompt.
-        batch_time: Batch time in minutes from CLI or ``None`` to prompt.
+        engine: Engine choice from CLI, or ``None``. Required when
+            non-interactive (no TTY to prompt).
+        max_jobs: Job cap from CLI, or ``None`` (prompt if a TTY, else
+            run until queue empty).
+        batch_time: Batch-time minutes from CLI, or ``None`` (prompt if
+            a TTY, else run until queue empty).
 
     Returns:
         Tuple of (engines list, max_jobs, batch_time_minutes).
+
+    Raises:
+        typer.Exit: code 1 if non-interactive and ``engine`` is unset.
     """
-    if engine is None:
-        engine = questionary.select(
-            "Which engines should this worker process?",
-            choices=["stockfish", "lc0", "both"],
-        ).ask()
+    interactive = sys.stdin.isatty()
+    engine = _resolve_engine(engine, interactive)
 
-    if max_jobs is None:
-        mj_raw = questionary.text(
+    if max_jobs is None and interactive:
+        max_jobs = _prompt_optional_int(
             "Max jobs this run? (blank = until queue empty):"
-        ).ask()
-        max_jobs = int(mj_raw) if mj_raw and mj_raw.strip().isdigit() else None
+        )
 
-    if batch_time is None:
-        bt_raw = questionary.text(
+    if batch_time is None and interactive:
+        batch_time = _prompt_optional_int(
             "Run for how many minutes? (leave blank to run until queue empty):"
-        ).ask()
-        batch_time = int(bt_raw) if bt_raw and bt_raw.strip().isdigit() else None
+        )
 
     engines = ["stockfish", "lc0"] if engine == "both" else [engine]
     return engines, max_jobs, batch_time
