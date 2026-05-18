@@ -19,8 +19,8 @@ class VastAdminRegistrationTests(TestCase):
 
     def test_schedule_registered(self):
         """AnalysisSchedule appears in the admin registry."""
-        self.assertIn(AnalysisSchedule, admin.site._registry)
+        self.assertTrue(admin.site.is_registered(AnalysisSchedule))
 
     def test_instance_registered(self):
         """AnalysisInstance appears in the admin registry."""
-        self.assertIn(AnalysisInstance, admin.site._registry)
+        self.assertTrue(admin.site.is_registered(AnalysisInstance))
