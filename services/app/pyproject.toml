@@ -26,6 +26,7 @@ dependencies = [
   "pydantic-settings>=2.8.0",
   "requests>=2.32.2",
   "httpx>=0.27.0",
+  "croniter>=2.0.0",
   "tqdm>=4.66.0",
   "runpod>=1.7.0",
   "boto3>=1.34",

@@ -15,16 +15,22 @@ Changelog:
 """
 from __future__ import annotations
 
+import logging
 from datetime import timedelta
 
 from django.conf import settings
 from django.core.management.base import BaseCommand
+from django.db import transaction
 from django.utils import timezone
 
+from analysis import scheduling
 from analysis.models import (
-    AnalysisInstance, AnalysisSchedule, WorkerHeartbeat,
+    AnalysisInstance, AnalysisSchedule, RecurringAnalysisSchedule,
+    WorkerHeartbeat,
 )
 from analysis.services import vast_dispatch
+
+_LOGGER = logging.getLogger(__name__)
 
 _LABEL_PREFIX = "wl-sched-"
 
@@ -142,10 +148,68 @@ class Command(BaseCommand):
                 "vast reconcile: VAST_API_KEY not configured — skipping")
             return
         api_key = settings.VAST_API_KEY
+        materialized = _materialize_recurring()
         reaped = _reap(api_key)
         launched = _launch(api_key)
         self.stdout.write(
-            f"vast reconcile done: reaped={reaped} launched={launched}")
+            "vast reconcile done: "
+            f"materialized={materialized} reaped={reaped} "
+            f"launched={launched}")
+
+
+def _materialize_one(rule: RecurringAnalysisSchedule, now) -> int:
+    """Materialize one pending schedule for ``rule`` if it is due.
+
+    Due = the rule's most-recent fire <= now is strictly after its
+    ``last_materialized_at`` (None counts as due). Stamps
+    ``last_materialized_at = now`` after creating the row. Returns 1 if
+    a row was created, else 0. Any per-rule failure (invalid
+    crontab/timezone, or a DB error on create/save) is logged and
+    isolated so the reconcile run and the other rules still proceed.
+
+    Parameters:
+        rule (RecurringAnalysisSchedule): The recurring rule to check.
+        now (datetime): The current timestamp (timezone-aware).
+
+    Returns:
+        int: 1 if a pending AnalysisSchedule was created, else 0.
+    """
+    try:
+        prev = scheduling.prev_fire(rule.crontab, rule.timezone, now)
+        if rule.last_materialized_at is not None and \
+                prev <= rule.last_materialized_at:
+            return 0
+        with transaction.atomic():
+            AnalysisSchedule.objects.create(
+                status=AnalysisSchedule.STATUS_PENDING,
+                recurring_rule=rule,
+                max_jobs=rule.max_jobs,
+            )
+            rule.last_materialized_at = now
+            rule.save(update_fields=["last_materialized_at"])
+        return 1
+    except ValueError as exc:
+        _LOGGER.warning(
+            "recurring rule %s skipped (bad crontab/tz): %s",
+            rule.pk, exc)
+        return 0
+    except Exception:  # one rule must not abort the run
+        _LOGGER.exception(
+            "recurring rule %s materialization failed", rule.pk)
+        return 0
+
+
+def _materialize_recurring() -> int:
+    """Step 0: materialize all due enabled recurring rules.
+
+    Returns:
+        int: number of pending schedules created this run.
+    """
+    now = timezone.now()
+    created = 0
+    for rule in RecurringAnalysisSchedule.objects.filter(enabled=True):
+        created += _materialize_one(rule, now)
+    return created
 
 
 def _reap_decision(inst: AnalysisInstance, now, stale_cutoff) -> str | None:
