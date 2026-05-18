@@ -231,6 +231,21 @@ RUNPOD_LC0_ENDPOINT_ID = os.environ.get("RUNPOD_LC0_ENDPOINT_ID", "")
 # returns 404 and the UI section is hidden.
 RUNPOD_WORKER_POD_ID = os.environ.get("RUNPOD_WORKER_POD_ID", "")
 RUNPOD_ENABLED = os.environ.get("RUNPOD_ENABLED", "").lower() in {"1", "true", "yes", "on"}
+
+# vast.ai cron-provisioning (issue #155 Sub-project A). VAST_ENABLED gates
+# the reconcile command exactly like RUNPOD_ENABLED gates the start-pod
+# endpoint: when off, the command no-ops. VAST_API_KEY never leaves the
+# app (never placed on a rented box).
+VAST_ENABLED = os.environ.get("VAST_ENABLED", "").lower() in {"1", "true", "yes", "on"}
+VAST_API_KEY = os.environ.get("VAST_API_KEY", "")
+VAST_TEMPLATE_HASH = os.environ.get("VAST_TEMPLATE_HASH", "")
+VAST_CAMPAIGN_ID = os.environ.get("VAST_CAMPAIGN_ID", "")
+VAST_OFFER_GPU_NAME = os.environ.get("VAST_OFFER_GPU_NAME", "L40S")
+VAST_OFFER_MAX_DPH = float(os.environ.get("VAST_OFFER_MAX_DPH", "1.50"))
+VAST_MAX_JOBS = int(os.environ.get("VAST_MAX_JOBS", "100"))
+VAST_HARD_DEADLINE_HOURS = float(os.environ.get("VAST_HARD_DEADLINE_HOURS", "6.0"))
+VAST_WORKER_STALE_MINUTES = int(os.environ.get("VAST_WORKER_STALE_MINUTES", "15"))
+
 ANALYSIS_THREADS = int(os.environ.get("ANALYSIS_THREADS", "8"))
 ANALYSIS_HASH_MB = int(os.environ.get("ANALYSIS_HASH_MB", "2048"))
 

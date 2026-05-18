@@ -33,3 +33,6 @@ build/
 
 # OS
 .DS_Store
+
+# Superpowers brainstorm visual companion
+.superpowers/
