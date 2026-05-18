@@ -1,0 +1,12 @@
+{
+  "calibrated_at": "2026-05-18T16:12:59Z",
+  "fingerprint": {
+    "backend": "onnx-trt",
+    "gpu": "",
+    "lc0_version": "",
+    "weights": "BT4.pb.gz"
+  },
+  "max_prefetch": 64,
+  "measured_nps": 33690.0,
+  "minibatch_size": 256
+}

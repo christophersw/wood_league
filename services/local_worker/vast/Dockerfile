@@ -58,6 +58,29 @@ RUN test -n "${WORKER_VERSION}" \
       || { echo "FATAL: WORKER_VERSION build-arg is empty — refusing to bake an unpinned worker (#133)"; exit 1; }
 RUN python3.11 -m pip install --no-cache-dir "wood-league-worker==${WORKER_VERSION}"
 
+# Bake a known-good L40S lc0 calibration so a fresh instance is a cache
+# hit and skips the ~7.5-min MinibatchSize sweep (#150, Phase 1). The
+# fingerprint uses the weights *basename* + backend (gpu/lc0_version
+# empty, exactly as lc0.py calls get_tuned_opts), so this hits on any
+# GPU running this image's BT4 / onnx-trt config; a mismatch silently
+# falls back to a correct full sweep. Build-time guard (same
+# philosophy as the TRT/Syzygy/WORKER_VERSION guards): fail the BUILD
+# if the bake is missing or malformed rather than discover a silent
+# full-sweep regression after a paid launch.
+COPY vast/lc0_tuning.l40s.json /data/wlw/lc0_tuning.json
+RUN python3.11 - <<'PY'
+import json, sys
+d = json.load(open("/data/wlw/lc0_tuning.json"))
+fp = d["fingerprint"]
+ok = (
+    bool(fp.get("backend"))
+    and fp.get("weights") == "BT4.pb.gz"
+    and isinstance(d.get("minibatch_size"), int)
+    and d["minibatch_size"] >= 1
+)
+sys.exit(0 if ok else "FATAL: baked lc0_tuning.json malformed (#150)")
+PY
+
 COPY vast/onstart.sh /usr/local/bin/wlw-vast-onstart
 RUN chmod +x /usr/local/bin/wlw-vast-onstart
 
