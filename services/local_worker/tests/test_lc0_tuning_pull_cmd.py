@@ -25,7 +25,7 @@ def test_lc0_tuning_pull_failsoft_without_bucket(monkeypatch, capsys):
     assert "skip" in capsys.readouterr().out.lower()
 
 
-def test_lc0_tuning_pull_invokes_pull_to_cache_path(monkeypatch, tmp_path):
+def test_lc0_tuning_pull_invokes_pull_to_cache_path(monkeypatch, tmp_path, capsys):
     """With a bucket configured, it pulls using the env fingerprint into
     cache_path()."""
     monkeypatch.setenv("WLW_LC0_WEIGHTS_PATH", "/opt/weights/BT4.pb.gz")
@@ -49,3 +49,4 @@ def test_lc0_tuning_pull_invokes_pull_to_cache_path(monkeypatch, tmp_path):
     assert seen["bucket"] == "wl-bucket"
     assert seen["fp"]["weights"] == "BT4.pb.gz"
     assert seen["dest"] == dest
+    assert "cache hit" in capsys.readouterr().out

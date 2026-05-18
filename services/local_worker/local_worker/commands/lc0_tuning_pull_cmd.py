@@ -42,11 +42,25 @@ def _fingerprint_from_env() -> dict:
 
 
 def lc0_tuning_pull() -> None:
-    """Fail-soft boot pull of this fingerprint's calibration cache."""
+    """Fail-soft boot pull of this fingerprint's calibration cache.
+
+    Reads the bucket from RAILWAY_BUCKET_NAME and the lc0 config from
+    WLW_LC0_WEIGHTS_PATH / WLW_LC0_BACKEND. Prints a single diagnostic
+    line to stdout. Never raises; a miss or any error leaves
+    calibration to the first analysis run.
+
+    Returns:
+        None. Side effect: may write cache_path() and prints status.
+    """
     if not os.environ.get("RAILWAY_BUCKET_NAME"):
         typer.echo("lc0-tuning-pull: no bucket configured; skip")
         return
     fingerprint = _fingerprint_from_env()
+    if not fingerprint.get("weights") and not fingerprint.get("backend"):
+        typer.echo(
+            "lc0-tuning-pull: WLW_LC0_WEIGHTS_PATH/WLW_LC0_BACKEND unset; "
+            "fingerprint is empty, expect miss"
+        )
     try:
         client, bucket = make_s3_client()
     except Exception as exc:  # noqa: BLE001 — boot must not fail
