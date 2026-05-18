@@ -16,3 +16,8 @@ staticfiles/
 *.pyc
 db.sqlite3
 wood_league_chess.db
+
+# CSS toolchain (Tailwind v4) — deps reproduced from package-lock.json
+# by bin/build_tailwind.sh; never committed. Railway uses the Python
+# (RAILPACK) builder and never installs these.
+node_modules/
