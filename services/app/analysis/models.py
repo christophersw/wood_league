@@ -7,6 +7,7 @@ Description:
 
 Changelog:
     2026-05-08: Added file header to meet documentation standards
+    2026-05-18: Add AnalysisSchedule + AnalysisInstance models (issue #155).
 """
 from django.db import models
 

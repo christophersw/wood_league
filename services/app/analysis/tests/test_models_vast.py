@@ -51,3 +51,5 @@ class AnalysisInstanceModelTests(TestCase):
         self.assertTrue(inst.is_live)
         inst.status = AnalysisInstance.STATUS_DESTROYED
         self.assertFalse(inst.is_live)
+        inst.status = AnalysisInstance.STATUS_FAILED
+        self.assertFalse(inst.is_live)
