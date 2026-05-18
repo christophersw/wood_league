@@ -10,6 +10,7 @@ Changelog:
 """
 from __future__ import annotations
 
+from django.db.models import OuterRef, Subquery
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_GET, require_POST
@@ -49,27 +50,37 @@ def _future_rows() -> list[dict]:
 
 
 def _recent_rows(limit: int = 50) -> list[dict]:
-    """Terminal schedules joined to their latest instance."""
+    """Terminal schedules + their latest instance (single query).
+
+    Uses a correlated Subquery to fetch each schedule's most-recent
+    AnalysisInstance fields, avoiding an N+1 over the result set.
+    """
+    latest = (AnalysisInstance.objects
+              .filter(schedule=OuterRef("pk"))
+              .order_by("-created_at"))
     qs = (AnalysisSchedule.objects
           .filter(status__in=[AnalysisSchedule.STATUS_DONE,
                               AnalysisSchedule.STATUS_FAILED])
           .select_related("recurring_rule")
+          .annotate(
+              latest_vast_id=Subquery(
+                  latest.values("vast_instance_id")[:1]),
+              latest_dph=Subquery(latest.values("offer_dph")[:1]),
+          )
           .order_by("-created_at")[:limit])
-    rows: list[dict] = []
-    for s in qs:
-        inst = (AnalysisInstance.objects
-                .filter(schedule=s).order_by("-created_at").first())
-        rows.append({
+    return [
+        {
             "id": s.id,
             "when": s.created_at,
             "source": (s.recurring_rule.name if s.recurring_rule
                        else "one-off"),
             "status": s.status,
             "failed": s.status == AnalysisSchedule.STATUS_FAILED,
-            "instance_id": inst.vast_instance_id if inst else None,
-            "offer_dph": inst.offer_dph if inst else None,
-        })
-    return rows
+            "instance_id": s.latest_vast_id,
+            "offer_dph": s.latest_dph,
+        }
+        for s in qs
+    ]
 
 
 def _render_page(request: HttpRequest,
