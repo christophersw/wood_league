@@ -32,7 +32,7 @@ class AnalysisInstanceAdmin(admin.ModelAdmin):
     )
     list_filter = ("status",)
     readonly_fields = (
-        "schedule", "created_at", "vast_instance_id", "launched_at",
+        "status", "schedule", "created_at", "vast_instance_id", "launched_at",
         "hard_deadline", "destroyed_at", "offer_dph",
         "launch_worker_ids", "worker_id",
     )

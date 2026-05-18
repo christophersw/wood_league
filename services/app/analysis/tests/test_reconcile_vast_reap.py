@@ -72,11 +72,18 @@ class ReapTests(TestCase):
         self.assertEqual(inst.schedule.status, AnalysisSchedule.STATUS_DONE)
 
     def test_pre_launch_worker_not_bound(self):
-        """A heartbeat present at launch is NOT bound (not this run)."""
-        inst = self._live_instance(launch_worker_ids=["w-old"])
+        """A heartbeat present at launch is NOT bound (not this run).
+
+        Uses a recent launched_at (inside the stale window) so the
+        non-binding is what keeps it alive, not the never-registered
+        timer.
+        """
+        inst = self._live_instance(
+            launch_worker_ids=["w-old"],
+            launched_at=timezone.now() - timedelta(minutes=5))
         WorkerHeartbeat.objects.create(worker_id="w-old")
         WorkerHeartbeat.objects.filter(worker_id="w-old").update(
-            last_seen=timezone.now() - timedelta(minutes=30))
+            last_seen=timezone.now() - timedelta(minutes=2))
         with patch("analysis.management.commands.reconcile_vast_analysis."
                    "vast_dispatch.destroy_instance", return_value=OK), \
              patch("analysis.management.commands.reconcile_vast_analysis."
@@ -126,3 +133,34 @@ class ReapTests(TestCase):
                                   "actual_status": "running"}]):
             _reap("k")
         d.assert_any_call(api_key="k", vast_instance_id="900")
+
+    def test_never_registered_fires_with_prelaunch_snapshot(self):
+        """Non-empty launch_worker_ids must NOT suppress never-registered."""
+        inst = self._live_instance(
+            launch_worker_ids=["w-old"],
+            launched_at=timezone.now() - timedelta(minutes=30))
+        WorkerHeartbeat.objects.create(worker_id="w-old")
+        WorkerHeartbeat.objects.filter(worker_id="w-old").update(
+            last_seen=timezone.now() - timedelta(minutes=40))
+        with patch("analysis.management.commands.reconcile_vast_analysis."
+                   "vast_dispatch.destroy_instance", return_value=OK), \
+             patch("analysis.management.commands.reconcile_vast_analysis."
+                   "vast_dispatch.list_instances", return_value=[]):
+            _reap("k")
+        inst.refresh_from_db()
+        self.assertEqual(inst.status, AnalysisInstance.STATUS_DESTROYED)
+        self.assertEqual(inst.schedule.status,
+                         AnalysisSchedule.STATUS_FAILED)
+
+    def test_bound_worker_missing_heartbeat_is_drained(self):
+        """worker_id bound but no heartbeat row → drained → destroyed."""
+        inst = self._live_instance(worker_id="w-gone")
+        with patch("analysis.management.commands.reconcile_vast_analysis."
+                   "vast_dispatch.destroy_instance", return_value=OK), \
+             patch("analysis.management.commands.reconcile_vast_analysis."
+                   "vast_dispatch.list_instances", return_value=[]):
+            _reap("k")
+        inst.refresh_from_db()
+        self.assertEqual(inst.status, AnalysisInstance.STATUS_DESTROYED)
+        self.assertEqual(inst.schedule.status,
+                         AnalysisSchedule.STATUS_DONE)

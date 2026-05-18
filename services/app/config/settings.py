@@ -244,7 +244,6 @@ VAST_OFFER_GPU_NAME = os.environ.get("VAST_OFFER_GPU_NAME", "L40S")
 VAST_OFFER_MAX_DPH = float(os.environ.get("VAST_OFFER_MAX_DPH", "1.50"))
 VAST_MAX_JOBS = int(os.environ.get("VAST_MAX_JOBS", "100"))
 VAST_HARD_DEADLINE_HOURS = float(os.environ.get("VAST_HARD_DEADLINE_HOURS", "6.0"))
-VAST_LAUNCH_GRACE_MINUTES = int(os.environ.get("VAST_LAUNCH_GRACE_MINUTES", "20"))
 VAST_WORKER_STALE_MINUTES = int(os.environ.get("VAST_WORKER_STALE_MINUTES", "15"))
 
 ANALYSIS_THREADS = int(os.environ.get("ANALYSIS_THREADS", "8"))

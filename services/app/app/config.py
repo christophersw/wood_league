@@ -48,7 +48,6 @@ class Settings(BaseSettings):
     vast_offer_max_dph: float = 1.50
     vast_max_jobs: int = 100
     vast_hard_deadline_hours: float = 6.0
-    vast_launch_grace_minutes: int = 20
     vast_worker_stale_minutes: int = 15
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")

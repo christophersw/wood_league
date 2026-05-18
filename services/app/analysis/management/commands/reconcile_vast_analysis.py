@@ -66,7 +66,8 @@ def _is_drained(inst: AnalysisInstance, stale_cutoff) -> bool:
         return False
     hb = WorkerHeartbeat.objects.filter(worker_id=inst.worker_id).first()
     if hb is None:
-        return False
+        # Worker was bound but its heartbeat row is gone → it exited.
+        return True
     if hb.last_seen < stale_cutoff:
         return True
     return (hb.batch_total is not None
@@ -159,7 +160,7 @@ def _reap_decision(inst: AnalysisInstance, now, stale_cutoff) -> str | None:
         return "overdue"
     if _is_drained(inst, stale_cutoff):
         return "drained"
-    if (not inst.worker_id and not inst.launch_worker_ids
+    if (not inst.worker_id
             and inst.launched_at is not None
             and inst.launched_at < stale_cutoff):
         return "never_registered"

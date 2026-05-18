@@ -26,7 +26,6 @@ class VastSettingsDefaultsTests(TestCase):
         """Numeric/string guards have the exact spec defaults."""
         self.assertEqual(settings.VAST_MAX_JOBS, 100)
         self.assertEqual(settings.VAST_HARD_DEADLINE_HOURS, 6.0)
-        self.assertEqual(settings.VAST_LAUNCH_GRACE_MINUTES, 20)
         self.assertEqual(settings.VAST_WORKER_STALE_MINUTES, 15)
         self.assertEqual(settings.VAST_OFFER_GPU_NAME, "L40S")
         self.assertEqual(settings.VAST_OFFER_MAX_DPH, 1.50)
