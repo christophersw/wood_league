@@ -56,6 +56,7 @@ def lc0_tuning_pull() -> None:
         typer.echo("lc0-tuning-pull: no bucket configured; skip")
         return
     fingerprint = _fingerprint_from_env()
+    # Informational only — proceed anyway; the pull will miss gracefully.
     if not fingerprint.get("weights") and not fingerprint.get("backend"):
         typer.echo(
             "lc0-tuning-pull: WLW_LC0_WEIGHTS_PATH/WLW_LC0_BACKEND unset; "

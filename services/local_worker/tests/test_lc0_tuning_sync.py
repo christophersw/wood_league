@@ -122,3 +122,12 @@ def test_push_after_calibrate_failsoft_on_client_init_error(monkeypatch, tmp_pat
 
     monkeypatch.setattr(ts, "make_s3_client", boom)
     ts.push_after_calibrate(cache)  # must not raise
+
+
+def test_push_tuning_failsoft_when_fingerprint_key_missing(tmp_path):
+    """A cache file lacking the 'fingerprint' key must not raise; nothing uploaded."""
+    cache = tmp_path / "lc0_tuning.json"
+    cache.write_text(json.dumps({"minibatch_size": 256}))  # no 'fingerprint'
+    client = _PushClient()
+    ts.push_tuning(client, "wl-bucket", cache)  # must not raise
+    assert client.uploaded is None
