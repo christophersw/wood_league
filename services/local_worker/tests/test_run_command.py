@@ -16,6 +16,7 @@ import logging
 from typing import Any
 
 import pytest
+import typer
 from typer.testing import CliRunner
 
 from local_worker.commands import run as run_cmd
@@ -209,6 +210,9 @@ def test_resolve_run_options_max_jobs_prompt_text(monkeypatch: pytest.MonkeyPatc
         def ask(self) -> str:
             return "stockfish"
 
+    # This test exercises the *interactive* prompt path; declare a TTY so
+    # the #152 non-interactive guard doesn't short-circuit the prompts.
+    monkeypatch.setattr(run_cmd.sys.stdin, "isatty", lambda: True)
     monkeypatch.setattr(run_cmd.questionary, "text", lambda text, **_kw: _FakeQuestion(text))
     monkeypatch.setattr(run_cmd.questionary, "select", lambda *_a, **_kw: _FakeSelectQuestion())
 
@@ -221,3 +225,62 @@ def test_resolve_run_options_max_jobs_prompt_text(monkeypatch: pytest.MonkeyPatc
     )
     assert max_jobs is None
     assert engines == ["stockfish"]
+
+
+def test_resolve_run_options_headless_skips_prompts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Non-interactive (no TTY) with --engine given: no questionary
+    prompt fires and missing max_jobs/batch_time default to None
+    (run until queue empty), instead of aborting (#152)."""
+
+    def _boom(*_a: Any, **_kw: Any) -> Any:
+        raise AssertionError("questionary prompt fired in headless mode")
+
+    monkeypatch.setattr(run_cmd.sys.stdin, "isatty", lambda: False)
+    monkeypatch.setattr(run_cmd.questionary, "select", _boom)
+    monkeypatch.setattr(run_cmd.questionary, "text", _boom)
+
+    engines, max_jobs, batch_time = run_cmd._resolve_run_options(
+        engine="lc0", max_jobs=None, batch_time=None
+    )
+
+    assert engines == ["lc0"]
+    assert max_jobs is None
+    assert batch_time is None
+
+
+def test_resolve_run_options_headless_requires_engine(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Non-interactive with no --engine: a clear typer.Exit(1), not a
+    cryptic questionary 'Aborted.' (#152)."""
+
+    def _boom(*_a: Any, **_kw: Any) -> Any:
+        raise AssertionError("questionary prompt fired in headless mode")
+
+    monkeypatch.setattr(run_cmd.sys.stdin, "isatty", lambda: False)
+    monkeypatch.setattr(run_cmd.questionary, "select", _boom)
+
+    with pytest.raises(typer.Exit) as exc:
+        run_cmd._resolve_run_options(engine=None, max_jobs=None, batch_time=None)
+    assert exc.value.exit_code == 1
+
+
+def test_resolve_run_options_headless_engine_both(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Headless with --engine both expands to both engines, no prompt (#152)."""
+
+    def _boom(*_a: Any, **_kw: Any) -> Any:
+        raise AssertionError("questionary prompt fired in headless mode")
+
+    monkeypatch.setattr(run_cmd.sys.stdin, "isatty", lambda: False)
+    monkeypatch.setattr(run_cmd.questionary, "text", _boom)
+
+    engines, max_jobs, batch_time = run_cmd._resolve_run_options(
+        engine="both", max_jobs=5, batch_time=None
+    )
+    assert engines == ["stockfish", "lc0"]
+    assert max_jobs == 5
+    assert batch_time is None
