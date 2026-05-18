@@ -284,3 +284,120 @@ class WorkerHeartbeat(models.Model):
     def __str__(self):
         """Return a human-readable identifier for this worker heartbeat."""
         return f"Worker {self.worker_id} [{self.status}]"
+
+
+class AnalysisSchedule(models.Model):
+    """An opaque request to run one capped analysis batch (issue #155).
+
+    This row IS the manual trigger: an admin (or any app-side actor)
+    inserts a pending row; the reconcile cron picks it up. The cron does
+    not care how it was created.
+    """
+
+    STATUS_PENDING = "pending"
+    STATUS_RUNNING = "running"
+    STATUS_DONE = "done"
+    STATUS_FAILED = "failed"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Pending"),
+        (STATUS_RUNNING, "Running"),
+        (STATUS_DONE, "Done"),
+        (STATUS_FAILED, "Failed"),
+    ]
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    status = models.CharField(
+        max_length=16, default=STATUS_PENDING,
+        choices=STATUS_CHOICES, db_index=True,
+    )
+    max_jobs = models.IntegerField(
+        null=True, blank=True,
+        help_text="Per-run job cap; null → settings.VAST_MAX_JOBS.",
+    )
+    note = models.TextField(null=True, blank=True)
+
+    class Meta:
+        db_table = "analysis_schedules"
+        ordering = ["created_at"]
+        verbose_name = "Analysis Schedule"
+        verbose_name_plural = "Analysis Schedules"
+
+    def __str__(self):
+        """Return a human-readable identifier for this schedule."""
+        return f"AnalysisSchedule #{self.pk} [{self.status}]"
+
+    def effective_max_jobs(self) -> int:
+        """Return the job cap to use: explicit max_jobs or the setting.
+
+        Returns:
+            int: ``self.max_jobs`` when set, else
+                ``django.conf.settings.VAST_MAX_JOBS``.
+        """
+        from django.conf import settings as _s
+        return self.max_jobs if self.max_jobs is not None else _s.VAST_MAX_JOBS
+
+
+class AnalysisInstance(models.Model):
+    """A vast.ai instance launched for one AnalysisSchedule (issue #155).
+
+    Live truth + crash-safe teardown backstop. The reconcile cron
+    re-derives everything from this table each tick.
+    """
+
+    STATUS_LAUNCHING = "launching"
+    STATUS_RUNNING = "running"
+    STATUS_DESTROYED = "destroyed"
+    STATUS_FAILED = "failed"
+    STATUS_CHOICES = [
+        (STATUS_LAUNCHING, "Launching"),
+        (STATUS_RUNNING, "Running"),
+        (STATUS_DESTROYED, "Destroyed"),
+        (STATUS_FAILED, "Failed"),
+    ]
+    _LIVE_STATES = (STATUS_LAUNCHING, STATUS_RUNNING)
+
+    schedule = models.ForeignKey(
+        AnalysisSchedule, on_delete=models.CASCADE,
+        related_name="instances",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    status = models.CharField(
+        max_length=16, default=STATUS_LAUNCHING,
+        choices=STATUS_CHOICES, db_index=True,
+    )
+    vast_instance_id = models.CharField(
+        max_length=32, null=True, blank=True,
+        help_text="vast 'new_contract' id; null until create succeeds.",
+    )
+    launched_at = models.DateTimeField(null=True, blank=True)
+    hard_deadline = models.DateTimeField(null=True, blank=True)
+    destroyed_at = models.DateTimeField(null=True, blank=True)
+    offer_dph = models.FloatField(
+        null=True, blank=True,
+        help_text="$/hr actually accepted, for cost visibility.",
+    )
+    launch_worker_ids = models.JSONField(
+        default=list, blank=True,
+        help_text="WorkerHeartbeat.worker_id set known at launch "
+                  "(for drained-by-stale-heartbeat correlation).",
+    )
+    worker_id = models.CharField(
+        max_length=64, null=True, blank=True,
+        help_text="The WorkerHeartbeat bound to this instance once a "
+                  "post-launch worker appears; null until correlated.",
+    )
+
+    class Meta:
+        db_table = "analysis_instances"
+        ordering = ["-created_at"]
+        verbose_name = "Analysis Instance"
+        verbose_name_plural = "Analysis Instances"
+
+    def __str__(self):
+        """Return a human-readable identifier for this instance."""
+        return f"AnalysisInstance #{self.pk} [{self.status}]"
+
+    @property
+    def is_live(self) -> bool:
+        """True when this instance is launching or running (non-terminal)."""
+        return self.status in self._LIVE_STATES
