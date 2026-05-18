@@ -1,6 +1,6 @@
 # Analysis Scheduling UI + Recurrence — Design
 
-**Status:** Draft (2026-05-18)
+**Status:** Implemented (2026-05-18) — see plan 2026-05-18-vast-scheduling-ui-B.md
 **Issue:** #155 — Sub-project B (layers on Sub-project A)
 **Depends on:** `2026-05-18-vast-provisioning-design.md` (Sub-project A — the
 reconcile cron orchestrator; **frozen, unchanged by this spec except the
