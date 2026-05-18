@@ -108,8 +108,11 @@ lost." Mitigations, layered:
   reap pass also lists live vast instances via the API and destroys any
   carrying a `WL_SCHEDULE_ID` whose `AnalysisInstance` is terminal/absent —
   this catches an orphan even if its DB id was never persisted.
-- A `launching` row older than `VAST_LAUNCH_GRACE_MINUTES` with no vast id
-  is reconciled: attempt orphan discovery by label, then mark `failed`.
+- A `launching` row whose worker never registers is reaped by the
+  *never-registered* rule: once it is older than
+  `VAST_WORKER_STALE_MINUTES` past `launched_at` with no bound worker it
+  is destroyed and its schedule failed (same threshold as drained — a
+  separate launch-grace knob proved redundant and was dropped).
 
 ### Drained detection (happy-path teardown trigger)
 
@@ -213,7 +216,6 @@ New Django settings (env-backed), mirroring the `RUNPOD_*` gating idiom:
 - `VAST_OFFER_GPU_NAME` (e.g. `L40S`), `VAST_OFFER_MAX_DPH` ($/hr ceiling)
 - `VAST_MAX_JOBS` (default **100**)
 - `VAST_HARD_DEADLINE_HOURS` (absolute kill regardless of job state)
-- `VAST_LAUNCH_GRACE_MINUTES` (stale-`launching` reconcile threshold)
 - `VAST_WORKER_STALE_MINUTES` (heartbeat-staleness window that means the
   worker exited → batch drained; also the "worker never registered"
   failure window measured from `launched_at`)

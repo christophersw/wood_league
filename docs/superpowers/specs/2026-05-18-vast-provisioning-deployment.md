@@ -16,7 +16,6 @@ in the Railway dashboard (Settings → Cron Schedule), not in
 - Optional overrides: `VAST_OFFER_GPU_NAME` (default `L40S`),
   `VAST_OFFER_MAX_DPH` (default `1.50`), `VAST_MAX_JOBS` (default `100`),
   `VAST_HARD_DEADLINE_HOURS` (default `6`),
-  `VAST_LAUNCH_GRACE_MINUTES` (default `20`),
   `VAST_WORKER_STALE_MINUTES` (default `15`).
 
 **Worker template prerequisite:** the vast template referenced by
