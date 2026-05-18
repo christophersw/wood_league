@@ -13,6 +13,8 @@ Changelog:
     2026-05-08: Created to fix AppRegistryNotReady in api/tests/
     2026-05-11: Auto-load .env/.env.test, inject test defaults, and force
                 DEBUG=True so the test client isn't 301-redirected.
+    2026-05-17 (#147): Hard guard — abort if the resolved DB looks like
+                production (prevents the #9 .env-fallback leak).
 """
 
 import os
@@ -83,7 +85,30 @@ def pytest_configure(config):
         the app registry so model imports during collection succeed.
     """
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
-    if not _load_env_file(".env.test"):
+    env_test_loaded = _load_env_file(".env.test")
+    if not env_test_loaded:
         _load_env_file(".env")
     _apply_test_defaults()
+
+    # Hard guard: never let the suite run against production. The .env
+    # fallback + setdefault could otherwise point tests at the live DB
+    # and leak fixture rows into it (issue #9; guard is #147).
+    import pytest
+
+    from _pytest_db_guard import (
+        OVERRIDE_ENV,
+        ProdDatabaseGuardError,
+        assert_test_db_safe,
+    )
+
+    try:
+        assert_test_db_safe(
+            database_url=os.environ.get("DATABASE_URL", ""),
+            db_host=os.environ.get("DB_HOST", ""),
+            env_test_loaded=env_test_loaded,
+            allow_override=os.environ.get(OVERRIDE_ENV) == "1",
+        )
+    except ProdDatabaseGuardError as exc:
+        raise pytest.UsageError(str(exc)) from exc
+
     django.setup()
