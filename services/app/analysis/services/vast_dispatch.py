@@ -66,6 +66,9 @@ def search_cheapest_offer(
         NoVastOfferError: on a non-2xx response, a network error, an empty
             result, or when every offer exceeds ``max_dph``.
     """
+    # vast.ai's search-offers endpoint is POST /api/v0/bundles/ with a
+    # JSON filter body (NOT a GET with query params) — verified against
+    # docs.vast.ai/api-reference/search/search-offers.
     body = {
         "limit": 64,
         "type": "ondemand",

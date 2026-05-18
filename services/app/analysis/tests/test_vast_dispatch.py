@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+import httpx
 from django.test import TestCase
 
 from analysis.services import vast_dispatch
@@ -85,6 +86,7 @@ class CreateInstanceTests(TestCase):
                 api_key="k", offer_id=1, template_hash="H",
                 label="l", env={})
         self.assertFalse(result["ok"])
+        self.assertIsNone(result["vast_instance_id"])
 
 
 class DestroyInstanceTests(TestCase):
@@ -110,7 +112,6 @@ class DestroyInstanceTests(TestCase):
         self.assertTrue(result["ok"])
 
     def test_network_error_not_ok_no_raise(self):
-        import httpx
         with patch("analysis.services.vast_dispatch.httpx.delete",
                    side_effect=httpx.ConnectError("boom")):
             result = vast_dispatch.destroy_instance(api_key="k",
@@ -119,7 +120,6 @@ class DestroyInstanceTests(TestCase):
 
     def test_api_key_never_logged(self):
         """The api key must never appear in log output."""
-        import httpx
         with self.assertLogs("analysis.services.vast_dispatch",
                               level="WARNING") as cm:
             with patch("analysis.services.vast_dispatch.httpx.delete",
@@ -140,3 +140,17 @@ class ListInstancesTests(TestCase):
                    return_value=resp):
             out = vast_dispatch.list_instances(api_key="k")
         self.assertEqual(out[0]["label"], "wl-sched-7")
+
+    def test_non_2xx_returns_empty(self):
+        """A non-2xx list response yields []."""
+        resp = MagicMock(status_code=500, text="err",
+                         json=MagicMock(return_value={}))
+        with patch("analysis.services.vast_dispatch.httpx.get",
+                   return_value=resp):
+            self.assertEqual(vast_dispatch.list_instances(api_key="k"), [])
+
+    def test_network_error_returns_empty(self):
+        """A network error yields [] (never raises)."""
+        with patch("analysis.services.vast_dispatch.httpx.get",
+                   side_effect=httpx.ConnectError("boom")):
+            self.assertEqual(vast_dispatch.list_instances(api_key="k"), [])
