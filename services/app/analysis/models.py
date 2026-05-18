@@ -8,6 +8,7 @@ Description:
 Changelog:
     2026-05-08: Added file header to meet documentation standards
     2026-05-18: Add AnalysisSchedule + AnalysisInstance models (issue #155).
+    2026-05-18: Add RecurringAnalysisSchedule + AnalysisSchedule.recurring_rule (#155 B).
 """
 from django.db import models
 
@@ -316,6 +317,12 @@ class AnalysisSchedule(models.Model):
         help_text="Per-run job cap; null → settings.VAST_MAX_JOBS.",
     )
     note = models.TextField(null=True, blank=True)
+    recurring_rule = models.ForeignKey(
+        "RecurringAnalysisSchedule", on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="materialized_schedules",
+        help_text="Set when this row was materialized from a recurring "
+                  "rule; null for one-offs.",
+    )
 
     class Meta:
         db_table = "analysis_schedules"
@@ -402,3 +409,70 @@ class AnalysisInstance(models.Model):
     def is_live(self) -> bool:
         """True when this instance is launching or running (non-terminal)."""
         return self.status in self._LIVE_STATES
+
+
+class RecurringAnalysisSchedule(models.Model):
+    """A crontab rule that the reconcile cron materializes into
+    `pending` AnalysisSchedule rows (issue #155 Sub-project B).
+
+    The rule never launches anything itself; Step 0 of
+    reconcile_vast_analysis turns a due rule into one pending schedule.
+    """
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    name = models.CharField(max_length=128)
+    crontab = models.CharField(
+        max_length=128,
+        help_text="5-field cron expression, e.g. '0 2 * * 1' (Mon 02:00).",
+    )
+    timezone = models.CharField(
+        max_length=64, default="UTC",
+        help_text="IANA tz name the crontab is evaluated in.",
+    )
+    enabled = models.BooleanField(default=True, db_index=True)
+    max_jobs = models.IntegerField(
+        null=True, blank=True,
+        help_text="Per-run job cap; null → settings.VAST_MAX_JOBS.",
+    )
+    last_materialized_at = models.DateTimeField(null=True, blank=True)
+    note = models.TextField(null=True, blank=True)
+
+    class Meta:
+        db_table = "recurring_analysis_schedules"
+        ordering = ["name"]
+        verbose_name = "Recurring Analysis Schedule"
+        verbose_name_plural = "Recurring Analysis Schedules"
+
+    def __str__(self):
+        """Return a human-readable identifier for this rule."""
+        return f"RecurringAnalysisSchedule #{self.pk} [{self.name}]"
+
+    def clean(self):
+        """Validate the crontab expression and the timezone.
+
+        Raises:
+            ValidationError: when ``crontab`` is not a valid 5-field cron
+                expression, or ``timezone`` is not a known IANA zone.
+        """
+        from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+        from croniter import croniter
+        from django.core.exceptions import ValidationError
+
+        if not croniter.is_valid(self.crontab or ""):
+            raise ValidationError({"crontab": "Invalid cron expression."})
+        try:
+            ZoneInfo(self.timezone)
+        except (ZoneInfoNotFoundError, ValueError, KeyError):
+            raise ValidationError({"timezone": "Unknown timezone."})
+
+    def effective_max_jobs(self) -> int:
+        """Return the job cap to use: explicit max_jobs or the setting.
+
+        Returns:
+            int: ``self.max_jobs`` when set, else
+                ``django.conf.settings.VAST_MAX_JOBS``.
+        """
+        from django.conf import settings as _s
+        return self.max_jobs if self.max_jobs is not None else _s.VAST_MAX_JOBS
