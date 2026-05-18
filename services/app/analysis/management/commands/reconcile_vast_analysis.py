@@ -265,6 +265,18 @@ def _launch(api_key: str) -> int:
     if sched is None:
         return 0
 
+    try:
+        offer = vast_dispatch.search_cheapest_offer(
+            api_key=api_key,
+            gpu_name=settings.VAST_OFFER_GPU_NAME,
+            max_dph=settings.VAST_OFFER_MAX_DPH,
+        )
+    except vast_dispatch.NoVastOfferError:
+        # No capacity under the ceiling right now. Nothing was created on
+        # vast, so there is no box to recover — record nothing and leave
+        # the schedule pending so the next tick retries.
+        return 0
+
     now = timezone.now()
     snapshot = list(
         WorkerHeartbeat.objects.values_list("worker_id", flat=True))
@@ -274,19 +286,6 @@ def _launch(api_key: str) -> int:
         launched_at=now,
         launch_worker_ids=snapshot,
     )
-
-    try:
-        offer = vast_dispatch.search_cheapest_offer(
-            api_key=api_key,
-            gpu_name=settings.VAST_OFFER_GPU_NAME,
-            max_dph=settings.VAST_OFFER_MAX_DPH,
-        )
-    except vast_dispatch.NoVastOfferError:
-        # No capacity under the ceiling now — fail this launch attempt
-        # but leave the schedule pending so the next tick retries.
-        inst.status = AnalysisInstance.STATUS_FAILED
-        inst.save(update_fields=["status"])
-        return 0
 
     env = {
         "WL_CAMPAIGN_ID": settings.VAST_CAMPAIGN_ID,

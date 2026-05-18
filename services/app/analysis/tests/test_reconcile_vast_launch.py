@@ -50,6 +50,7 @@ class LaunchTests(TestCase):
         self.assertEqual(
             AnalysisInstance.objects.filter(
                 status=AnalysisInstance.STATUS_LAUNCHING).count(), 0)
+        self.assertEqual(AnalysisInstance.objects.count(), 1)
 
     def test_success_launches_and_sets_fields(self):
         """Happy path: instance running, schedule running, fields set."""
@@ -84,8 +85,8 @@ class LaunchTests(TestCase):
         old.refresh_from_db()
         self.assertEqual(old.status, AnalysisSchedule.STATUS_RUNNING)
 
-    def test_no_offer_marks_instance_failed_schedule_stays_pending(self):
-        """NoVastOfferError → launching row failed, schedule still pending."""
+    def test_no_offer_creates_no_instance_schedule_stays_pending(self):
+        """NoVastOfferError → no instance row at all; schedule pending."""
         sched = AnalysisSchedule.objects.create()
         with patch(_P + "search_cheapest_offer",
                    side_effect=NoVastOfferError("none")):
@@ -93,9 +94,7 @@ class LaunchTests(TestCase):
         sched.refresh_from_db()
         self.assertEqual(n, 0)
         self.assertEqual(sched.status, AnalysisSchedule.STATUS_PENDING)
-        self.assertEqual(
-            AnalysisInstance.objects.get().status,
-            AnalysisInstance.STATUS_FAILED)
+        self.assertEqual(AnalysisInstance.objects.count(), 0)
 
     def test_create_failure_marks_both_failed(self):
         """vast create failure → instance failed, schedule failed."""
