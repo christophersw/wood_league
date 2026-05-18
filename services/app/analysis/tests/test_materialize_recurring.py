@@ -11,6 +11,7 @@ Changelog:
 from __future__ import annotations
 
 from datetime import timedelta
+from unittest.mock import patch
 
 from django.test import TestCase, override_settings
 from django.utils import timezone
@@ -78,7 +79,6 @@ class MaterializeRecurringTests(TestCase):
 
     def test_bad_crontab_isolated(self):
         """One un-parseable rule does not block a good rule."""
-        RecurringAnalysisSchedule.objects.filter(pk__in=[]).delete()
         good = RecurringAnalysisSchedule.objects.create(
             name="good", crontab="* * * * *", timezone="UTC")
         # Force a stored-but-invalid crontab past clean() via update().
@@ -87,6 +87,32 @@ class MaterializeRecurringTests(TestCase):
         RecurringAnalysisSchedule.objects.filter(pk=bad.pk).update(
             crontab="totally-broken")
         n = _materialize_recurring()
+        self.assertEqual(n, 1)
+        self.assertEqual(
+            AnalysisSchedule.objects.filter(
+                recurring_rule_id=good.id).count(), 1)
+
+    def test_db_error_on_one_rule_isolated(self):
+        """A create() failure on one rule must not abort the others."""
+        RecurringAnalysisSchedule.objects.create(
+            name="bad-db", crontab="* * * * *", timezone="UTC")
+        good = RecurringAnalysisSchedule.objects.create(
+            name="good", crontab="* * * * *", timezone="UTC")
+        real_create = AnalysisSchedule.objects.create
+        calls = {"n": 0}
+
+        def flaky_create(*a, **kw):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise RuntimeError("simulated DB blip")
+            return real_create(*a, **kw)
+
+        with patch(
+            "analysis.management.commands.reconcile_vast_analysis."
+            "AnalysisSchedule.objects.create",
+            side_effect=flaky_create,
+        ):
+            n = _materialize_recurring()
         self.assertEqual(n, 1)
         self.assertEqual(
             AnalysisSchedule.objects.filter(

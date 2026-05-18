@@ -162,7 +162,9 @@ def _materialize_one(rule: RecurringAnalysisSchedule, now) -> int:
     Due = the rule's most-recent fire <= now is strictly after its
     ``last_materialized_at`` (None counts as due). Stamps
     ``last_materialized_at = now`` after creating the row. Returns 1 if
-    a row was created, else 0. A bad crontab is logged and skipped.
+    a row was created, else 0. Any per-rule failure (invalid
+    crontab/timezone, or a DB error on create/save) is logged and
+    isolated so the reconcile run and the other rules still proceed.
 
     Parameters:
         rule (RecurringAnalysisSchedule): The recurring rule to check.
@@ -173,22 +175,26 @@ def _materialize_one(rule: RecurringAnalysisSchedule, now) -> int:
     """
     try:
         prev = scheduling.prev_fire(rule.crontab, rule.timezone, now)
-    except (ValueError, KeyError) as exc:
+        if rule.last_materialized_at is not None and \
+                prev <= rule.last_materialized_at:
+            return 0
+        AnalysisSchedule.objects.create(
+            status=AnalysisSchedule.STATUS_PENDING,
+            recurring_rule=rule,
+            max_jobs=rule.max_jobs,
+        )
+        rule.last_materialized_at = now
+        rule.save(update_fields=["last_materialized_at"])
+        return 1
+    except ValueError as exc:
         _LOGGER.warning(
             "recurring rule %s skipped (bad crontab/tz): %s",
             rule.pk, exc)
         return 0
-    if rule.last_materialized_at is not None and \
-            prev <= rule.last_materialized_at:
+    except Exception:  # one rule must not abort the run
+        _LOGGER.exception(
+            "recurring rule %s materialization failed", rule.pk)
         return 0
-    AnalysisSchedule.objects.create(
-        status=AnalysisSchedule.STATUS_PENDING,
-        recurring_rule=rule,
-        max_jobs=rule.max_jobs,
-    )
-    rule.last_materialized_at = now
-    rule.save(update_fields=["last_materialized_at"])
-    return 1
 
 
 def _materialize_recurring() -> int:
