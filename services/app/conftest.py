@@ -13,8 +13,9 @@ Changelog:
     2026-05-08: Created to fix AppRegistryNotReady in api/tests/
     2026-05-11: Auto-load .env/.env.test, inject test defaults, and force
                 DEBUG=True so the test client isn't 301-redirected.
-    2026-05-17 (#147): Hard guard — abort if the resolved DB looks like
-                production (prevents the #9 .env-fallback leak).
+    2026-05-17 (#147): Tests connect only to TEST_DATABASE_URL (or the
+                sqlite default); guard aborts otherwise (prevents the #9
+                .env-fallback leak; prod + test are both Railway).
 """
 
 import os
@@ -85,14 +86,19 @@ def pytest_configure(config):
         the app registry so model imports during collection succeed.
     """
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
-    env_test_loaded = _load_env_file(".env.test")
-    if not env_test_loaded:
+    if not _load_env_file(".env.test"):
         _load_env_file(".env")
     _apply_test_defaults()
 
-    # Hard guard: never let the suite run against production. The .env
-    # fallback + setdefault could otherwise point tests at the live DB
-    # and leak fixture rows into it (issue #9; guard is #147).
+    # Tests connect ONLY to TEST_DATABASE_URL (or the sqlite default).
+    # prod and the test DB are both Railway Postgres with near-identical
+    # connection strings, so we discriminate by a distinct variable name
+    # rather than fragile host matching: overwrite DATABASE_URL with
+    # TEST_DATABASE_URL so the prod DATABASE_URL that .env may carry can
+    # never be what the suite uses (issue #9; guard is #147).
+    test_db_url = os.environ.get("TEST_DATABASE_URL", "").strip()
+    os.environ["DATABASE_URL"] = test_db_url or "sqlite:///:memory:"
+
     import pytest
 
     from _pytest_db_guard import (
@@ -103,9 +109,8 @@ def pytest_configure(config):
 
     try:
         assert_test_db_safe(
-            database_url=os.environ.get("DATABASE_URL", ""),
-            db_host=os.environ.get("DB_HOST", ""),
-            env_test_loaded=env_test_loaded,
+            database_url=os.environ["DATABASE_URL"],
+            test_database_url=test_db_url,
             allow_override=os.environ.get(OVERRIDE_ENV) == "1",
         )
     except ProdDatabaseGuardError as exc:
