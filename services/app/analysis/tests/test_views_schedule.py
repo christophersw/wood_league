@@ -113,6 +113,18 @@ class SchedulingActionsTests(TestCase):
         self.assertIn("wk", body)
         self.assertIn("42", body)
 
+    def test_rule_edit_updates(self):
+        """Posting to rule_edit changes the rule's crontab."""
+        r = RecurringAnalysisSchedule.objects.create(
+            name="wk", crontab="0 2 * * 1", timezone="UTC")
+        resp = self.client.post(
+            reverse("analysis:rule_edit", args=[r.pk]),
+            {"name": "wk", "crontab": "0 5 * * 3",
+             "timezone": "UTC", "max_jobs": "", "enabled": "on"})
+        self.assertEqual(resp.status_code, 302)
+        r.refresh_from_db()
+        self.assertEqual(r.crontab, "0 5 * * 3")
+
     def test_preview_ok(self):
         """Preview returns next runs for a valid expression."""
         resp = self.client.get(reverse("analysis:schedule_preview"), {

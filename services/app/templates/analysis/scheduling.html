@@ -34,6 +34,23 @@
                 style="display:inline">{% csrf_token %}
             <button type="submit">Delete</button>
           </form>
+          <form method="post"
+                action="{% url 'analysis:rule_edit' r.pk %}"
+                style="display:inline">{% csrf_token %}
+            <input type="text" name="name" value="{{ r.name }}"
+                   aria-label="name">
+            <input type="text" name="crontab" value="{{ r.crontab }}"
+                   aria-label="crontab">
+            <input type="text" name="timezone" value="{{ r.timezone }}"
+                   aria-label="timezone">
+            <input type="number" name="max_jobs"
+                   value="{{ r.max_jobs|default_if_none:'' }}"
+                   aria-label="max_jobs">
+            {% if r.enabled %}
+              <input type="hidden" name="enabled" value="on">
+            {% endif %}
+            <button type="submit">Save</button>
+          </form>
         </td>
       </tr>
     {% empty %}

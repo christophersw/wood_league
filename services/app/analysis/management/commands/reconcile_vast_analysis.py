@@ -20,6 +20,7 @@ from datetime import timedelta
 
 from django.conf import settings
 from django.core.management.base import BaseCommand
+from django.db import transaction
 from django.utils import timezone
 
 from analysis import scheduling
@@ -178,13 +179,14 @@ def _materialize_one(rule: RecurringAnalysisSchedule, now) -> int:
         if rule.last_materialized_at is not None and \
                 prev <= rule.last_materialized_at:
             return 0
-        AnalysisSchedule.objects.create(
-            status=AnalysisSchedule.STATUS_PENDING,
-            recurring_rule=rule,
-            max_jobs=rule.max_jobs,
-        )
-        rule.last_materialized_at = now
-        rule.save(update_fields=["last_materialized_at"])
+        with transaction.atomic():
+            AnalysisSchedule.objects.create(
+                status=AnalysisSchedule.STATUS_PENDING,
+                recurring_rule=rule,
+                max_jobs=rule.max_jobs,
+            )
+            rule.last_materialized_at = now
+            rule.save(update_fields=["last_materialized_at"])
         return 1
     except ValueError as exc:
         _LOGGER.warning(

@@ -92,6 +92,19 @@ class MaterializeRecurringTests(TestCase):
             AnalysisSchedule.objects.filter(
                 recurring_rule_id=good.id).count(), 1)
 
+    def test_save_failure_rolls_back_created_schedule(self):
+        """If the stamp save fails, the created schedule rolls back."""
+        RecurringAnalysisSchedule.objects.create(
+            name="wk", crontab="* * * * *", timezone="UTC")
+        with patch(
+            "analysis.management.commands.reconcile_vast_analysis."
+            "RecurringAnalysisSchedule.save",
+            side_effect=RuntimeError("blip"),
+        ):
+            n = _materialize_recurring()
+        self.assertEqual(n, 0)
+        self.assertEqual(AnalysisSchedule.objects.count(), 0)
+
     def test_db_error_on_one_rule_isolated(self):
         """A create() failure on one rule must not abort the others."""
         RecurringAnalysisSchedule.objects.create(

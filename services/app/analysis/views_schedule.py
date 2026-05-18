@@ -173,7 +173,7 @@ def schedule_preview(request: HttpRequest) -> HttpResponse:
     runs: list = []
     try:
         runs = scheduling.next_runs(crontab, tz, _PREVIEW_COUNT)
-    except (ValueError, KeyError):
+    except ValueError:
         error = "Invalid cron expression or timezone."
     return render(request, "analysis/_schedule_preview.html",
                   {"runs": runs, "error": error})
