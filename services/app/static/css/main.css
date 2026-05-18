@@ -903,28 +903,6 @@
     transition: width 0.4s ease;
   }
 
-  /* ── Dashboard: per-engine metrics table — #128 ───────────────────────── */
-
-  .dash-engine-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-family: var(--font-mono);
-    font-size: 0.68rem;
-    color: var(--color-ebony);
-  }
-  .dash-engine-table th {
-    text-align: left;
-    font-weight: 600;
-    color: var(--color-peat);
-    border-bottom: 1px solid color-mix(in srgb, var(--color-ebony) 14%, transparent);
-    padding: 0.15rem 0.3rem;
-    cursor: help;
-  }
-  .dash-engine-table td {
-    padding: 0.15rem 0.3rem;
-    border-bottom: 1px dotted color-mix(in srgb, var(--color-ebony) 10%, transparent);
-  }
-
   /* ── Dashboard: recent-games list — #128 ──────────────────────────────── */
 
   .dash-recent-list {
