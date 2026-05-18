@@ -42,7 +42,9 @@ class ReconcileLifecycleTests(TestCase):
         # Tick 1: launch s1.
         with patch(_P + "search_cheapest_offer", return_value=OFFER), \
              patch(_P + "create_instance", return_value=CREATE_OK), \
-             patch(_P + "destroy_instance", return_value=DESTROY_OK), \
+             patch(_P + "destroy_instance",
+                   side_effect=AssertionError(
+                       "destroy must not be called on a launch-only tick")), \
              patch(_P + "list_instances", return_value=[]):
             call_command("reconcile_vast_analysis", stdout=StringIO())
         s1.refresh_from_db()
@@ -58,6 +60,7 @@ class ReconcileLifecycleTests(TestCase):
         AnalysisInstance.objects.filter(pk=inst.pk).update(
             launched_at=now - timedelta(minutes=40))
         WorkerHeartbeat.objects.create(worker_id="w1")
+        # last_seen is auto_now; backdate via a separate update().
         WorkerHeartbeat.objects.filter(worker_id="w1").update(
             last_seen=now - timedelta(minutes=20))
         s2 = AnalysisSchedule.objects.create()  # queued for next run
