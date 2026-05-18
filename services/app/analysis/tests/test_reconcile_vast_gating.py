@@ -8,8 +8,11 @@ Changelog:
 """
 from __future__ import annotations
 
+from io import StringIO
+
 from django.conf import settings
-from django.test import TestCase
+from django.core.management import call_command
+from django.test import TestCase, override_settings
 
 
 class VastSettingsDefaultsTests(TestCase):
@@ -27,3 +30,21 @@ class VastSettingsDefaultsTests(TestCase):
         self.assertEqual(settings.VAST_WORKER_STALE_MINUTES, 15)
         self.assertEqual(settings.VAST_OFFER_GPU_NAME, "L40S")
         self.assertEqual(settings.VAST_OFFER_MAX_DPH, 1.50)
+
+
+class ReconcileGatingTests(TestCase):
+    """The command is a safe no-op unless VAST_ENABLED is true."""
+
+    @override_settings(VAST_ENABLED=False)
+    def test_disabled_is_noop(self):
+        """VAST_ENABLED False → logs one line, touches nothing, exits 0."""
+        out = StringIO()
+        call_command("reconcile_vast_analysis", stdout=out)
+        self.assertIn("disabled", out.getvalue().lower())
+
+    @override_settings(VAST_ENABLED=True, VAST_API_KEY="")
+    def test_enabled_without_key_is_noop(self):
+        """Missing VAST_API_KEY → no-op (validate env before launch)."""
+        out = StringIO()
+        call_command("reconcile_vast_analysis", stdout=out)
+        self.assertIn("not configured", out.getvalue().lower())
