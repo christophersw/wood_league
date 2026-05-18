@@ -11,6 +11,8 @@
       2026-05-14 (#106): Initial real implementation + visual polish.
       2026-05-17 (#128): Live/reporting states, per-engine rows,
           batch progress bar, recent games, metric tooltips.
+      2026-05-17 (#140): Engine-metrics table switched to wc-table
+          wc-table--zebra to match other data-dense dashboard tables.
 {% endcomment %}
 <div class="pg-section">
   <div class="pg-head">
@@ -63,26 +65,28 @@
           </div>
 
           {% if card.engine_rows %}
-            <table class="dash-engine-table">
-              <thead>
-                <tr>
-                  <th>engine</th>
-                  <th title="Pure engine speed: total engine duration ÷ total plies analyzed. Length-normalised so long and short games compare fairly.">s/ply</th>
-                  <th title="Mean engine duration per game (not length-normalised; varies with game length).">s/game</th>
-                  <th title="Completed jobs sampled for these averages (most recent up to 50).">n</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for row in card.engine_rows %}
+            <div class="overflow-x-auto">
+              <table class="wc-table wc-table--zebra">
+                <thead>
                   <tr>
-                    <td>{{ row.engine }}</td>
-                    <td>{% if row.avg_seconds_per_ply is not None %}{{ row.avg_seconds_per_ply }}{% else %}—{% endif %}</td>
-                    <td>{{ row.avg_seconds_per_game }}</td>
-                    <td>{{ row.completed }}</td>
+                    <th>Engine</th>
+                    <th title="Pure engine speed: total engine duration ÷ total plies analyzed. Length-normalised so long and short games compare fairly.">s/ply</th>
+                    <th title="Mean engine duration per game (not length-normalised; varies with game length).">s/game</th>
+                    <th title="Completed jobs sampled for these averages (most recent up to 50).">n</th>
                   </tr>
-                {% endfor %}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {% for row in card.engine_rows %}
+                    <tr>
+                      <td class="font-mono text-xs">{{ row.engine }}</td>
+                      <td class="font-mono text-xs">{% if row.avg_seconds_per_ply is not None %}{{ row.avg_seconds_per_ply }}{% else %}—{% endif %}</td>
+                      <td class="font-mono text-xs">{{ row.avg_seconds_per_game }}</td>
+                      <td class="font-mono text-xs">{{ row.completed }}</td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
           {% else %}
             <div class="dash-worker-card__row"><span class="pg-caption">no completed jobs yet</span></div>
           {% endif %}
