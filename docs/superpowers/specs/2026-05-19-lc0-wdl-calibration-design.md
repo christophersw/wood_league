@@ -191,7 +191,7 @@ display, independent of the severity/character labels.
 - **Per-side counters** on `Lc0GameAnalysis` are redefined on the new
   base ladder: `blunders = count(Blunder)`, `mistakes = count(Mistake)`,
   `inaccuracies = count(Inaccuracy)`. `Good/Excellent/Best` are not
-  counted. (**Open item:** confirm this exact mapping in review.)
+  counted.
 - **Accuracy** is recomputed from the **rescaled** eval: feed the
   existing Lichess `move_accuracy` / `game_accuracy` machinery with
   `Win% = μ·100` (rescaled). The Lichess windowing/harmonic scheme is
@@ -323,15 +323,20 @@ Update in the linked wiki (`wood_league.wiki/`):
 UI rendering of `base_severity` + `draw_character`, label glossary,
 colour/badge treatment, game-review and move-list display, UX wiki page.
 
-## 11. Open items to confirm in spec review
+## 11. Resolved decisions (owner-delegated, 2026-05-19)
 
-1. Draw-rate sampler fallback set when search is deterministic
-   (curated opening book vs. first-N plies of indexed games). (C2)
-2. Per-side counter mapping — Blunder/Mistake/Inaccuracy only? (C5)
-3. Accuracy: reuse Lichess curve with `Win% = μ·100`, or a bespoke
-   rescaled-domain accuracy curve? (C5)
-4. `wdl_mu` storage type (scaled int ×1000 vs. float). (C6)
-5. Fallback club-midpoint Elo value for ratings-missing games. (C7)
+1. **Draw-rate sampler:** repeated startpos `go nodes=<default>` runs
+   while multi-threaded search is nondeterministic; if deterministic,
+   fall back to a small **curated opening-FEN set bundled with the
+   worker** (self-contained, no app-DB coupling). (C2)
+2. **Per-side counters:** `blunders=Blunder`, `mistakes=Mistake`,
+   `inaccuracies=Inaccuracy`; Good/Excellent/Best uncounted. (C5)
+3. **Accuracy:** reuse the existing Lichess `move_accuracy`/
+   `game_accuracy` curve fed `Win% = μ·100` from the rescaled eval —
+   no bespoke curve. (C5)
+4. **`wdl_mu` storage:** `float`. (C6)
+5. **Fallback club Elo:** `1100`, exposed as a Django setting
+   (default 1100), `Contempt=0`, `ratings_source=fallback`. (C7)
 
 ## Appendix A — lc0 `WDLRescale` (verbatim, master)
 
