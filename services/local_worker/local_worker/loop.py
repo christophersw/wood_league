@@ -275,6 +275,11 @@ def run_one_job(
                 "lc0 job %s — effective nodes=%d (job.nodes=%s)",
                 job.id, nodes, job.nodes,
             )
+            fallback_elo = int(os.environ.get("WL_FALLBACK_ELO", "1100") or "1100")
+            white_elo_raw = job.get("white_rating") if hasattr(job, "get") else getattr(job, "white_rating", None)
+            black_elo_raw = job.get("black_rating") if hasattr(job, "get") else getattr(job, "black_rating", None)
+            white_elo = int(white_elo_raw) if white_elo_raw else 0
+            black_elo = int(black_elo_raw) if black_elo_raw else 0
             cache = _open_eval_cache(settings)
             try:
                 result = lc0_analyze(
@@ -289,6 +294,9 @@ def run_one_job(
                     engine=lc0_engine,
                     network_name_override=lc0_network_name,
                     draw_rate_reference_override=lc0_draw_rate_reference,
+                    white_elo=white_elo,
+                    black_elo=black_elo,
+                    fallback_elo=fallback_elo,
                 )
             finally:
                 if cache is not None:
