@@ -12,6 +12,7 @@ Changelog:
 from __future__ import annotations
 
 import struct
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -166,3 +167,104 @@ def simplified_wdl_rescale_params(
     diff = _f32(_f32(_f32(1.0) / (scale_reference * scale_reference))
         * (mu_active - mu_opp) * _f32(contempt_attenuation))
     return float(ratio), float(diff)
+
+
+@dataclass(frozen=True)
+class RescaledWDL:
+    """Result of rescaling one position's WDL.
+
+    Attributes:
+        wdl_white: (win, draw, loss) permille from White's frame, post-rescale.
+        mu: WDL_mu returned by the rescale (side-to-move frame; 0.0 when the
+            eps-guard skipped the transform).
+    """
+    wdl_white: tuple[int, int, int]
+    mu: float
+
+
+def _wdl_rescale(v: float, d: float, ratio: float, diff: float,
+                 sign: float, invert: bool, max_reasonable_s: float):
+    """Verbatim port of lc0 WDLRescale. Returns (mu_new, v_new, d_new).
+
+    v and d are returned rather than mutated. Returns (0.0, v, d) unchanged
+    when the eps-guard rejects an extreme distribution (lc0 `return 0`).
+    """
+    v = _f32(v)
+    d = _f32(d)
+    if invert:
+        diff = _f32(-_f32(diff))
+        ratio = _f32(_f32(1.0) / _f32(ratio))
+    w = _f32((_f32(1.0) + v - d) / _f32(2.0))
+    loss = _f32((_f32(1.0) - v - d) / _f32(2.0))
+    eps = _f32(0.0001)
+    one = _f32(1.0)
+    if not (w > eps and d > eps and loss > eps
+            and w < (one - eps) and d < (one - eps) and loss < (one - eps)):
+        return 0.0, float(v), float(d)
+    a = _f32(fast_log(_f32(_f32(1.0) / loss - _f32(1.0))))
+    b = _f32(fast_log(_f32(_f32(1.0) / w - _f32(1.0))))
+    s = _f32(_f32(2.0) / _f32(a + b))
+    mrs = _f32(max_reasonable_s)
+    if not invert:
+        s = _f32(min(mrs, s))
+    mu = _f32(_f32(a - b) / _f32(a + b))
+    s_new = _f32(s * _f32(ratio))
+    if invert:
+        s, s_new = s_new, s
+        s = _f32(min(mrs, s))
+    mu_new = _f32(mu + _f32(_f32(sign) * s * s * _f32(diff)))
+    w_new = fast_logistic(_f32((_f32(-1.0) + mu_new) / s_new))
+    loss_new = fast_logistic(_f32((_f32(-1.0) - mu_new) / s_new))
+    v_new = _f32(w_new - loss_new)
+    d_new = _f32(max(_f32(0.0), _f32(_f32(1.0) - w_new - loss_new)))
+    return float(mu_new), float(v_new), float(d_new)
+
+
+def rescale_wdl(
+    raw_win: int, raw_draw: int, raw_loss: int, *,
+    white_elo: float, black_elo: float, white_to_move: bool,
+    draw_rate_reference: float,
+    contempt_max: float = 420.0,
+    contempt_attenuation: float = 1.0,
+    wdl_max_s: float = 1.4,
+) -> RescaledWDL:
+    """Rescale a raw White-frame WDL triple to the players' Elo.
+
+    Replicates lc0 with WDLCalibrationElo=White Elo, Contempt=White-Black,
+    ContemptMode=white_side_analysis, WDLEvalObjectivity=1.0,
+    ScoreType=WDL_mu (invert=True at the UCI-info call site).
+
+    Args:
+        raw_win/raw_draw/raw_loss: raw network permille, White's frame.
+        white_elo/black_elo: player ratings.
+        white_to_move: side to move at this position.
+        draw_rate_reference: measured per-network reference draw rate.
+        contempt_max/contempt_attenuation/wdl_max_s: lc0 option values.
+    Returns:
+        RescaledWDL (White-frame permille + mu).
+    """
+    total = raw_win + raw_draw + raw_loss
+    if total <= 0:
+        return RescaledWDL((raw_win, raw_draw, raw_loss), 0.0)
+    if white_to_move:
+        w, d, loss = raw_win / total, raw_draw / total, raw_loss / total
+    else:
+        w, d, loss = raw_loss / total, raw_draw / total, raw_win / total
+    v = w - loss
+    contempt = float(white_elo) - float(black_elo)
+    ratio, diff = simplified_wdl_rescale_params(
+        contempt, draw_rate_reference, float(white_elo),
+        contempt_max, contempt_attenuation)
+    # ContemptMode=white_side_analysis: sign is always +1 (White's perspective).
+    sign = 1.0
+    mu, v_new, d_new = _wdl_rescale(v, d, ratio, diff, sign, True, wdl_max_s)
+    w_stm = (1.0 + v_new - d_new) / 2.0
+    loss_stm = (1.0 - v_new - d_new) / 2.0
+    if white_to_move:
+        wf_w, wf_d = w_stm, d_new
+    else:
+        wf_w, wf_d = loss_stm, d_new
+    pw = max(0, min(1000, round(wf_w * 1000)))
+    pd = max(0, min(1000, round(wf_d * 1000)))
+    pl = max(0, 1000 - pw - pd)
+    return RescaledWDL((pw, pd, pl), float(mu))
