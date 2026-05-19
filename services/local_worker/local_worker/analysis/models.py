@@ -77,6 +77,9 @@ class Lc0MoveResult:
     wdl_win_adj: int      # rescaled permille, White frame
     wdl_draw_adj: int
     wdl_loss_adj: int
+    # Expected-score fraction in [0,1] computed as (W + 0.5·D) / total from the
+    # RESCALED White-frame triple. NOT lc0's internal logit-space mu — those
+    # are different quantities. Do not substitute RescaledWDL.mu here.
     wdl_mu: Optional[float]
     delta_mu: Optional[float]
     delta_d: Optional[float]

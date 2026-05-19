@@ -429,6 +429,9 @@ def _compute_rescaled_wdl(
     Returns:
         (adj_white_triple, mu_white_frame) where mu_white_frame is the White
         expected-score fraction (W + 0.5D) / total from the rescaled triple.
+        This is NOT lc0's internal logit-space mu (RescaledWDL.mu) — it is a
+        probability in [0,1], not a logit. Downstream callers store this as
+        Lc0MoveResult.wdl_mu; do not substitute RescaledWDL.mu there.
     """
     result = rescale_wdl(
         *raw_white,
@@ -829,7 +832,9 @@ def _build_game_result(
         engine_nodes=nodes,
         network_name=network_name,
         draw_rate_reference=draw_rate_reference,
+        # lc0 convention: WDLCalibrationElo is the player whose perspective the rescale targets (White)
         wdl_calibration_elo=int(white_elo),
+        # contempt is the signed White-minus-Black gap; negative means White is the weaker side
         contempt=int(white_elo) - int(black_elo),
         white_win_prob=_avg(white_wdl[0]),
         white_draw_prob=_avg(white_wdl[1]),
@@ -1113,6 +1118,12 @@ def analyze_pgn(
     # Using per-side fallbacks would create a false contempt when only one
     # rating is absent, silently skewing the draw-character classifiers.
     if not white_elo or not black_elo:
+        log.info(
+            "lc0: ratings absent (white=%s black=%s) — using fallback_elo=%d for both",
+            white_elo or "none",
+            black_elo or "none",
+            fallback_elo,
+        )
         effective_white_elo = fallback_elo
         effective_black_elo = fallback_elo
     else:
@@ -1124,6 +1135,13 @@ def analyze_pgn(
             engine, network_name_override, draw_rate_reference_override,
             lc0_path, weights_path, syzygy_path, backend, auto_tune,
         )
+    )
+    log.info(
+        "lc0: analyzing game elo=(%d,%d) contempt=%d draw_rate_ref=%.4f network=%s",
+        effective_white_elo, effective_black_elo,
+        effective_white_elo - effective_black_elo,
+        draw_rate_reference,
+        network_name,
     )
     try:
         board = game.board()

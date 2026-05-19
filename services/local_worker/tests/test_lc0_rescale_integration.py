@@ -9,6 +9,7 @@ Changelog:
     2026-05-19: Initial creation (issue #159 Phase C2)
     2026-05-19: Add FIX-A test (delta_d uses rescaled draw fractions) and
                 FIX-B tests (mixed-Elo fallback makes contempt=0) (issue #159)
+    2026-05-19: Add FIX-1 test (fallback log.info fires when ratings absent) (issue #159)
 """
 from __future__ import annotations
 
@@ -286,4 +287,43 @@ def test_elo_fallback_symmetry(
     assert res.contempt == expected_contempt, (
         f"white_elo={white_elo}, black_elo={black_elo}: "
         f"expected contempt={expected_contempt}, got {res.contempt}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# FIX-1 step 4 (issue #159): fallback log.info fires when ratings absent
+# ---------------------------------------------------------------------------
+
+
+def test_fallback_log_fires_when_ratings_absent(caplog: pytest.LogCaptureFixture) -> None:
+    """log.info must be emitted when either Elo is absent and the fallback fires.
+
+    Calls analyze_pgn with white_elo=0, black_elo=0 (both absent) via the
+    in-process fake engine and asserts that the fallback log line appears in
+    the captured log output. The line must mention 'ratings absent' and
+    'fallback_elo'.
+    """
+    import logging
+
+    engine = _FakeEngine()
+    with caplog.at_level(logging.INFO, logger="local_worker.analysis.lc0"):
+        analyze_pgn(
+            _PGN_2PLY,
+            lc0_path="/dev/null",
+            nodes=200,
+            engine=engine,
+            network_name_override="fake-net",
+            draw_rate_reference_override=0.45,
+            white_elo=0,
+            black_elo=0,
+            fallback_elo=1100,
+        )
+
+    fallback_lines = [r.message for r in caplog.records if "ratings absent" in r.message]
+    assert fallback_lines, (
+        "Expected a log.info line containing 'ratings absent' when both Elos are 0, "
+        f"but found none. All captured messages: {[r.message for r in caplog.records]}"
+    )
+    assert "fallback_elo=1100" in fallback_lines[0], (
+        f"Expected 'fallback_elo=1100' in fallback log line, got: {fallback_lines[0]!r}"
     )

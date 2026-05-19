@@ -177,21 +177,22 @@ def _open_eval_cache(settings: Settings) -> Optional[EvalCache]:
 
 
 def _resolve_job_elos(job) -> tuple[int, int]:
-    """Read white and black Elo ratings from a job object.
+    """Read white and black Elo ratings from a Job dataclass.
 
-    Supports both dict-like jobs (``job.get(...)``) and attribute-style jobs
-    (``job.white_rating``). Returns 0 for any rating that is absent or falsy
-    so callers can apply a fallback Elo.
+    Reads ``white_rating`` and ``black_rating`` from the Job dataclass
+    returned by WorkerClient.checkout(). Returns 0 for any rating that
+    is absent or None so callers can apply a fallback Elo.
 
     Args:
-        job: Job object from WorkerClient.checkout(). May be a dataclass
-            or a dict-like object depending on the client implementation.
+        job: Job dataclass from WorkerClient.checkout(). Fields
+            ``white_rating`` and ``black_rating`` are Optional[int] and
+            default to None until Phase D1 populates them via the API.
 
     Returns:
         Tuple of (white_elo, black_elo) as ints, each 0 when absent.
     """
-    white_raw = job.get("white_rating") if hasattr(job, "get") else getattr(job, "white_rating", None)
-    black_raw = job.get("black_rating") if hasattr(job, "get") else getattr(job, "black_rating", None)
+    white_raw = getattr(job, "white_rating", None)
+    black_raw = getattr(job, "black_rating", None)
     return int(white_raw) if white_raw else 0, int(black_raw) if black_raw else 0
 
 
