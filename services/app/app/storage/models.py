@@ -9,6 +9,7 @@ Description:
 Changelog:
     2026-05-08: Added file header to meet documentation standards
     2026-05-11: Add time metadata columns to Game (issue #24).
+    2026-05-19: Add WDL calibration columns to Lc0MoveAnalysis and Lc0GameAnalysis; remove stale classification column from Lc0MoveAnalysis (issue #159).
 """
 from __future__ import annotations
 
@@ -251,6 +252,10 @@ class Lc0GameAnalysis(Base):
     black_blunders: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     black_mistakes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     black_inaccuracies: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # WDL calibration summary fields (#159)
+    draw_rate_reference: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    wdl_calibration_elo: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    contempt: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
     game: Mapped[Game] = relationship(back_populates="lc0_analysis")
     moves: Mapped[list[Lc0MoveAnalysis]] = relationship(
@@ -282,7 +287,15 @@ class Lc0MoveAnalysis(Base):
     arrow_score_2: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     arrow_score_3: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     move_win_delta: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    classification: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    # WDL calibration fields (#159) — replace old classification column
+    wdl_win_adj: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    wdl_draw_adj: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    wdl_loss_adj: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    wdl_mu: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    delta_mu: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    delta_d: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    base_severity: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    draw_character: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
     pv_san_1: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     pv_san_2: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     pv_san_3: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

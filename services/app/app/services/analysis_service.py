@@ -159,7 +159,7 @@ def _build_pgn_fallback_moves(
         lc0_by_ply: Dict mapping ply (int) to a pandas Series row from the Lc0 moves DataFrame.
 
     Returns:
-        DataFrame with columns: ply, san, fen, cp_eval, best_move, arrow_uci, cpl, classification.
+        DataFrame with columns: ply, san, fen, cp_eval, best_move, arrow_uci, cpl, base_severity, draw_character.
     """
     board = game.board()
     rows: list[dict] = []
@@ -176,7 +176,9 @@ def _build_pgn_fallback_moves(
                 "best_move": str(lm["best_move"]) if lm is not None else "",
                 "arrow_uci": str(lm["arrow_uci"]) if lm is not None else "",
                 "cpl": None,
-                "classification": str(lm["classification"]) if lm is not None else None,
+                # base_severity replaces old classification for Lc0 moves (#159)
+                "base_severity": str(lm["base_severity"]) if lm is not None else None,
+                "draw_character": str(lm["draw_character"]) if lm is not None and lm.get("draw_character") is not None else None,
             }
         )
     return pd.DataFrame(rows)
@@ -321,7 +323,9 @@ def _lc0_moves_from_db(move_rows: list["Lc0MoveAnalysis"]) -> pd.DataFrame:
             "arrow_score_2": m.arrow_score_2,
             "arrow_score_3": m.arrow_score_3,
             "move_win_delta": m.move_win_delta,
-            "classification": m.classification,
+            # base_severity + draw_character replace old classification (#159)
+            "base_severity": m.base_severity,
+            "draw_character": m.draw_character,
         }
         for m in sorted_moves
     ]

@@ -59,7 +59,8 @@ class Lc0MoveResult:
     arrow_score_3: float | None = None
     # Win% drop for the side that just moved (≥ 0, higher = worse move)
     move_win_delta: float = 0.0
-    classification: str = "best"
+    # Renamed from classification → base_severity to match DB column (#159)
+    base_severity: str = "best"
 
 
 @dataclass
@@ -288,7 +289,8 @@ def analyze_pgn(  # noqa: C901 — inherent: tightly-coupled move loop with boar
 
             win_delta = max(0.0, mover_win_before - mover_win_after)
 
-            classification = _classify(
+            # base_severity replaces old classification field (#159)
+            base_severity = _classify(
                 win_delta=win_delta,
                 mover_win_pct_before=mover_win_before,
                 alt_win_delta=alt_win_delta,
@@ -357,7 +359,7 @@ def analyze_pgn(  # noqa: C901 — inherent: tightly-coupled move loop with boar
                     arrow_score_2=score_2,
                     arrow_score_3=score_3,
                     move_win_delta=win_delta,
-                    classification=classification,
+                    base_severity=base_severity,
                 )
             )
 
