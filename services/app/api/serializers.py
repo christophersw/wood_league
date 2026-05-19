@@ -11,6 +11,7 @@ Changelog:
     2026-05-10: Removed DISPATCH_CHOICES and dispatch_mode field from CheckoutRequestSerializer
     2026-05-17 (#128): Add batch_total, batch_processed, session_started_at to HeartbeatSerializer
     2026-05-17 (#141): JobSerializer resolves null lc0 nodes -> settings.LC0_NODES
+    2026-05-19 (#159): JobSerializer exposes white_rating/black_rating for WDL calibration
 """
 from django.conf import settings
 from rest_framework import serializers
@@ -43,6 +44,11 @@ class JobSerializer(serializers.Serializer):
     nodes = serializers.SerializerMethodField()  # Lc0 nodes (resolved)
     worker_id = serializers.CharField()
     claimed_by_key_prefix = serializers.CharField()
+
+    white_rating = serializers.IntegerField(
+        source='game.white_rating', required=False, allow_null=True, default=None)
+    black_rating = serializers.IntegerField(
+        source='game.black_rating', required=False, allow_null=True, default=None)
 
     def get_nodes(self, obj) -> int | None:
         """Resolve the lc0 node budget the worker must use.

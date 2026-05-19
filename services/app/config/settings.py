@@ -8,6 +8,8 @@ Description:
 Changelog:
     2026-05-06: Auto-configure ALLOWED_HOSTS with Railway health check domain
                 to fix DisallowedHost errors during health checks
+    2026-05-19 (#159): Add WL_LC0_FALLBACK_ELO, WL_LC0_CONTEMPT_MAX,
+                       WL_LC0_CONTEMPT_ATTENUATION, WL_LC0_DRAW_RATE_SEM_TARGET
 """
 import os
 from pathlib import Path
@@ -215,6 +217,26 @@ DEFAULT_HISTORY_DAYS = config("DEFAULT_HISTORY_DAYS", default=90, cast=int)
 ANALYSIS_DEPTH = config("ANALYSIS_DEPTH", default=20, cast=int)
 LC0_NODES = config("LC0_NODES", default=25000, cast=int)
 LC0_NETWORK = os.environ.get("LC0_NETWORK", "")
+
+# Lc0 WDL calibration constants (issue #159)
+#
+# WL_LC0_FALLBACK_ELO: Elo used when one or both player ratings are missing.
+#   Symmetric: if *either* side is missing, *both* fall back to this value.
+#   This avoids spurious contempt when only one rating is available.
+WL_LC0_FALLBACK_ELO = 1100
+
+# WL_LC0_CONTEMPT_MAX: mirrors lc0's ContemptMaxValue.
+#   Caps the absolute value of the contempt term inside SimplifiedWDLRescaleParams.
+WL_LC0_CONTEMPT_MAX = 420.0
+
+# WL_LC0_CONTEMPT_ATTENUATION: mirrors lc0's WDLContemptAttenuation.
+#   Multiplier applied to the Elo-difference term when computing contempt.
+WL_LC0_CONTEMPT_ATTENUATION = 1.0
+
+# WL_LC0_DRAW_RATE_SEM_TARGET: target standard error of the mean for the
+#   per-network draw-rate sampler. The worker uses this to decide how many
+#   calibration samples to collect before trusting its draw-rate estimate.
+WL_LC0_DRAW_RATE_SEM_TARGET = 0.005
 
 # RunPod serverless dispatch settings
 RUNPOD_API_KEY = os.environ.get("RUNPOD_API_KEY", "")
