@@ -37,6 +37,9 @@ Changelog:
                 draw_rate_reference_override param to analyze_pgn() so
                 callers that reuse a warm engine can pass the measured
                 value through without re-measuring (issue #159).
+    2026-05-19: _get_or_measure_draw_rate() now checks lc0_tuning.json disk
+                store before measuring, and persists fresh measurements to
+                disk via push_draw_rate / pull_draw_rate (issue #159 FIX 1).
 """
 from __future__ import annotations
 
@@ -51,8 +54,8 @@ import chess.engine
 import chess.pgn
 
 from .lc0_draw_rate import DrawRateResult, measure_draw_rate
-from .lc0_tuning import get_tuned_opts
-from ..lc0_tuning_sync import push_after_calibrate
+from .lc0_tuning import cache_path as tuning_cache_path, get_tuned_opts
+from ..lc0_tuning_sync import push_after_calibrate, pull_draw_rate, push_draw_rate
 from .eval_cache import (
     EvalCache,
     cached_pvs_to_info_list,
@@ -685,12 +688,17 @@ def _get_or_measure_draw_rate(
     engine: chess.engine.SimpleEngine,
     network_name: str,
 ) -> float:
-    """Return the cached draw-rate for network_name, measuring if absent.
+    """Return the draw-rate for network_name, using in-process cache then disk.
 
-    The measurement is stored in the module-level ``_draw_rate_cache`` dict
-    so it runs at most once per process per network. A measurement failure
-    (unexpected exception) is caught and logged; 0.5 is returned as a safe
-    fallback that keeps the rescale neutral.
+    Lookup order:
+    1. Module-level ``_draw_rate_cache`` dict (in-process fast path).
+    2. ``lc0_tuning.json`` draw_rate section (disk persistence — survives
+       worker restarts; avoids re-measuring on cold starts).
+    3. Live measurement via ``measure_draw_rate()``.
+
+    A successful measurement is persisted to disk (fail-soft) and stored in
+    the in-process cache.  Any failure in measurement or IO is caught and
+    logged; 0.5 is returned as a safe fallback that keeps the rescale neutral.
 
     Args:
         engine: Already-configured lc0 engine to use for measurement.
@@ -699,12 +707,34 @@ def _get_or_measure_draw_rate(
     Returns:
         Draw-rate reference in (0, 1).
     """
+    # 1. In-process cache hit
     if network_name in _draw_rate_cache:
-        log.info("lc0: draw_rate_reference cache hit for net=%s", network_name)
+        log.info("lc0: draw_rate_reference in-process cache hit for net=%s", network_name)
         return _draw_rate_cache[network_name].draw_rate_reference
+
+    # 2. Disk persistence check (fail-soft)
+    persisted = pull_draw_rate(network_name, tuning_cache_path())
+    if persisted is not None:
+        log.info(
+            "lc0: draw_rate_reference loaded from disk=%.4f for net=%s",
+            persisted,
+            network_name,
+        )
+        result_from_disk = DrawRateResult(
+            network=network_name,
+            draw_rate_reference=persisted,
+            n_samples=0,
+            stderr=0.0,
+        )
+        _draw_rate_cache[network_name] = result_from_disk
+        return persisted
+
+    # 3. Live measurement
     try:
         result = measure_draw_rate(engine, network=network_name)
         _draw_rate_cache[network_name] = result
+        # Persist to disk (fail-soft — push_draw_rate never raises)
+        push_draw_rate(network_name, result.draw_rate_reference, tuning_cache_path())
         return result.draw_rate_reference
     except Exception:  # noqa: BLE001 — measurement must never break analysis
         log.warning(

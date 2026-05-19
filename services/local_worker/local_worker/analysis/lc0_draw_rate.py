@@ -9,6 +9,9 @@ Description:
     rescale always has a measured reference (issue #159).
 Changelog:
     2026-05-19: Initial creation (issue #159).
+    2026-05-19: Fix combined sample accumulation — nondeterministic-phase
+                samples are now carried into the curated-FEN phase so
+                DrawRateResult reflects the full sample set (issue #159 FIX 2).
 """
 from __future__ import annotations
 
@@ -83,26 +86,29 @@ def _sem_below_target(samples: list[float], sem_target: float) -> bool:
 def _collect_deterministic_samples(
     engine: Any,
     nodes: int,
-    first_sample: float,
+    prior_samples: list[float],
     max_samples: int,
     sem_target: float,
 ) -> list[float]:
     """Sweep CURATED_OPENING_FENS once the search is known to be deterministic.
 
-    Appends samples until sem_target is met, max_samples is reached, or the
-    full curated FEN set is exhausted.
+    Appends curated-FEN samples to the already-accumulated prior_samples until
+    sem_target is met, max_samples is reached, or the full curated FEN set is
+    exhausted.  The combined list (prior + new) is returned so callers always
+    compute statistics over the full sample set.
 
     Args:
         engine: Running lc0 engine.
         nodes: Node budget per sample.
-        first_sample: The single startpos sample already collected.
-        max_samples: Hard cap on total samples.
+        prior_samples: All draw-fraction samples accumulated before this phase
+            (may include nondeterministic startpos samples).
+        max_samples: Hard cap on total samples (across all phases).
         sem_target: Target SEM threshold.
 
     Returns:
-        Full list of draw-fraction samples (including first_sample).
+        Combined list of draw-fraction samples (prior_samples + curated FENs).
     """
-    samples = [first_sample]
+    samples = list(prior_samples)
     for fen in CURATED_OPENING_FENS:
         if len(samples) >= max_samples:
             break
@@ -122,17 +128,19 @@ def _collect_nondeterministic_samples(
     """Sample startpos repeatedly until determinism is detected or cap reached.
 
     Switches to the curated FEN sweep as soon as two consecutive startpos
-    results are identical (deterministic search detected).
+    results are identical (deterministic search detected).  All samples from
+    the nondeterministic phase are carried into the deterministic phase so
+    the final list covers the combined sample set.
 
     Args:
         engine: Running lc0 engine.
         nodes: Node budget per sample.
         first_sample: First startpos sample already collected.
-        max_samples: Hard cap on total samples.
+        max_samples: Hard cap on total samples (across all phases).
         sem_target: Target SEM threshold.
 
     Returns:
-        Full list of draw-fraction samples.
+        Full list of draw-fraction samples (nondeterministic + curated FENs).
     """
     samples = [first_sample]
     prev = first_sample
@@ -140,11 +148,9 @@ def _collect_nondeterministic_samples(
         nxt = _draw_fraction(engine, chess.Board(), nodes)
         samples.append(nxt)
         if math.isclose(nxt, prev, abs_tol=1e-9):
-            # Deterministic: switch to curated FENs for remaining budget
+            # Deterministic: switch to curated FENs, carrying ALL prior samples
             return _collect_deterministic_samples(
-                engine, nodes, samples[-1],
-                max_samples - len(samples) + 1,
-                sem_target,
+                engine, nodes, samples, max_samples, sem_target
             )
         prev = nxt
         if _sem_below_target(samples, sem_target):

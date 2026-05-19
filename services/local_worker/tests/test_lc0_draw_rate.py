@@ -5,6 +5,7 @@ Description:
     mocked to keep these tests fast and deterministic — no binary required.
 Changelog:
     2026-05-19: Initial creation (issue #159).
+    2026-05-19: Add combined-sample-set test (#159 FIX 2).
 """
 import chess.engine
 
@@ -99,3 +100,75 @@ def test_sampler_correct_draw_fraction() -> None:
                             max_samples=100, nodes=1)
     # All samples are 350/1000 = 0.35; mean = 0.35; clamped = 0.35
     assert abs(res.draw_rate_reference - 0.35) < 1e-6
+
+
+class _NondeterministicThenDeterministicEngine:
+    """Engine that returns varying values for the first N calls, then a fixed value.
+
+    Simulates nondeterministic multi-threaded search (startpos varies) before
+    search becomes deterministic (two consecutive identical results trigger the
+    curated-FEN phase).  Used to test that the combined sample set (both
+    nondeterministic and deterministic phase samples) is reflected in
+    DrawRateResult.n_samples and the mean.
+    """
+
+    def __init__(self, varying_wdls: list[tuple[int, int, int]],
+                 fixed_wdl: tuple[int, int, int]) -> None:
+        """Initialise with a sequence of varying WDLs followed by a fixed one.
+
+        Args:
+            varying_wdls: WDL permille triples returned for the first N calls.
+            fixed_wdl: WDL permille triple returned for all subsequent calls
+                (triggers determinism detection on repeat).
+        """
+        self._varying = list(varying_wdls)
+        self._fixed = fixed_wdl
+        self.calls = 0
+
+    def analyse(
+        self,
+        board: chess.Board,
+        limit: chess.engine.Limit,
+        **kwargs: object,
+    ) -> dict:
+        """Return WDL from the varying sequence, then fixed."""
+        self.calls += 1
+        if self._varying:
+            wdl = self._varying.pop(0)
+        else:
+            wdl = self._fixed
+        return {"score": _FakeScore(wdl)}
+
+
+def test_n_samples_reflects_combined_nondeterministic_and_deterministic() -> None:
+    """n_samples counts ALL positions: nondeterministic-phase + curated-FEN phase.
+
+    The engine returns 3 varying startpos values (nondeterministic), then
+    a fixed value that repeats (triggering deterministic detection).  The
+    n_samples on the returned DrawRateResult must equal the total number of
+    engine calls, not just the deterministic-phase count.
+    """
+    # 3 varying startpos samples → nondeterministic phase
+    # fixed WDL repeated → triggers determinism after one more call
+    # Then curated FENs are swept
+    varying: list[tuple[int, int, int]] = [
+        (500, 300, 200),  # call 1: startpos (first)
+        (480, 310, 210),  # call 2: startpos (prev=0.3, nxt=0.31, not equal)
+        (460, 330, 210),  # call 3: startpos (prev=0.31, nxt=0.33, not equal)
+        (440, 340, 220),  # call 4: startpos (prev=0.33, nxt=0.34, not equal)
+    ]
+    fixed: tuple[int, int, int] = (400, 350, 250)  # draws=0.35, repeat triggers det.
+    eng = _NondeterministicThenDeterministicEngine(varying, fixed)
+    # sem_target=0.0 forces exhaustion of max_samples
+    res = measure_draw_rate(eng, network="t-nd-test", sem_target=0.0,
+                            max_samples=10, nodes=1)
+    # The engine is called for:
+    #   - first: 1 call
+    #   - nondeterministic loop: calls until determinism detected
+    #   - deterministic sweep: remaining curated FENs up to max_samples
+    # All calls must be counted in n_samples
+    assert res.n_samples == eng.calls, (
+        f"n_samples={res.n_samples} != engine.calls={eng.calls}; "
+        "combined sample set not accumulated correctly"
+    )
+    assert res.n_samples > 0
