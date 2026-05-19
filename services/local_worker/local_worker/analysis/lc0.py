@@ -492,7 +492,7 @@ def _classify_move_wdl(
         wdl_adj, mu_after_white = _compute_rescaled_wdl(
             raw_white, white_elo, black_elo, mover, draw_rate_reference,
         )
-        _, mu_before_white = _compute_rescaled_wdl(
+        wdl_adj_before, mu_before_white = _compute_rescaled_wdl(
             raw_before, white_elo, black_elo, mover, draw_rate_reference,
         )
         # Mu for the mover's perspective: flip for Black
@@ -503,10 +503,13 @@ def _classify_move_wdl(
             mu_before_mover = 1.0 - mu_before_white
             mu_after_mover = 1.0 - mu_after_white
         d_mu = max(0.0, mu_before_mover - mu_after_mover)
-        # Draw fraction change: after minus before (positive = more drawish)
-        total_before = raw_before[0] + raw_before[1] + raw_before[2] or 1
-        total_after = raw_white[0] + raw_white[1] + raw_white[2] or 1
-        d_d = raw_white[1] / total_after - raw_before[1] / total_before
+        # Draw fraction change: after minus before using RESCALED fractions.
+        # Raw fractions are not used here because the rescale can shift the
+        # draw band by 20+ percentage points at wide Elo gaps, causing the
+        # wrong draw_character modifier when raw deltas are substituted.
+        d_before = wdl_adj_before[1] / (sum(wdl_adj_before) or 1)
+        d_after = wdl_adj[1] / (sum(wdl_adj) or 1)
+        d_d = d_after - d_before
         cls = classify_draw_aware(d_mu, d_d)
         return (
             wdl_adj,
@@ -1105,10 +1108,16 @@ def analyze_pgn(
         # client.fail() so the job is requeued or surfaced.
         raise ValueError("PGN has no moves — cannot analyse a 0-ply game")
 
-    # Resolve effective Elo — both fall back together so contempt stays 0
-    # when ratings are absent, which is a safe neutral rescale assumption.
-    effective_white_elo = white_elo if white_elo else fallback_elo
-    effective_black_elo = black_elo if black_elo else fallback_elo
+    # Resolve effective Elo — if EITHER side is missing, BOTH fall back to
+    # the configured club midpoint so contempt stays 0 (symmetric rescale).
+    # Using per-side fallbacks would create a false contempt when only one
+    # rating is absent, silently skewing the draw-character classifiers.
+    if not white_elo or not black_elo:
+        effective_white_elo = fallback_elo
+        effective_black_elo = fallback_elo
+    else:
+        effective_white_elo = white_elo
+        effective_black_elo = black_elo
 
     active_engine, network_name, draw_rate_reference, owns_engine = (
         _resolve_engine_context(
