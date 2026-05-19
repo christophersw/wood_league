@@ -443,6 +443,95 @@ def _compute_rescaled_wdl(
     return adj, mu_white_frame
 
 
+def _classify_move_wdl(
+    raw_white: tuple[int, int, int],
+    info_before_list: list,
+    white_elo: int,
+    black_elo: int,
+    mover: chess.Color,
+    draw_rate_reference: float,
+    delta_win_pct: float,
+) -> tuple[
+    tuple[int, int, int],
+    Optional[float],
+    Optional[float],
+    Optional[float],
+    str,
+    Optional[str],
+    Optional[str],
+]:
+    """Compute WDL rescaling and move classification for one move.
+
+    When draw_rate_reference > 0.0, applies WDL rescaling and draw-aware
+    classification. Otherwise falls back to raw win-percentage classification.
+
+    Args:
+        raw_white: Raw (win, draw, loss) permille triple in White's frame
+            for the position AFTER the move.
+        info_before_list: MultiPV info list from before the move, used to
+            extract the pre-move WDL in White's frame when rescaling.
+        white_elo: White player Elo.
+        black_elo: Black player Elo.
+        mover: Side that just moved (chess.WHITE or chess.BLACK).
+        draw_rate_reference: Per-network reference draw rate. 0.0 means
+            calibration is unavailable — fall back to win-% classification.
+        delta_win_pct: Raw win-% drop (mover frame), used for the fallback
+            classification path when draw_rate_reference is 0.0.
+
+    Returns:
+        Tuple of (wdl_adj, wdl_mu_val, delta_mu_val, delta_d_val,
+        base_severity, draw_character, counter_bucket).
+    """
+    if draw_rate_reference > 0.0:
+        wdl_white_before_raw = info_before_list[0]["score"].pov(chess.WHITE).wdl()
+        raw_before = (
+            wdl_white_before_raw.wins,
+            wdl_white_before_raw.draws,
+            wdl_white_before_raw.losses,
+        )
+        wdl_adj, mu_after_white = _compute_rescaled_wdl(
+            raw_white, white_elo, black_elo, mover, draw_rate_reference,
+        )
+        _, mu_before_white = _compute_rescaled_wdl(
+            raw_before, white_elo, black_elo, mover, draw_rate_reference,
+        )
+        # Mu for the mover's perspective: flip for Black
+        if mover == chess.WHITE:
+            mu_before_mover = mu_before_white
+            mu_after_mover = mu_after_white
+        else:
+            mu_before_mover = 1.0 - mu_before_white
+            mu_after_mover = 1.0 - mu_after_white
+        d_mu = max(0.0, mu_before_mover - mu_after_mover)
+        # Draw fraction change: after minus before (positive = more drawish)
+        total_before = raw_before[0] + raw_before[1] + raw_before[2] or 1
+        total_after = raw_white[0] + raw_white[1] + raw_white[2] or 1
+        d_d = raw_white[1] / total_after - raw_before[1] / total_before
+        cls = classify_draw_aware(d_mu, d_d)
+        return (
+            wdl_adj,
+            mu_after_mover,
+            d_mu,
+            d_d,
+            cls.base,
+            cls.modifier,
+            cls.counter_bucket,
+        )
+    else:
+        # No draw_rate_reference yet (engine not yet calibrated) — fall back
+        # to raw triple for adj, no classification deltas
+        base_sev = _classify_from_win_pct(delta_win_pct)
+        return (
+            raw_white,
+            None,
+            None,
+            None,
+            base_sev,
+            None,
+            _win_pct_counter_bucket(base_sev),
+        )
+
+
 def _analyze_one_move(
     board: chess.Board,
     move: chess.Move,
@@ -533,51 +622,19 @@ def _analyze_one_move(
     cp_eq = cp_equiv_from_q((wdl_after_mover.wins - wdl_after_mover.losses) / 1000.0)
 
     # WDL rescaling and draw-aware classification
-    wdl_mu_val: Optional[float]
-    delta_mu_val: Optional[float]
-    delta_d_val: Optional[float]
-    if draw_rate_reference > 0.0:
-        wdl_white_before_raw = info_before_list[0]["score"].pov(chess.WHITE).wdl()
-        raw_before = (
-            wdl_white_before_raw.wins,
-            wdl_white_before_raw.draws,
-            wdl_white_before_raw.losses,
-        )
-        wdl_adj, mu_after_white = _compute_rescaled_wdl(
-            raw_white, white_elo, black_elo, mover, draw_rate_reference,
-        )
-        _, mu_before_white = _compute_rescaled_wdl(
-            raw_before, white_elo, black_elo, mover, draw_rate_reference,
-        )
-        # Mu for the mover's perspective: flip for Black
-        if mover == chess.WHITE:
-            mu_before_mover = mu_before_white
-            mu_after_mover = mu_after_white
-        else:
-            mu_before_mover = 1.0 - mu_before_white
-            mu_after_mover = 1.0 - mu_after_white
-        d_mu = max(0.0, mu_before_mover - mu_after_mover)
-        # Draw fraction change: after minus before (positive = more drawish)
-        total_before = raw_before[0] + raw_before[1] + raw_before[2] or 1
-        total_after = raw_white[0] + raw_white[1] + raw_white[2] or 1
-        d_d = raw_white[1] / total_after - raw_before[1] / total_before
-        wdl_mu_val = mu_after_mover
-        delta_mu_val = d_mu
-        delta_d_val = d_d
-        cls = classify_draw_aware(d_mu, d_d)
-        base_sev = cls.base
-        draw_char = cls.modifier
-        counter_bucket: Optional[str] = cls.counter_bucket
-    else:
-        # No draw_rate_reference yet (engine not yet calibrated) — fall back
-        # to raw triple for adj, no classification deltas
-        wdl_adj = raw_white
-        wdl_mu_val = None
-        delta_mu_val = None
-        delta_d_val = None
-        base_sev = _classify_from_win_pct(delta_win_pct)
-        draw_char = None
-        counter_bucket = _win_pct_counter_bucket(base_sev)
+    (
+        wdl_adj,
+        wdl_mu_val,
+        delta_mu_val,
+        delta_d_val,
+        base_sev,
+        draw_char,
+        counter_bucket,
+    ) = _classify_move_wdl(
+        raw_white, info_before_list,
+        white_elo, black_elo, mover,
+        draw_rate_reference, delta_win_pct,
+    )
 
     result = _build_move_result(
         ply_index=ply_index,
@@ -908,6 +965,76 @@ def _get_or_measure_draw_rate(
         return 0.5
 
 
+def _resolve_engine_context(
+    engine: Optional[chess.engine.SimpleEngine],
+    network_name_override: str,
+    draw_rate_reference_override: float,
+    lc0_path: str,
+    weights_path: str,
+    syzygy_path: str,
+    backend: str,
+    auto_tune: bool,
+) -> tuple[chess.engine.SimpleEngine, str, float, bool]:
+    """Resolve the active engine, network name, draw-rate reference, and ownership.
+
+    When ``engine`` is None, launches a new engine process (caller must quit
+    it). When ``engine`` is provided, reuses it as-is (caller owns lifecycle).
+
+    Args:
+        engine: Optional caller-owned engine to reuse. None means launch a
+            fresh process.
+        network_name_override: Network name to use when reusing a caller-owned
+            engine (ignored when engine is None).
+        draw_rate_reference_override: Draw-rate reference when reusing engine
+            (ignored when engine is None). 0.0 = not yet measured.
+        lc0_path: Path to the lc0 binary (used only when launching).
+        weights_path: Path to weights file (used only when launching).
+        syzygy_path: Path to Syzygy tablebases (used only when launching).
+        backend: Lc0 backend string (used only when launching).
+        auto_tune: Whether to apply auto-tuner UCI options (used only when
+            launching).
+
+    Returns:
+        Tuple of (active_engine, network_name, draw_rate_reference, owns_engine)
+        where owns_engine is True when this call launched the process and the
+        caller must quit it on completion.
+    """
+    if engine is None:
+        active_engine, network_name, draw_rate_reference = launch_engine(
+            lc0_path=lc0_path,
+            weights_path=weights_path,
+            syzygy_path=syzygy_path,
+            backend=backend,
+            auto_tune=auto_tune,
+        )
+        return active_engine, network_name, draw_rate_reference, True
+    # Caller-owned engine: skip launch + configure entirely.
+    # SimpleEngine re-issues a full ``position fen …`` command on every
+    # ``analyse()`` call so search state resets implicitly between
+    # games; the NNCache is intentionally left warm so cached evals
+    # carry across games (it's a pure speedup, never a correctness
+    # issue) — issue #117.
+    return engine, network_name_override, draw_rate_reference_override, False
+
+
+def _log_eval_cache_stats(eval_cache: Optional[EvalCache]) -> None:
+    """Log eval-cache hit/miss statistics and reset per-job counters.
+
+    A no-op when ``eval_cache`` is None or the cache is disabled.
+
+    Args:
+        eval_cache: The EvalCache instance for the current job, or None.
+    """
+    if eval_cache is not None and eval_cache.enabled:
+        stats = eval_cache.stats()
+        log.info(
+            "lc0: eval_cache hits=%d misses=%d (%.1f%% hit rate)",
+            stats.hits, stats.misses,
+            100.0 * stats.hits / max(1, stats.hits + stats.misses),
+        )
+        eval_cache.reset_counters()
+
+
 def analyze_pgn(
     pgn_text: str,
     lc0_path: str,
@@ -983,27 +1110,12 @@ def analyze_pgn(
     effective_white_elo = white_elo if white_elo else fallback_elo
     effective_black_elo = black_elo if black_elo else fallback_elo
 
-    owns_engine = engine is None
-    active_engine: chess.engine.SimpleEngine
-    draw_rate_reference: float
-    if engine is None:
-        active_engine, network_name, draw_rate_reference = launch_engine(
-            lc0_path=lc0_path,
-            weights_path=weights_path,
-            syzygy_path=syzygy_path,
-            backend=backend,
-            auto_tune=auto_tune,
+    active_engine, network_name, draw_rate_reference, owns_engine = (
+        _resolve_engine_context(
+            engine, network_name_override, draw_rate_reference_override,
+            lc0_path, weights_path, syzygy_path, backend, auto_tune,
         )
-    else:
-        # Caller-owned engine: skip launch + configure entirely.
-        # SimpleEngine re-issues a full ``position fen …`` command on every
-        # ``analyse()`` call so search state resets implicitly between
-        # games; the NNCache is intentionally left warm so cached evals
-        # carry across games (it's a pure speedup, never a correctness
-        # issue) — issue #117.
-        active_engine = engine
-        network_name = network_name_override
-        draw_rate_reference = draw_rate_reference_override
+    )
     try:
         board = game.board()
         move_results: list[Lc0MoveResult] = []
@@ -1052,14 +1164,7 @@ def analyze_pgn(
                     nodes=nodes, seconds=ply_seconds,
                 )
 
-        if eval_cache is not None and eval_cache.enabled:
-            stats = eval_cache.stats()
-            log.info(
-                "lc0: eval_cache hits=%d misses=%d (%.1f%% hit rate)",
-                stats.hits, stats.misses,
-                100.0 * stats.hits / max(1, stats.hits + stats.misses),
-            )
-            eval_cache.reset_counters()
+        _log_eval_cache_stats(eval_cache)
         return _build_game_result(
             nodes=nodes,
             network_name=network_name,

@@ -176,6 +176,150 @@ def _open_eval_cache(settings: Settings) -> Optional[EvalCache]:
         return None
 
 
+def _resolve_job_elos(job) -> tuple[int, int]:
+    """Read white and black Elo ratings from a job object.
+
+    Supports both dict-like jobs (``job.get(...)``) and attribute-style jobs
+    (``job.white_rating``). Returns 0 for any rating that is absent or falsy
+    so callers can apply a fallback Elo.
+
+    Args:
+        job: Job object from WorkerClient.checkout(). May be a dataclass
+            or a dict-like object depending on the client implementation.
+
+    Returns:
+        Tuple of (white_elo, black_elo) as ints, each 0 when absent.
+    """
+    white_raw = job.get("white_rating") if hasattr(job, "get") else getattr(job, "white_rating", None)
+    black_raw = job.get("black_rating") if hasattr(job, "get") else getattr(job, "black_rating", None)
+    return int(white_raw) if white_raw else 0, int(black_raw) if black_raw else 0
+
+
+def _run_sf_job(
+    job,
+    settings: Settings,
+    stats: WorkerStats,
+    client: WorkerClient,
+    worker_id: str,
+    progress_callback: Callable,
+) -> None:
+    """Analyse a single Stockfish job and submit the result.
+
+    Opens and closes the eval cache around the Stockfish analyse call,
+    records cache statistics, and submits the payload to the API.
+
+    Args:
+        job: Job dataclass from WorkerClient.checkout().
+        settings: Current worker settings.
+        stats: WorkerStats to update with cache hits/lookups.
+        client: Authenticated WorkerClient for API calls.
+        worker_id: Worker identifier string for the payload.
+        progress_callback: Per-move progress callable passed through to
+            the analyser.
+    """
+    cache = _open_eval_cache(settings)
+    try:
+        result = sf_analyze(
+            pgn_text=job.pgn,
+            stockfish_path=settings.stockfish_path,
+            depth=settings.stockfish_depth,
+            threads=settings.stockfish_threads,
+            hash_mb=settings.stockfish_hash_mb,
+            syzygy_path=settings.syzygy_path,
+            progress_callback=progress_callback,
+            eval_cache=cache,
+        )
+    finally:
+        if cache is not None:
+            stats.record_cache(cache.hits, cache.lookups)
+            cache.prune(settings.eval_cache_max_mb * 1024 * 1024)
+            cache.close()
+    payload = build_stockfish_payload(result, worker_id=worker_id)
+    client.complete_stockfish(job_id=job.id, worker_id=worker_id, payload=payload)
+
+
+def _run_lc0_job(
+    job,
+    settings: Settings,
+    stats: WorkerStats,
+    client: WorkerClient,
+    worker_id: str,
+    progress_callback: Callable,
+    lc0_engine: Optional[chess.engine.SimpleEngine],
+    lc0_network_name: str,
+    lc0_draw_rate_reference: float,
+) -> bool:
+    """Validate, analyse, and submit a single lc0 job.
+
+    Validates the node budget, resolves per-game Elo ratings, runs the lc0
+    analyser with the warm engine (if provided), and submits the result. Returns
+    False and fails the job if the node budget is below the minimum floor.
+
+    Args:
+        job: Job dataclass from WorkerClient.checkout().
+        settings: Current worker settings.
+        stats: WorkerStats to update with cache hits/lookups.
+        client: Authenticated WorkerClient for API calls.
+        worker_id: Worker identifier string for the payload.
+        progress_callback: Per-move progress callable passed through to the
+            analyser.
+        lc0_engine: Optional pre-launched lc0 engine to reuse. None means
+            analyze_pgn() launches its own.
+        lc0_network_name: Network name resolved at engine launch, forwarded
+            to analyze_pgn() when lc0_engine is provided.
+        lc0_draw_rate_reference: Draw-rate reference from engine launch.
+            0.0 = not yet measured.
+
+    Returns:
+        True when analysis succeeded and the result was submitted.
+        False when the node budget was too low (job is failed via API).
+    """
+    nodes = job.nodes or settings.lc0_nodes
+    if nodes < _MIN_LC0_NODES:
+        msg = (
+            f"lc0 node budget {nodes} below {_MIN_LC0_NODES} "
+            f"floor (job.nodes={job.nodes}, job.depth={job.depth})"
+        )
+        log.error(
+            "lc0 job %s: %s — refusing to write garbage analysis",
+            job.id, msg,
+        )
+        client.fail(job_id=job.id, worker_id=worker_id, error=msg)
+        return False
+    log.info(
+        "lc0 job %s — effective nodes=%d (job.nodes=%s)",
+        job.id, nodes, job.nodes,
+    )
+    fallback_elo = int(os.environ.get("WL_FALLBACK_ELO", "1100") or "1100")
+    white_elo, black_elo = _resolve_job_elos(job)
+    cache = _open_eval_cache(settings)
+    try:
+        result = lc0_analyze(
+            pgn_text=job.pgn,
+            lc0_path=settings.lc0_path,
+            nodes=nodes,
+            weights_path=settings.lc0_weights_path,
+            syzygy_path=settings.syzygy_path,
+            backend=settings.lc0_backend or "cpu",
+            progress_callback=progress_callback,
+            eval_cache=cache,
+            engine=lc0_engine,
+            network_name_override=lc0_network_name,
+            draw_rate_reference_override=lc0_draw_rate_reference,
+            white_elo=white_elo,
+            black_elo=black_elo,
+            fallback_elo=fallback_elo,
+        )
+    finally:
+        if cache is not None:
+            stats.record_cache(cache.hits, cache.lookups)
+            cache.prune(settings.eval_cache_max_mb * 1024 * 1024)
+            cache.close()
+    payload = build_lc0_payload(result, worker_id=worker_id)
+    client.complete_lc0(job_id=job.id, worker_id=worker_id, payload=payload)
+    return True
+
+
 def run_one_job(
     *,
     job,
@@ -231,25 +375,7 @@ def run_one_job(
 
     try:
         if job.engine == "stockfish":
-            cache = _open_eval_cache(settings)
-            try:
-                result = sf_analyze(
-                    pgn_text=job.pgn,
-                    stockfish_path=settings.stockfish_path,
-                    depth=settings.stockfish_depth,
-                    threads=settings.stockfish_threads,
-                    hash_mb=settings.stockfish_hash_mb,
-                    syzygy_path=settings.syzygy_path,
-                    progress_callback=_logging_progress,
-                    eval_cache=cache,
-                )
-            finally:
-                if cache is not None:
-                    stats.record_cache(cache.hits, cache.lookups)
-                    cache.prune(settings.eval_cache_max_mb * 1024 * 1024)
-                    cache.close()
-            payload = build_stockfish_payload(result, worker_id=worker_id)
-            client.complete_stockfish(job_id=job.id, worker_id=worker_id, payload=payload)
+            _run_sf_job(job, settings, stats, client, worker_id, _logging_progress)
         elif job.engine == "lc0":
             # lc0 strength is its MCTS node budget. The server resolves
             # this (JobSerializer): an lc0 job carries an explicit
@@ -259,52 +385,11 @@ def run_one_job(
             # depth=20) run ~20 nodes of garbage (#141). It is therefore
             # deliberately NOT a fallback here; the prior #111 behaviour
             # is removed now that the server sends nodes correctly.
-            nodes = job.nodes or settings.lc0_nodes
-            if nodes < _MIN_LC0_NODES:
-                msg = (
-                    f"lc0 node budget {nodes} below {_MIN_LC0_NODES} "
-                    f"floor (job.nodes={job.nodes}, job.depth={job.depth})"
-                )
-                log.error(
-                    "lc0 job %s: %s — refusing to write garbage analysis",
-                    job.id, msg,
-                )
-                client.fail(job_id=job.id, worker_id=worker_id, error=msg)
+            if not _run_lc0_job(
+                job, settings, stats, client, worker_id, _logging_progress,
+                lc0_engine, lc0_network_name, lc0_draw_rate_reference,
+            ):
                 return False
-            log.info(
-                "lc0 job %s — effective nodes=%d (job.nodes=%s)",
-                job.id, nodes, job.nodes,
-            )
-            fallback_elo = int(os.environ.get("WL_FALLBACK_ELO", "1100") or "1100")
-            white_elo_raw = job.get("white_rating") if hasattr(job, "get") else getattr(job, "white_rating", None)
-            black_elo_raw = job.get("black_rating") if hasattr(job, "get") else getattr(job, "black_rating", None)
-            white_elo = int(white_elo_raw) if white_elo_raw else 0
-            black_elo = int(black_elo_raw) if black_elo_raw else 0
-            cache = _open_eval_cache(settings)
-            try:
-                result = lc0_analyze(
-                    pgn_text=job.pgn,
-                    lc0_path=settings.lc0_path,
-                    nodes=nodes,
-                    weights_path=settings.lc0_weights_path,
-                    syzygy_path=settings.syzygy_path,
-                    backend=settings.lc0_backend or "cpu",
-                    progress_callback=_logging_progress,
-                    eval_cache=cache,
-                    engine=lc0_engine,
-                    network_name_override=lc0_network_name,
-                    draw_rate_reference_override=lc0_draw_rate_reference,
-                    white_elo=white_elo,
-                    black_elo=black_elo,
-                    fallback_elo=fallback_elo,
-                )
-            finally:
-                if cache is not None:
-                    stats.record_cache(cache.hits, cache.lookups)
-                    cache.prune(settings.eval_cache_max_mb * 1024 * 1024)
-                    cache.close()
-            payload = build_lc0_payload(result, worker_id=worker_id)
-            client.complete_lc0(job_id=job.id, worker_id=worker_id, payload=payload)
         else:
             log.error("Unknown engine: %s — failing job %d", job.engine, job.id)
             client.fail(job_id=job.id, worker_id=worker_id, error=f"Unknown engine: {job.engine}")
