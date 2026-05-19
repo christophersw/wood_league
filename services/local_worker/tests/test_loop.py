@@ -407,9 +407,9 @@ def test_run_batch_lc0_warm_engine_launched_once(
         def quit(self) -> None:
             pass
 
-    def fake_launch_engine(**kwargs: Any) -> tuple[_FakeEngine, str]:
+    def fake_launch_engine(**kwargs: Any) -> tuple[_FakeEngine, str, float]:
         launch_calls.append(kwargs)
-        return _FakeEngine(), "fake-net"
+        return _FakeEngine(), "fake-net", 0.35
 
     monkeypatch.setattr(worker_loop, "lc0_launch_engine", fake_launch_engine)
     fake_client = _FakeCheckoutClient(_stub_lc0_jobs(3, engine="lc0"))

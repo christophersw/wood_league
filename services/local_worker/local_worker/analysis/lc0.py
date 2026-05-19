@@ -31,6 +31,12 @@ Changelog:
                 raises InvalidMoveError for, killing the engine event
                 loop. A synthesised terminal score (Win/Draw/Loss = mate
                 outcome or draw permille) is supplied instead. Fixes #58.
+    2026-05-19: launch_engine() now measures the per-network draw-rate
+                reference once per process (module-level cache) and
+                returns it as the 3rd element of the return tuple. Added
+                draw_rate_reference_override param to analyze_pgn() so
+                callers that reuse a warm engine can pass the measured
+                value through without re-measuring (issue #159).
 """
 from __future__ import annotations
 
@@ -44,6 +50,7 @@ import chess
 import chess.engine
 import chess.pgn
 
+from .lc0_draw_rate import DrawRateResult, measure_draw_rate
 from .lc0_tuning import get_tuned_opts
 from ..lc0_tuning_sync import push_after_calibrate
 from .eval_cache import (
@@ -58,7 +65,9 @@ from .see import see_capture_or_sacrifice
 
 log = logging.getLogger(__name__)
 
-
+# Module-level cache: network_name -> DrawRateResult. Populated once per
+# process per network so the cold-start measurement cost is paid exactly once.
+_draw_rate_cache: dict[str, DrawRateResult] = {}
 
 
 def _parse_network_name(engine_id_name: str, weights_path: str) -> str:
@@ -624,13 +633,15 @@ def launch_engine(
     syzygy_path: str = "",
     backend: str = "cpu",
     auto_tune: bool = True,
-) -> tuple[chess.engine.SimpleEngine, str]:
+) -> tuple[chess.engine.SimpleEngine, str, float]:
     """Launch and configure a long-lived lc0 engine for batch reuse.
 
     Pays the cold-start cost (process launch + weights load + CUDA backend +
-    syzygy reopen + tuner calibration) exactly once. Callers pass the
-    returned engine into :func:`analyze_pgn` for every job in the batch and
-    call ``engine.quit()`` at the end. See issue #117.
+    syzygy reopen + tuner calibration) exactly once. Also measures the
+    per-network draw-rate reference once per process (cached in
+    ``_draw_rate_cache``). Callers pass the returned engine into
+    :func:`analyze_pgn` for every job in the batch and call
+    ``engine.quit()`` at the end. See issue #117.
 
     Args:
         lc0_path: Absolute path to the lc0 binary.
@@ -640,9 +651,10 @@ def launch_engine(
         auto_tune: Merge auto-tuner UCI options into ``engine.configure()``.
 
     Returns:
-        Tuple of ``(engine, network_name)``. The engine is fully configured
-        and ready for ``analyse`` calls; the network_name is the resolved
-        identifier for the run.
+        Tuple of ``(engine, network_name, draw_rate_reference)``. The engine
+        is fully configured and ready for ``analyse`` calls; network_name is
+        the resolved identifier; draw_rate_reference is the measured draw
+        fraction in (0, 1) for this network.
     """
     log.info("lc0: launching engine at %s", lc0_path)
     engine = chess.engine.SimpleEngine.popen_uci(lc0_path)
@@ -665,7 +677,42 @@ def launch_engine(
         except Exception:  # noqa: BLE001
             pass
         raise
-    return engine, network_name
+    draw_rate_reference = _get_or_measure_draw_rate(engine, network_name)
+    return engine, network_name, draw_rate_reference
+
+
+def _get_or_measure_draw_rate(
+    engine: chess.engine.SimpleEngine,
+    network_name: str,
+) -> float:
+    """Return the cached draw-rate for network_name, measuring if absent.
+
+    The measurement is stored in the module-level ``_draw_rate_cache`` dict
+    so it runs at most once per process per network. A measurement failure
+    (unexpected exception) is caught and logged; 0.5 is returned as a safe
+    fallback that keeps the rescale neutral.
+
+    Args:
+        engine: Already-configured lc0 engine to use for measurement.
+        network_name: Resolved network identifier (cache key).
+
+    Returns:
+        Draw-rate reference in (0, 1).
+    """
+    if network_name in _draw_rate_cache:
+        log.info("lc0: draw_rate_reference cache hit for net=%s", network_name)
+        return _draw_rate_cache[network_name].draw_rate_reference
+    try:
+        result = measure_draw_rate(engine, network=network_name)
+        _draw_rate_cache[network_name] = result
+        return result.draw_rate_reference
+    except Exception:  # noqa: BLE001 — measurement must never break analysis
+        log.warning(
+            "lc0: draw_rate measurement failed for net=%s; using 0.5 fallback",
+            network_name,
+            exc_info=True,
+        )
+        return 0.5
 
 
 def analyze_pgn(
@@ -680,6 +727,7 @@ def analyze_pgn(
     eval_cache: Optional[EvalCache] = None,
     engine: Optional[chess.engine.SimpleEngine] = None,
     network_name_override: str = "",
+    draw_rate_reference_override: float = 0.0,
 ) -> Lc0GameResult:
     """Analyse a PGN game with Lc0 and return per-move WDL results.
 
@@ -705,6 +753,10 @@ def analyze_pgn(
         network_name_override: When ``engine`` is reused, the caller already
             resolved the network name at launch — pass it through instead of
             re-reading ``engine.id``.
+        draw_rate_reference_override: When ``engine`` is reused, the caller's
+            measured draw-rate reference (from ``launch_engine``'s 3rd return
+            element). 0.0 signals "not yet measured" — the value is ignored
+            until Phase C wires the rescale consumer (issue #159).
 
     Returns:
         Lc0GameResult with per-move WDL evaluations and game statistics.
@@ -726,8 +778,9 @@ def analyze_pgn(
 
     owns_engine = engine is None
     active_engine: chess.engine.SimpleEngine
+    draw_rate_reference: float
     if engine is None:
-        active_engine, network_name = launch_engine(
+        active_engine, network_name, draw_rate_reference = launch_engine(
             lc0_path=lc0_path,
             weights_path=weights_path,
             syzygy_path=syzygy_path,
@@ -743,6 +796,7 @@ def analyze_pgn(
         # issue) — issue #117.
         active_engine = engine
         network_name = network_name_override
+        draw_rate_reference = draw_rate_reference_override
     try:
         board = game.board()
         move_results: list[Lc0MoveResult] = []
@@ -757,7 +811,10 @@ def analyze_pgn(
             "black": {"Blunder": 0, "Mistake": 0, "Inaccuracy": 0},
         }
         limit = chess.engine.Limit(nodes=nodes)
-        log.info("lc0: entering move loop — %d plies, %d nodes/move", total_plies, nodes)
+        log.info(
+            "lc0: entering move loop — %d plies, %d nodes/move draw_rate_ref=%.4f",
+            total_plies, nodes, draw_rate_reference,
+        )
 
         for ply_index, move in enumerate(moves_list, start=1):
             log.info("lc0: analysing ply %d/%d", ply_index, total_plies)

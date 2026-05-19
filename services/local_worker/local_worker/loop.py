@@ -185,6 +185,7 @@ def run_one_job(
     progress_callback: Optional[Callable[..., None]] = None,
     lc0_engine: Optional[chess.engine.SimpleEngine] = None,
     lc0_network_name: str = "",
+    lc0_draw_rate_reference: float = 0.0,
 ) -> bool:
     """Claim, analyse, and submit a single job.
 
@@ -200,6 +201,10 @@ def run_one_job(
             CUDA backend reload per game (issue #117).
         lc0_network_name: Resolved network name from the warm engine's
             ``id name``. Only consulted when ``lc0_engine`` is supplied.
+        lc0_draw_rate_reference: Measured draw-rate reference from
+            ``launch_engine``'s 3rd return element. 0.0 when not yet
+            measured (e.g. cold-start path). Forwarded to
+            ``analyze_pgn`` for Phase C rescale wiring (issue #159).
 
     Returns:
         True if the job completed successfully, False on error.
@@ -283,6 +288,7 @@ def run_one_job(
                     eval_cache=cache,
                     engine=lc0_engine,
                     network_name_override=lc0_network_name,
+                    draw_rate_reference_override=lc0_draw_rate_reference,
                 )
             finally:
                 if cache is not None:
@@ -428,13 +434,16 @@ def run_batch(
         nonlocal processed
         warm_engine: Optional[chess.engine.SimpleEngine] = None
         warm_network_name = ""
+        warm_draw_rate_reference = 0.0
         if engine == "lc0":
             try:
-                warm_engine, warm_network_name = lc0_launch_engine(
-                    lc0_path=settings.lc0_path,
-                    weights_path=settings.lc0_weights_path,
-                    syzygy_path=settings.syzygy_path,
-                    backend=settings.lc0_backend or "cpu",
+                warm_engine, warm_network_name, warm_draw_rate_reference = (
+                    lc0_launch_engine(
+                        lc0_path=settings.lc0_path,
+                        weights_path=settings.lc0_weights_path,
+                        syzygy_path=settings.syzygy_path,
+                        backend=settings.lc0_backend or "cpu",
+                    )
                 )
             except Exception:  # noqa: BLE001
                 log.warning("lc0: warm engine launch failed; per-job cold-start", exc_info=True)
@@ -471,6 +480,7 @@ def run_batch(
                     progress_callback=on_progress,
                     lc0_engine=warm_engine if engine == "lc0" else None,
                     lc0_network_name=warm_network_name,
+                    lc0_draw_rate_reference=warm_draw_rate_reference,
                 )
                 processed += 1
                 if (
@@ -480,16 +490,19 @@ def run_batch(
                 ):
                     log.warning("lc0: warm engine died; relaunching")
                     try:
-                        warm_engine, warm_network_name = lc0_launch_engine(
-                            lc0_path=settings.lc0_path,
-                            weights_path=settings.lc0_weights_path,
-                            syzygy_path=settings.syzygy_path,
-                            backend=settings.lc0_backend or "cpu",
+                        warm_engine, warm_network_name, warm_draw_rate_reference = (
+                            lc0_launch_engine(
+                                lc0_path=settings.lc0_path,
+                                weights_path=settings.lc0_weights_path,
+                                syzygy_path=settings.syzygy_path,
+                                backend=settings.lc0_backend or "cpu",
+                            )
                         )
                     except Exception:  # noqa: BLE001
                         log.warning("lc0: relaunch failed; remaining jobs cold-start", exc_info=True)
                         warm_engine = None
                         warm_network_name = ""
+                        warm_draw_rate_reference = 0.0
                 if on_job_done:
                     on_job_done(job, success, time.monotonic() - job_start)
         finally:
