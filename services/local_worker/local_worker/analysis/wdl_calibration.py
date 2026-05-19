@@ -118,7 +118,7 @@ def convert_regular_to_game_pair_elo(elo_regular: float) -> float:
     return float(
         e
         + _f32(_f32(0.5) * transition_sharpness)
-        * _f32(np.log(_f32(1.0) + np.exp((transition_midpoint - e) / transition_sharpness)))
+        * _f32(_f32(np.log(_f32(1.0) + _f32(np.exp((transition_midpoint - e) / transition_sharpness)))))
     )
 
 
@@ -144,7 +144,7 @@ def simplified_wdl_rescale_params(
     elo_slope = _f32(425.0)
     offset = _f32(6.75)
     drr = _f32(draw_rate_reference)
-    scale_reference = _f32(_f32(1.0) / np.log((_f32(1.0) + drr) / (_f32(1.0) - drr)))
+    scale_reference = _f32(_f32(1.0) / _f32(np.log((_f32(1.0) + drr) / (_f32(1.0) - drr))))
     cmax = _f32(contempt_max)
     clamped = _f32(min(max(_f32(contempt), -cmax), cmax))
     elo_active_f = _f32(elo_active)
@@ -152,17 +152,17 @@ def simplified_wdl_rescale_params(
     elo_active_g = _f32(convert_regular_to_game_pair_elo(float(elo_active_f)))
     elo_opp_g = _f32(convert_regular_to_game_pair_elo(float(elo_opp)))
     scale_active = _f32(_f32(1.0) / (_f32(_f32(1.0) / scale_zero)
-                    + np.exp(elo_active_g / elo_slope - offset)))
+                    + _f32(np.exp(elo_active_g / elo_slope - offset))))
     scale_opp = _f32(_f32(1.0) / (_f32(_f32(1.0) / scale_zero)
-                 + np.exp(elo_opp_g / elo_slope - offset)))
-    scale_target = _f32(np.sqrt(
-        (scale_active * scale_active + scale_opp * scale_opp) / _f32(2.0)))
+                 + _f32(np.exp(elo_opp_g / elo_slope - offset))))
+    scale_target = _f32(_f32(np.sqrt(
+        (scale_active * scale_active + scale_opp * scale_opp) / _f32(2.0))))
     ratio = _f32(scale_target / scale_reference)
-    ln10 = _f32(np.log(_f32(10.0)))
+    ln10 = _f32(_f32(np.log(_f32(10.0))))
     mu_active = _f32(-ln10 / _f32(200.0) * scale_zero * elo_slope
-        * np.log(_f32(1.0) + np.exp(-elo_active_g / elo_slope + offset) / scale_zero))
+        * _f32(np.log(_f32(1.0) + _f32(np.exp(-elo_active_g / elo_slope + offset)) / scale_zero)))
     mu_opp = _f32(-ln10 / _f32(200.0) * scale_zero * elo_slope
-        * np.log(_f32(1.0) + np.exp(-elo_opp_g / elo_slope + offset) / scale_zero))
+        * _f32(np.log(_f32(1.0) + _f32(np.exp(-elo_opp_g / elo_slope + offset)) / scale_zero)))
     diff = _f32(_f32(_f32(1.0) / (scale_reference * scale_reference))
         * (mu_active - mu_opp) * _f32(contempt_attenuation))
     return float(ratio), float(diff)
