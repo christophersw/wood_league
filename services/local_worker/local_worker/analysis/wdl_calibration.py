@@ -56,7 +56,7 @@ def fast_exp2(a: "np.float32") -> "np.float32":
     if a < 0:
         if a < -126:
             return _f32(0.0)
-        exp = int(np.int32(np.floor(np.float64(a) - 1.0)))
+        exp = int(np.float32(a) - np.float32(1.0))
     else:
         exp = int(np.int32(a))
     out = _f32(_f32(a) - _f32(exp))
