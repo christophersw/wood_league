@@ -202,9 +202,9 @@ def run_one_job(
         lc0_network_name: Resolved network name from the warm engine's
             ``id name``. Only consulted when ``lc0_engine`` is supplied.
         lc0_draw_rate_reference: Measured draw-rate reference from
-            ``launch_engine``'s 3rd return element. 0.0 when not yet
-            measured (e.g. cold-start path). Forwarded to
-            ``analyze_pgn`` for Phase C rescale wiring (issue #159).
+            ``launch_engine``'s 3rd return element. 0.0 = not yet measured;
+            consumers MUST treat <=0.0 as 'unset' and not feed it to the
+            WDL rescale (Phase C). Forwarded to ``analyze_pgn`` (issue #159).
 
     Returns:
         True if the job completed successfully, False on error.

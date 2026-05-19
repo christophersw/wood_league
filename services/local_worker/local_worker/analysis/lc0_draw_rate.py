@@ -4,14 +4,16 @@ Description:
     Measures a network's reference draw rate by sampling lc0's WDL. Samples
     the start position repeatedly when multi-threaded search is
     nondeterministic; otherwise sweeps a curated opening-FEN set. Stops when
-    the standard error of the mean draw fraction drops below sem_target or a
-    sample cap is hit. Persisted per network via lc0_tuning_sync so the
-    rescale always has a measured reference (issue #159).
+    the sample standard error of the mean draw fraction (Bessel n-1) drops
+    below sem_target or a sample cap is hit. Persisted per network via
+    lc0_tuning_sync so the rescale always has a measured reference (issue #159).
 Changelog:
     2026-05-19: Initial creation (issue #159).
     2026-05-19: Fix combined sample accumulation — nondeterministic-phase
                 samples are now carried into the curated-FEN phase so
                 DrawRateResult reflects the full sample set (issue #159 FIX 2).
+    2026-05-19: Fix pstdev → stdev (Bessel n-1) for unbiased SEM at both
+                SEM-check and final stderr computation (issue #159 B1).
 """
 from __future__ import annotations
 
@@ -65,9 +67,11 @@ def _draw_fraction(engine: Any, board: chess.Board, nodes: int) -> float:
 
 
 def _sem_below_target(samples: list[float], sem_target: float) -> bool:
-    """Return True when standard error of the mean is below sem_target.
+    """Return True when the sample standard error of the mean is below sem_target.
 
-    Requires at least 3 samples; returns False when fewer samples exist.
+    Uses the sample standard deviation (Bessel n-1 correction) so the SEM
+    estimate is unbiased.  Requires at least 3 samples; returns False when
+    fewer samples exist (n>=3 also satisfies stdev's n>=2 requirement).
 
     Args:
         samples: List of draw-fraction observations.
@@ -78,7 +82,9 @@ def _sem_below_target(samples: list[float], sem_target: float) -> bool:
     """
     if len(samples) < 3:
         return False
-    sd = statistics.pstdev(samples)
+    # stdev (Bessel n-1) gives the sample standard deviation; >=3 guard above
+    # satisfies stdev's n>=2 requirement.
+    sd = statistics.stdev(samples)
     sem = sd / math.sqrt(len(samples))
     return sem < sem_target
 
@@ -189,7 +195,9 @@ def measure_draw_rate(
         engine, nodes, first, max_samples, sem_target
     )
     mean = sum(samples) / len(samples)
-    sd = statistics.pstdev(samples) if len(samples) > 1 else 0.0
+    # stdev (Bessel n-1) gives the sample standard deviation for SEM.
+    # len>1 guard satisfies stdev's n>=2 requirement.
+    sd = statistics.stdev(samples) if len(samples) > 1 else 0.0
     sem = sd / math.sqrt(len(samples)) if samples else 0.0
     draw_rate_reference = min(0.999, max(0.001, mean))
     log.info(

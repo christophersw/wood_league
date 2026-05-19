@@ -19,6 +19,9 @@ Changelog:
     2026-05-17: Initial creation (issue #150).
     2026-05-19: Add push_draw_rate / pull_draw_rate for per-network draw-rate
                 persistence in the existing lc0_tuning.json store (issue #159).
+    2026-05-19: push_draw_rate now writes via tmp→replace (atomic) matching
+                lc0_tuning.save_cache idiom; fix sample stdev in lc0_draw_rate
+                (issue #159 B1).
 """
 from __future__ import annotations
 
@@ -166,7 +169,9 @@ def push_draw_rate(network: str, draw_rate: float, cache_path: Path) -> None:
         draw_rate_section: dict = payload.setdefault("draw_rate", {})
         draw_rate_section[network] = draw_rate
         cache_path.parent.mkdir(parents=True, exist_ok=True)
-        cache_path.write_text(json.dumps(payload))
+        tmp = cache_path.with_suffix(cache_path.suffix + ".tmp")
+        tmp.write_text(json.dumps(payload))
+        tmp.replace(cache_path)
         log.info(
             "lc0_tuning_sync: persisted draw_rate=%.4f for net=%s",
             draw_rate,

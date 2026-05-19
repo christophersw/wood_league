@@ -707,6 +707,11 @@ def _get_or_measure_draw_rate(
     Returns:
         Draw-rate reference in (0, 1).
     """
+    # Guard: an unresolved network would collide all unknowns under one key.
+    if not network_name:
+        log.warning("lc0: empty network_name; returning 0.5 draw-rate fallback")
+        return 0.5
+
     # 1. In-process cache hit
     if network_name in _draw_rate_cache:
         log.info("lc0: draw_rate_reference in-process cache hit for net=%s", network_name)
@@ -785,8 +790,10 @@ def analyze_pgn(
             re-reading ``engine.id``.
         draw_rate_reference_override: When ``engine`` is reused, the caller's
             measured draw-rate reference (from ``launch_engine``'s 3rd return
-            element). 0.0 signals "not yet measured" — the value is ignored
-            until Phase C wires the rescale consumer (issue #159).
+            element). 0.0 = not yet measured; consumers MUST treat <=0.0 as
+            'unset' and not feed it to the WDL rescale (Phase C). Safe because
+            ``measure_draw_rate`` clamps to [0.001, 0.999], so a real value is
+            never 0.0 (issue #159).
 
     Returns:
         Lc0GameResult with per-move WDL evaluations and game statistics.
