@@ -189,18 +189,20 @@ def _wdl_rescale(v: float, d: float, ratio: float, diff: float,
     v and d are returned rather than mutated. Returns (0.0, v, d) unchanged
     when the eps-guard rejects an extreme distribution (lc0 `return 0`).
     """
-    v = _f32(v)
-    d = _f32(d)
+    vf = _f32(v)
+    df = _f32(d)
+    rescale_diff = _f32(diff)
+    rescale_ratio = _f32(ratio)
     if invert:
-        diff = _f32(-_f32(diff))
-        ratio = _f32(_f32(1.0) / _f32(ratio))
-    w = _f32((_f32(1.0) + v - d) / _f32(2.0))
-    loss = _f32((_f32(1.0) - v - d) / _f32(2.0))
+        rescale_diff = _f32(-rescale_diff)
+        rescale_ratio = _f32(_f32(1.0) / rescale_ratio)
+    w = _f32((_f32(1.0) + vf - df) / _f32(2.0))
+    loss = _f32((_f32(1.0) - vf - df) / _f32(2.0))
     eps = _f32(0.0001)
     one = _f32(1.0)
-    if not (w > eps and d > eps and loss > eps
-            and w < (one - eps) and d < (one - eps) and loss < (one - eps)):
-        return 0.0, float(v), float(d)
+    if not (w > eps and df > eps and loss > eps
+            and w < (one - eps) and df < (one - eps) and loss < (one - eps)):
+        return 0.0, float(vf), float(df)
     a = _f32(fast_log(_f32(_f32(1.0) / loss - _f32(1.0))))
     b = _f32(fast_log(_f32(_f32(1.0) / w - _f32(1.0))))
     s = _f32(_f32(2.0) / _f32(a + b))
@@ -208,11 +210,11 @@ def _wdl_rescale(v: float, d: float, ratio: float, diff: float,
     if not invert:
         s = _f32(min(mrs, s))
     mu = _f32(_f32(a - b) / _f32(a + b))
-    s_new = _f32(s * _f32(ratio))
+    s_new = _f32(s * rescale_ratio)
     if invert:
         s, s_new = s_new, s
         s = _f32(min(mrs, s))
-    mu_new = _f32(mu + _f32(_f32(sign) * s * s * _f32(diff)))
+    mu_new = _f32(mu + _f32(_f32(sign) * s * s * rescale_diff))
     w_new = fast_logistic(_f32((_f32(-1.0) + mu_new) / s_new))
     loss_new = fast_logistic(_f32((_f32(-1.0) - mu_new) / s_new))
     v_new = _f32(w_new - loss_new)
@@ -231,8 +233,8 @@ def rescale_wdl(
     """Rescale a raw White-frame WDL triple to the players' Elo.
 
     Replicates lc0 with WDLCalibrationElo=White Elo, Contempt=White-Black,
-    ContemptMode=white_side_analysis, WDLEvalObjectivity=1.0,
-    ScoreType=WDL_mu (invert=True at the UCI-info call site).
+    ContemptMode=white_side_analysis, WDLEvalObjectivity=1.0.
+    Uses invert=False (forward rescale) to produce calibrated display WDL.
 
     Args:
         raw_win/raw_draw/raw_loss: raw network permille, White's frame.
@@ -255,9 +257,9 @@ def rescale_wdl(
     ratio, diff = simplified_wdl_rescale_params(
         contempt, draw_rate_reference, float(white_elo),
         contempt_max, contempt_attenuation)
-    # ContemptMode=white_side_analysis: sign is always +1 (White's perspective).
-    sign = 1.0
-    mu, v_new, d_new = _wdl_rescale(v, d, ratio, diff, sign, True, wdl_max_s)
+    # lc0 white_side_analysis call-site: sign = +1 white-to-move, -1 black-to-move
+    sign = 1.0 if white_to_move else -1.0
+    mu, v_new, d_new = _wdl_rescale(v, d, ratio, diff, sign, False, wdl_max_s)
     w_stm = (1.0 + v_new - d_new) / 2.0
     loss_stm = (1.0 - v_new - d_new) / 2.0
     if white_to_move:
