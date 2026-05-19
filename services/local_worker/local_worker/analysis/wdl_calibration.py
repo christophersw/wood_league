@@ -293,6 +293,61 @@ class DrawAwareClass:
     counter_bucket: Optional[str]
 
 
+_BASE_LADDER: tuple[tuple[float, str], ...] = (
+    (0.01, "Best"),
+    (0.02, "Excellent"),
+    (0.05, "Good"),
+    (0.10, "Inaccuracy"),
+    (0.20, "Mistake"),
+)
+
+_COUNTER_BUCKET: dict[str, str] = {
+    "Blunder": "blunders",
+    "Mistake": "mistakes",
+    "Inaccuracy": "inaccuracies",
+}
+
+
+def _base_severity(delta_mu: float) -> str:
+    """Map Δμ to the base severity tier (spec §C4 ladder).
+
+    Args:
+        delta_mu: mu_before - mu_after (>0 = winning chances lost).
+    Returns:
+        Severity label string (Best/Excellent/Good/Inaccuracy/Mistake/Blunder).
+    """
+    for threshold, label in _BASE_LADDER:
+        if delta_mu <= threshold:
+            return label
+    return "Blunder"
+
+
+def _draw_modifier(delta_mu: float, delta_d: float) -> Optional[str]:
+    """Draw-character overlay for (Δμ, Δd); None if no gate matches.
+
+    Priority order (first match wins, preserving original elif precedence):
+      1. Missed Win   — Δμ>0.10 and Δd>0.20
+      2. Losing Blunder — Δμ>0.20 and Δd<-0.05
+      3. Risky        — Δμ≤0.05 and Δd<-0.20
+      4. Simplification — Δμ≤0.05 and Δd>0.20
+
+    Args:
+        delta_mu: mu_before - mu_after (>0 = winning chances lost).
+        delta_d: D_after - D_before (>0 = more drawish).
+    Returns:
+        Modifier label string or None.
+    """
+    if delta_mu > 0.10 and delta_d > 0.20:
+        return "Missed Win"
+    if delta_mu > 0.20 and delta_d < -0.05:
+        return "Losing Blunder"
+    if delta_mu <= 0.05 and delta_d < -0.20:
+        return "Risky"
+    if delta_mu <= 0.05 and delta_d > 0.20:
+        return "Simplification"
+    return None
+
+
 def classify_draw_aware(delta_mu: float, delta_d: float) -> DrawAwareClass:
     """Canonical draw-aware classifier (spec §C4, verbatim gates).
 
@@ -303,31 +358,5 @@ def classify_draw_aware(delta_mu: float, delta_d: float) -> DrawAwareClass:
     Returns:
         DrawAwareClass(base, modifier, counter_bucket).
     """
-    if delta_mu <= 0.01:
-        base = "Best"
-    elif delta_mu <= 0.02:
-        base = "Excellent"
-    elif delta_mu <= 0.05:
-        base = "Good"
-    elif delta_mu <= 0.10:
-        base = "Inaccuracy"
-    elif delta_mu <= 0.20:
-        base = "Mistake"
-    else:
-        base = "Blunder"
-
-    modifier: Optional[str] = None
-    if delta_mu > 0.10 and delta_d > 0.20:
-        modifier = "Missed Win"
-    elif delta_mu > 0.20 and delta_d < -0.05:
-        modifier = "Losing Blunder"
-    elif delta_mu <= 0.05 and delta_d < -0.20:
-        modifier = "Risky"
-    elif delta_mu <= 0.05 and delta_d > 0.20:
-        modifier = "Simplification"
-
-    bucket = {
-        "Blunder": "blunders", "Mistake": "mistakes",
-        "Inaccuracy": "inaccuracies",
-    }.get(base)
-    return DrawAwareClass(base, modifier, bucket)
+    base = _base_severity(delta_mu)
+    return DrawAwareClass(base, _draw_modifier(delta_mu, delta_d), _COUNTER_BUCKET.get(base))
