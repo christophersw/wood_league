@@ -374,6 +374,12 @@ inline double WDLRescale(float& v, float& d, float wdl_rescale_ratio,
 }
 ```
 
+**Correction (impl):** the facade applies `WDLRescale` to the **raw NN
+eval** and therefore mirrors lc0's `SearchWorker::FetchSingleNodeResult`
+path (`src/search/classic/search.cc:2174-2186`) with **`invert=False`**,
+sign `= +1` white-to-move / `−1` black-to-move at depth 0 — not the
+UCI-display path (L307, `invert=True`). The A5 lc0 oracle is binding.
+
 `SimplifiedWDLRescaleParams` and `ConvertRegularToGamePairElo` are
 paraphrased in §C3 from `src/search/classic/params.cc`; the
 implementation plan must lift them **verbatim** from the pinned lc0

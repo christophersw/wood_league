@@ -233,8 +233,11 @@ def rescale_wdl(
     """Rescale a raw White-frame WDL triple to the players' Elo.
 
     Replicates lc0 with WDLCalibrationElo=White Elo, Contempt=White-Black,
-    ContemptMode=white_side_analysis, WDLEvalObjectivity=1.0.
-    Uses invert=False (forward rescale) to produce calibrated display WDL.
+    ContemptMode=white_side_analysis, WDLEvalObjectivity=1.0. Mirrors lc0's
+    raw-NN-eval calibration path (src/search/classic/search.cc:2174-2186,
+    SearchWorker::FetchSingleNodeResult): WDLRescale on the raw network
+    (q,d) with invert=False — NOT the UCI-display path at L307
+    (invert=True). A5's lc0 oracle is the binding correctness check.
 
     Args:
         raw_win/raw_draw/raw_loss: raw network permille, White's frame.
@@ -257,7 +260,8 @@ def rescale_wdl(
     ratio, diff = simplified_wdl_rescale_params(
         contempt, draw_rate_reference, float(white_elo),
         contempt_max, contempt_attenuation)
-    # lc0 white_side_analysis call-site: sign = +1 white-to-move, -1 black-to-move
+    # lc0 search.cc:2178-2180 raw-eval path: at depth 0,
+    # sign = root_stm = (white_side_analysis ⇒ +1 white-to-move, -1 black)
     sign = 1.0 if white_to_move else -1.0
     mu, v_new, d_new = _wdl_rescale(v, d, ratio, diff, sign, False, wdl_max_s)
     w_stm = (1.0 + v_new - d_new) / 2.0

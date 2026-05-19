@@ -142,10 +142,10 @@ inline double WDLRescale(float& v, float& d, float wdl_rescale_ratio,
 }
 ```
 
-Call-site facts (`search.cc` ~301-312), for `ScoreType=WDL_mu`, `ContemptMode=white_side_analysis`, `WDLEvalObjectivity=1.0`:
-- `invert = true` (always, at the UCI-info call site).
-- `sign = ((contempt_mode == BLACK) == is_black_to_move) ? 1.0 : -1.0`. For `white_side_analysis`, `contempt_mode == WHITE`, so `(contempt_mode==BLACK)` is `false`; thus `sign = (false == is_black_to_move) ? 1.0 : -1.0` → **white to move → +1.0, black to move → -1.0**.
-- `wdl_rescale_diff` passed = `WDLRescaleDiff * WDLEvalObjectivity` = `diff * 1.0`.
+Call-site facts — **CORRECTED**: our facade applies the rescale to the **raw NN eval**, so it mirrors lc0's raw-eval path `SearchWorker::FetchSingleNodeResult` (`search.cc:2174-2186`), NOT the UCI-display path at L307. At that path:
+- `invert = false` (the raw-NN→calibrated forward transform). The L307 UCI-display path uses `invert=true`; do not use it as the reference.
+- `sign = (root_stm ^ (depth & 1)) ? 1.0 : -1.0`, `root_stm = (contempt_mode==BLACK) == root_is_black_to_move`. We evaluate each position as its own depth-0 root, so `depth&1 = 0` and for `white_side_analysis` (`contempt_mode==WHITE`): **white to move → +1.0, black to move → -1.0**.
+- `wdl_rescale_diff` passed = `WDLRescaleDiff` (raw; the `* WDLEvalObjectivity` factor is only on the L307/L500 display paths, and WDLEvalObjectivity=1.0 anyway).
 - `max_reasonable_s = WDLMaxS` default **`1.4`**.
 - `WDLRescale` is fed `v = wl` (white-relative? no — `edge.GetWL()` is side-to-move-relative; `wl` and `d` are in the side-to-move frame at this call site). Our port mirrors this: feed `v,d` in **side-to-move frame**, apply `sign` per above, then convert the rescaled side-to-move `(w,d,l)` back to White's frame for storage.
 
@@ -587,8 +587,9 @@ def rescale_wdl(
         contempt_max, contempt_attenuation)
     # sign: white_side_analysis -> +1 white to move, -1 black to move.
     sign = 1.0 if white_to_move else -1.0
+    # invert=False — raw-NN→calibrated (lc0 search.cc:2180), NOT L307
     mu, v_new, d_new = _wdl_rescale(
-        v, d, ratio, diff, sign, True, wdl_max_s)
+        v, d, ratio, diff, sign, False, wdl_max_s)
     w_stm = (1.0 + v_new - d_new) / 2.0
     l_stm = (1.0 - v_new - d_new) / 2.0
     # side-to-move frame -> White's frame.
