@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import struct
 from dataclasses import dataclass
+from typing import Optional
 
 import numpy as np
 
@@ -274,3 +275,59 @@ def rescale_wdl(
     pd = max(0, min(1000, round(wf_d * 1000)))
     pl = max(0, 1000 - pw - pd)
     return RescaledWDL((pw, pd, pl), float(mu))
+
+
+@dataclass(frozen=True)
+class DrawAwareClass:
+    """Two-axis classification of a move.
+
+    Attributes:
+        base: severity tier — Best/Excellent/Good/Inaccuracy/Mistake/Blunder.
+        modifier: draw-character overlay or None
+            (Missed Win/Losing Blunder/Risky/Simplification).
+        counter_bucket: which Lc0GameAnalysis per-side counter this move
+            increments — 'blunders'/'mistakes'/'inaccuracies'/None.
+    """
+    base: str
+    modifier: Optional[str]
+    counter_bucket: Optional[str]
+
+
+def classify_draw_aware(delta_mu: float, delta_d: float) -> DrawAwareClass:
+    """Canonical draw-aware classifier (spec §C4, verbatim gates).
+
+    Args:
+        delta_mu: mu_before - mu_after on the rescaled 0..1 scale
+            (>0 = winning chances lost).
+        delta_d: D_after - D_before (>0 = more drawish).
+    Returns:
+        DrawAwareClass(base, modifier, counter_bucket).
+    """
+    if delta_mu <= 0.01:
+        base = "Best"
+    elif delta_mu <= 0.02:
+        base = "Excellent"
+    elif delta_mu <= 0.05:
+        base = "Good"
+    elif delta_mu <= 0.10:
+        base = "Inaccuracy"
+    elif delta_mu <= 0.20:
+        base = "Mistake"
+    else:
+        base = "Blunder"
+
+    modifier: Optional[str] = None
+    if delta_mu > 0.10 and delta_d > 0.20:
+        modifier = "Missed Win"
+    elif delta_mu > 0.20 and delta_d < -0.05:
+        modifier = "Losing Blunder"
+    elif delta_mu <= 0.05 and delta_d < -0.20:
+        modifier = "Risky"
+    elif delta_mu <= 0.05 and delta_d > 0.20:
+        modifier = "Simplification"
+
+    bucket = {
+        "Blunder": "blunders", "Mistake": "mistakes",
+        "Inaccuracy": "inaccuracies",
+    }.get(base)
+    return DrawAwareClass(base, modifier, bucket)
