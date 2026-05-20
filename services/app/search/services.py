@@ -8,6 +8,7 @@ Description:
 Changelog:
     2026-05-08: Added file header to meet documentation standards
     2026-05-08: Suppressed C901 on _sanitize_sql — inherent security validation with each branch checking a distinct SQL injection vector
+    2026-05-20: Added club vocab, self-reference, and name-mapping prompt sections; current_user_username kwarg on generate_search_plan (#162)
 """
 
 from __future__ import annotations
@@ -176,6 +177,28 @@ COMMON OPENING NAMES (lichess_opening column):
 Scandinavian Defense, Pirc Defense, Philidor Defense, Caro-Kann Defense,
 Bishop's Opening, Scotch Game, Sicilian Defense, Italian Game, French Defense,
 Ruy Lopez, Petrov's Defense, English Opening, King's Indian Attack
+
+CLUB VOCABULARY:
+- "club games" — games where BOTH games.white_username AND games.black_username
+  appear in the KNOWN CLUB PLAYERS list (provided in the next system block).
+- "people in the club", "part of the club", "club member", "club players" — players
+  whose username appears in that list.
+
+SELF-REFERENCE:
+- "I", "me", "my", "my games", "mine", "myself" — when the user message contains
+  a `current_user_username: <name>` line, treat that <name> as the player.
+  Generate filters against games.white_username, games.black_username, or
+  games.winner_username accordingly.
+- If the user message does NOT contain `current_user_username:` and the request
+  uses I/me/my/mine, return reasoning explaining that the request needs a
+  signed-in user, and an empty result query such as
+  `SELECT id, slug FROM games WHERE 1=0`.
+
+NAME MAPPING:
+- Player names (first names, display names, real names, possessive forms) MUST
+  resolve to a username in the KNOWN CLUB PLAYERS list. If a mentioned name
+  does NOT appear there, return reasoning that says so and an empty result
+  query (`SELECT id, slug FROM games WHERE 1=0`).
 """.strip()
 
 
@@ -277,14 +300,41 @@ def _sanitize_sql(candidate_sql: str) -> str:  # noqa: C901 — inherent: securi
     return sql
 
 
-def generate_search_plan(user_query: str) -> SearchPlan:
-    """Generate SQL search plan using Claude AI from natural language query."""
+def generate_search_plan(
+    user_query: str,
+    *,
+    current_user_username: str | None = None,
+) -> SearchPlan:
+    """Generate SQL search plan using Claude AI from natural language query.
+
+    Parameters:
+        user_query: Natural-language search request from the user.
+        current_user_username: Authenticated user's username, or None for
+            anonymous users. When provided, appended to the user message so
+            the AI can resolve self-referential terms like "my games".
+
+    Returns:
+        SearchPlan dataclass with a validated sql_query and reasoning string.
+
+    Raises:
+        ValueError: If user_query is blank.
+        SearchPlanError: If the API key is missing, the API call fails, or
+            the returned SQL fails validation.
+    """
     query = user_query.strip()
     if not query:
         raise ValueError("Please enter a search query.")
     api_key = getattr(settings, "ANTHROPIC_API_KEY", "").strip()
     if not api_key:
         raise SearchPlanError("ANTHROPIC_API_KEY is not configured.")
+
+    suffix = ""
+    if current_user_username:
+        suffix = f"\n\ncurrent_user_username: {current_user_username}"
+    user_text = (
+        f"User request:\n{query}{suffix}\n\n"
+        "Return only JSON with sql_query and reasoning."
+    )
 
     payload = {
         "model": DEFAULT_ANTHROPIC_MODEL,
@@ -296,7 +346,7 @@ def generate_search_plan(user_query: str) -> SearchPlan:
             {"type": "text", "text": _player_directory_context(), "cache_control": {"type": "ephemeral"}},
         ],
         "messages": [
-            {"role": "user", "content": [{"type": "text", "text": f"User request:\n{query}\n\nReturn only JSON with sql_query and reasoning."}]},
+            {"role": "user", "content": [{"type": "text", "text": user_text}]},
         ],
     }
     try:
@@ -314,8 +364,10 @@ def generate_search_plan(user_query: str) -> SearchPlan:
     except requests.RequestException as exc:
         raise SearchPlanError(f"Network error calling Anthropic: {exc}") from exc
 
-    if not response.ok:
-        raise SearchPlanError(f"Anthropic API error {response.status_code}: {response.text[:400]}")
+    try:
+        response.raise_for_status()
+    except requests.HTTPError as exc:
+        raise SearchPlanError(f"Anthropic API error {response.status_code}: {response.text[:400]}") from exc
 
     raw_text = _extract_text(response.json())
     if not raw_text:
