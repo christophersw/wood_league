@@ -6,6 +6,7 @@ Description:
 
 Changelog:
     2026-05-11: Initial creation (issue #24).
+    2026-05-20: Add test_game_has_opening_fk for nullable FK to OpeningBook (#162).
 """
 from datetime import datetime, timezone
 
@@ -64,3 +65,11 @@ class GameMoveTimeTests(TestCase):
         GameMoveTime.objects.create(game=self.game, ply=1, time_spent_ms=100, clock_after_ms=None)
         self.game.delete()
         assert GameMoveTime.objects.count() == 0
+
+
+def test_game_has_opening_fk(db):
+    """Game.opening is a nullable FK to openings.OpeningBook."""
+    from games.models import Game
+    field = Game._meta.get_field("opening")
+    assert field.null is True
+    assert field.related_model.__name__ == "OpeningBook"
