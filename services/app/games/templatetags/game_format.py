@@ -99,15 +99,19 @@ def accuracy_band_class(accuracy) -> str:
 
 
 def _avg(*vals):
-    """Mean of the non-None inputs, or ``None`` if all are ``None``.
+    """Mean of the non-None, non-empty numeric inputs, or ``None`` if all absent.
+
+    Treats ``None`` and empty string (Django template resolution of a missing
+    attribute on a ``None`` object) identically — both are excluded.
 
     Args:
-        *vals: Numeric values or ``None``.
+        *vals: Numeric values, ``None``, or empty string ``""``.
 
     Returns:
-        Float mean of non-None values, or ``None`` when all inputs are ``None``.
+        Float mean of the valid numeric values, or ``None`` when all inputs
+        are absent/empty.
     """
-    present = [v for v in vals if v is not None]
+    present = [v for v in vals if v is not None and v != ""]
     return sum(present) / len(present) if present else None
 
 
@@ -150,11 +154,15 @@ def club_accuracy_chips(
         display = club_lower.get(username.lower())
         if not display:
             continue
+        # Normalise empty string (Django template's sentinel for a missing
+        # attribute on a None object) to None so numeric comparisons are safe.
+        sf_val = sf if (sf is not None and sf != "") else None
+        lc0_val = lc0 if (lc0 is not None and lc0 != "") else None
         chips.append({
             "display_name": display,
-            "sf": sf,
-            "lc0": lc0,
-            "band_class": accuracy_band_class(_avg(sf, lc0)),
+            "sf": sf_val,
+            "lc0": lc0_val,
+            "band_class": accuracy_band_class(_avg(sf_val, lc0_val)),
         })
     return chips
 
