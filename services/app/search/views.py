@@ -116,21 +116,6 @@ def keyword_search_partial(request):
     })
 
 
-def board_preview_partial(request, game_id):
-    """Render animated board preview for a single game (HTMX partial)."""
-    try:
-        game = Game.objects.get(id=game_id)
-    except Game.DoesNotExist:
-        return HttpResponse("<p class='font-mono text-xs text-slate'>Game not found.</p>")
-
-    pgn_text = (game.pgn or "").strip()
-    board_html = _board_animation_html(pgn_text)
-    return render(request, "search/partials/board_preview.html", {
-        "game": game,
-        "board_html": board_html,
-    })
-
-
 def _normalise(rows: list[dict]) -> list[dict]:
     """Ensure each row has slug, game_id, and played_at string."""
     out = []

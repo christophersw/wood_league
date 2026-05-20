@@ -1,0 +1,4 @@
+
+--- vexp daemon start at 2026-05-17T10:41:12.291Z ---
+[daemon] Adopting existing daemon (PID=26091)
+[mcp] singleton already running (pidfile match)
