@@ -10,6 +10,7 @@ Changelog:
 """
 from __future__ import annotations
 
+from django.contrib import messages
 from django.db.models import OuterRef, Subquery
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -144,12 +145,46 @@ def rule_toggle(request: HttpRequest, pk: int) -> HttpResponse:
     return redirect("analysis:scheduling")
 
 
+def _parse_max_jobs(raw: str | None) -> int | None:
+    """Parse the ``max_jobs`` POST value.
+
+    Args:
+        raw: form value as submitted (``""`` when blank).
+
+    Returns:
+        int when ``raw`` is a positive integer; ``None`` for blank
+        input or any unparseable value (the schedule then falls back
+        to ``settings.VAST_MAX_JOBS`` via ``effective_max_jobs``).
+    """
+    if not raw:
+        return None
+    try:
+        n = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return n if n > 0 else None
+
+
 @_admin_login_required
 @require_POST
 def run_once(request: HttpRequest) -> HttpResponse:
-    """Create a one-off pending schedule (next-tick launch)."""
-    AnalysisSchedule.objects.create(
-        status=AnalysisSchedule.STATUS_PENDING)
+    """Create a one-off pending schedule (next-tick launch).
+
+    Accepts an optional ``max_jobs`` POST field; a positive integer is
+    stored on the schedule, anything else falls back to the deploy
+    default. Flashes a success message so the operator sees that the
+    click was accepted (the launch itself happens on the next
+    reconcile tick, not synchronously).
+    """
+    max_jobs = _parse_max_jobs(request.POST.get("max_jobs"))
+    sched = AnalysisSchedule.objects.create(
+        status=AnalysisSchedule.STATUS_PENDING, max_jobs=max_jobs)
+    cap = f"max_jobs={max_jobs}" if max_jobs else "default max_jobs"
+    messages.success(
+        request,
+        f"Run #{sched.pk} queued ({cap}). It will launch on the next "
+        f"reconcile tick — watch the Future planned runs table.",
+    )
     return redirect("analysis:scheduling")
 
 
@@ -158,8 +193,16 @@ def run_once(request: HttpRequest) -> HttpResponse:
 def rerun(request: HttpRequest, pk: int) -> HttpResponse:
     """Create a fresh one-off copying the source's max_jobs."""
     src = get_object_or_404(AnalysisSchedule, pk=pk)
-    AnalysisSchedule.objects.create(
+    sched = AnalysisSchedule.objects.create(
         status=AnalysisSchedule.STATUS_PENDING, max_jobs=src.max_jobs)
+    cap = (
+        f"max_jobs={src.max_jobs}" if src.max_jobs else "default max_jobs"
+    )
+    messages.success(
+        request,
+        f"Re-run #{sched.pk} queued from #{src.pk} ({cap}). It will "
+        f"launch on the next reconcile tick.",
+    )
     return redirect("analysis:scheduling")
 
 
