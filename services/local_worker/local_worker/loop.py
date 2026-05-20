@@ -25,17 +25,22 @@ import socket
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone as _dt_timezone
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 import chess.engine
 
-from local_worker.worker_client import WorkerClient, WorkerClientError
+from local_worker.worker_client import (
+    NeedsCalibrationError,
+    WorkerClient,
+    WorkerClientError,
+)
 from local_worker.analysis.stockfish import analyze_pgn as sf_analyze, build_stockfish_payload
 from local_worker.analysis.lc0 import (
     analyze_pgn as lc0_analyze,
     build_lc0_payload,
     launch_engine as lc0_launch_engine,
 )
+from local_worker.analysis.lc0_draw_rate import measure_draw_rate
 from local_worker.analysis.eval_cache import EvalCache
 from local_worker._shared import data_dir
 from local_worker.config import Settings
@@ -49,6 +54,53 @@ _HEARTBEAT_INTERVAL = 30.0
 # wrongly (e.g. the #141 nodes=None→depth=20 bug). Below this we fail
 # the job loudly rather than write statistically meaningless analysis.
 _MIN_LC0_NODES = 1000
+
+
+def handle_needs_calibration(
+    *,
+    engine: Any,
+    error: NeedsCalibrationError,
+    client: Any,
+    worker_id: str,
+) -> None:
+    """Run the lc0 draw-rate sampler on demand and POST the result (#161 Phase B).
+
+    Invoked by the run loop when an lc0 checkout returns 409 NEEDS_CALIBRATION.
+    Drives ``measure_draw_rate`` with the exact settings the app supplied in
+    ``error.sampler_settings``, then sends the measurement via
+    ``client.submit_network_calibration``. The next checkout retry succeeds
+    once the calibration row lands (idempotent: racing workers see
+    ``created=False`` and the loop still proceeds).
+
+    Args:
+        engine: A live ``chess.engine.SimpleEngine`` (or compatible) ready to
+            ``analyse`` — typically the warm lc0 engine used for production
+            jobs.
+        error: The ``NeedsCalibrationError`` raised by ``client.checkout``.
+        client: A ``WorkerClient`` (or compatible stub) used to submit the
+            measurement.
+        worker_id: This worker's identifier (recorded on the row).
+
+    Returns:
+        None. The caller retries checkout after this returns.
+    """
+    settings = error.sampler_settings
+    result = measure_draw_rate(
+        engine,
+        network=error.network_name,
+        sem_target=float(settings["sem_target"]),
+        max_samples=int(settings["max_positions"]),
+        nodes=int(settings["nodes"]),
+    )
+    client.submit_network_calibration(
+        network_name=error.network_name,
+        settings_hash=error.settings_hash,
+        draw_rate_reference=result.draw_rate_reference,
+        sample_size=result.n_samples,
+        sem=result.stderr,
+        sampler_version=error.sampler_version,
+        worker_id=worker_id,
+    )
 
 
 def build_heartbeat_status(stats: "WorkerStats") -> str:
@@ -554,7 +606,28 @@ def run_batch(
                         batch_size=1,
                         game_id=game_id,
                         dispatch_mode="pull",
+                        network_name=warm_network_name if engine == "lc0" else "",
                     )
+                except NeedsCalibrationError as exc:
+                    if warm_engine is None:
+                        log.error(
+                            "lc0 NEEDS_CALIBRATION for %s but no warm engine available",
+                            exc.network_name,
+                        )
+                        break
+                    log.info(
+                        "lc0 NEEDS_CALIBRATION: running sampler for %s @ %s",
+                        exc.network_name, exc.settings_hash[:8],
+                    )
+                    try:
+                        handle_needs_calibration(
+                            engine=warm_engine, error=exc,
+                            client=client, worker_id=worker_id,
+                        )
+                    except Exception:  # noqa: BLE001
+                        log.exception("calibration sampler/submit failed")
+                        break
+                    continue  # retry checkout immediately
                 except WorkerClientError as exc:
                     log.error("Checkout failed for %s: %s", engine, exc)
                     break

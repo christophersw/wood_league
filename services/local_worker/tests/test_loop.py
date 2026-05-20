@@ -235,7 +235,7 @@ class _FakeCheckoutClient:
         self.completed: list[dict[str, Any]] = []
         self.failed: list[dict[str, Any]] = []
 
-    def checkout(self, *, engine: str, worker_id: str, batch_size: int, game_id: Any, dispatch_mode: str) -> list[Any]:
+    def checkout(self, *, engine: str, worker_id: str, batch_size: int, game_id: Any, dispatch_mode: str, network_name: str = "") -> list[Any]:
         """Return up to batch_size jobs from the queue, recording the requested size.
 
         Args:

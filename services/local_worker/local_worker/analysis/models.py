@@ -1,16 +1,19 @@
 """
-Title: models.py — Analysis result dataclasses
+Title: models.py — Analysis result dataclasses (raw-only after #161 Phase H)
 Description:
     Dataclasses representing per-move and per-game analysis results for both
-    Stockfish and Lc0 engines.
+    Stockfish and Lc0 engines. After issue #161 Phase H, every derived /
+    classified / calibrated / aggregated field has been moved app-side; the
+    worker emits raw engine observables only.
 
 Changelog:
-    2026-05-09: Initial creation
-    2026-05-19: Lc0MoveResult gains rescaled WDL fields (wdl_*_adj, wdl_mu,
-                delta_mu, delta_d), renames classification to base_severity,
-                and adds draw_character (issue #159 Phase C1).
-                Lc0GameResult gains draw_rate_reference, wdl_calibration_elo,
-                contempt (issue #159 Phase C1).
+    2026-05-09: Initial creation.
+    2026-05-19 (#159): Lc0MoveResult gained rescaled WDL + severity fields;
+        Lc0GameResult gained draw_rate_reference / wdl_calibration_elo /
+        contempt for the #159 calibration architecture.
+    2026-05-20 (#161/H): Strip every derived field. Workers now produce only
+        the raw payload contract; ``analysis.derivation`` (app-side) computes
+        accuracy, CPL, classifications, counters, rescale, severity.
 """
 from __future__ import annotations
 
@@ -20,24 +23,22 @@ from typing import Optional
 
 @dataclass
 class StockfishMoveResult:
-    """Per-move result from Stockfish analysis.
+    """Raw per-move Stockfish observables (#161 Phase H).
 
-    The arrow_* and pv_san_* fields carry MultiPV candidate information for the
-    top up-to-three engine lines before the played move. Empty arrows are ""
-    and missing scores / PV strings are None — mirroring Lc0MoveResult so that
-    StockfishCompleteSerializer can accept the same shape via .get() defaults.
+    cp_eval is white-frame post-move cp; mate_in is the signed mate distance
+    (positive = White mates) or None when no mate score. arrow_uci_*/_score_*
+    carry the top-3 MultiPV candidates' UCIs + mover-frame Win% scores from
+    the position *before* the played move.
     """
 
     ply: int
     san: str
     fen: str
     cp_eval: int
-    cpl: int
-    best_move: str
-    classification: str
-    arrow_uci: str = ""
-    arrow_uci_2: str = ""
-    arrow_uci_3: str = ""
+    mate_in: Optional[int] = None
+    arrow_uci_1: str = ""
+    arrow_uci_2: Optional[str] = None
+    arrow_uci_3: Optional[str] = None
     arrow_score_1: Optional[float] = None
     arrow_score_2: Optional[float] = None
     arrow_score_3: Optional[float] = None
@@ -48,76 +49,60 @@ class StockfishMoveResult:
 
 @dataclass
 class StockfishGameResult:
-    """Aggregated Stockfish analysis result for a full game."""
+    """Raw game-level Stockfish observables (#161 Phase H)."""
 
     engine_depth: int
-    white_accuracy: float
-    black_accuracy: float
-    white_acpl: float
-    black_acpl: float
-    white_blunders: int
-    white_mistakes: int
-    white_inaccuracies: int
-    black_blunders: int
-    black_mistakes: int
-    black_inaccuracies: int
+    engine_name: str = ""
     moves: list[StockfishMoveResult] = field(default_factory=list)
 
 
 @dataclass
 class Lc0MoveResult:
-    """Per-move result from Lc0 analysis (raw + Elo-rescaled)."""
+    """Raw per-move Lc0 observables (#161 Phase H).
+
+    All WDL triples are in *mover frame* + milli-units (0-1000). Per-candidate
+    triples (wdl_*_1/2/3) come from the position-before-move MultiPV
+    evaluation; they're nullable per-line because MultiPV may produce fewer
+    than 3 lines (and Phase H optionally leaves them None until the lc0
+    analyzer wires MultiPV WDL extraction — the serializer accepts None).
+    """
 
     ply: int
     san: str
     fen: str
-    wdl_win: int          # RAW network permille, White frame (cache-shareable)
+    # Played-move triple (mover frame).
+    wdl_win: int
     wdl_draw: int
     wdl_loss: int
-    wdl_win_adj: int      # rescaled permille, White frame
-    wdl_draw_adj: int
-    wdl_loss_adj: int
-    # Expected-score fraction in [0,1] computed as (W + 0.5·D) / total from the
-    # RESCALED White-frame triple. NOT lc0's internal logit-space mu — those
-    # are different quantities. Do not substitute RescaledWDL.mu here.
-    wdl_mu: Optional[float]
-    delta_mu: Optional[float]
-    delta_d: Optional[float]
-    cp_equiv: Optional[int]   # objective, from RAW Q (unchanged)
-    best_move: str
-    arrow_uci: str
-    arrow_uci_2: str
-    arrow_uci_3: str
-    arrow_score_1: Optional[float]
-    arrow_score_2: Optional[float]
-    arrow_score_3: Optional[float]
-    move_win_delta: float
-    base_severity: str
-    draw_character: Optional[str]
-    pv_san_1: Optional[str]
-    pv_san_2: Optional[str]
-    pv_san_3: Optional[str]
+    # Top-3 candidate UCIs.
+    arrow_uci_1: str = ""
+    arrow_uci_2: Optional[str] = None
+    arrow_uci_3: Optional[str] = None
+    # Per-candidate raw WDL triples.
+    wdl_win_1: Optional[int] = None
+    wdl_draw_1: Optional[int] = None
+    wdl_loss_1: Optional[int] = None
+    wdl_win_2: Optional[int] = None
+    wdl_draw_2: Optional[int] = None
+    wdl_loss_2: Optional[int] = None
+    wdl_win_3: Optional[int] = None
+    wdl_draw_3: Optional[int] = None
+    wdl_loss_3: Optional[int] = None
+    pv_san_1: Optional[str] = None
+    pv_san_2: Optional[str] = None
+    pv_san_3: Optional[str] = None
 
 
 @dataclass
 class Lc0GameResult:
-    """Aggregated Lc0 analysis result for a full game."""
+    """Raw game-level Lc0 observables (#161 Phase H).
+
+    ``draw_rate_reference`` is echoed from the calibration-row value the app
+    attached to the job at checkout time (Phase B). The worker treats it as
+    opaque payload metadata — derivation runs app-side.
+    """
 
     engine_nodes: int
     network_name: str
     draw_rate_reference: float
-    wdl_calibration_elo: int
-    contempt: int
-    white_win_prob: float
-    white_draw_prob: float
-    white_loss_prob: float
-    black_win_prob: float
-    black_draw_prob: float
-    black_loss_prob: float
-    white_blunders: int
-    white_mistakes: int
-    white_inaccuracies: int
-    black_blunders: int
-    black_mistakes: int
-    black_inaccuracies: int
     moves: list[Lc0MoveResult] = field(default_factory=list)

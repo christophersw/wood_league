@@ -90,13 +90,12 @@ def test_hit_path_calls_analyse_once_when_move_in_top3_pv():
     engine = _FakeEngine(multipv_result, after_result)
     limit = chess.engine.Limit(nodes=1000)
 
-    result, mover, _wdl_white, _bucket = _analyze_one_move(board, move, 1, engine, limit)
+    result = _analyze_one_move(board, move, 1, engine, limit)
 
     assert len(engine.calls) == 1
     assert engine.calls[0]["multipv"] == 3
     assert result.ply == 1
     assert result.san == "e4"
-    assert mover == chess.WHITE
 
 
 def test_hit_path_score_matches_matching_pv_entry():
@@ -113,10 +112,10 @@ def test_hit_path_score_matches_matching_pv_entry():
     engine = _FakeEngine(multipv_result, poisoned_after)
     limit = chess.engine.Limit(nodes=1000)
 
-    result, _mover, wdl_white, _bucket = _analyze_one_move(board, move, 1, engine, limit)
+    result = _analyze_one_move(board, move, 1, engine, limit)
 
     assert len(engine.calls) == 1
-    assert wdl_white == (500, 400, 100)
+    # #161 H: result carries mover-frame played WDL (raw).
     assert result.wdl_win == 500 and result.wdl_loss == 100
 
 
@@ -134,10 +133,9 @@ def test_miss_path_falls_back_to_second_analyse_when_move_not_in_pv():
     engine = _FakeEngine(multipv_result, after_result)
     limit = chess.engine.Limit(nodes=1000)
 
-    result, _mover, wdl_white, _bucket = _analyze_one_move(board, move, 1, engine, limit)
+    result = _analyze_one_move(board, move, 1, engine, limit)
 
     assert len(engine.calls) == 2
     assert engine.calls[0]["multipv"] == 3
     assert engine.calls[1]["multipv"] is None
-    assert wdl_white == (450, 400, 150)
     assert result.wdl_win == 450

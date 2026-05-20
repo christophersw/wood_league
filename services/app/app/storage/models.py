@@ -160,13 +160,20 @@ class MoveAnalysis(Base):
     ply: Mapped[int] = mapped_column(Integer)
     san: Mapped[str] = mapped_column(String(32))
     fen: Mapped[str] = mapped_column(Text)
+    # Raw white-frame post-move cp eval.
     cp_eval: Mapped[float] = mapped_column(Float)
+    # Raw signed mate distance (positive = White mates), nullable (#161 F).
+    mate_in: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # Derived mover-frame centipawn loss.
     cpl: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    # Derived mover-frame Win% drop (#161 F).
+    move_win_delta: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     best_move: Mapped[str] = mapped_column(String(32), default="")
-    arrow_uci: Mapped[str] = mapped_column(String(8), default="")
+    # Top-3 candidates — ``arrow_uci_1`` renamed from ``arrow_uci`` (#161 F).
+    arrow_uci_1: Mapped[str] = mapped_column(String(8), default="")
     arrow_uci_2: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
     arrow_uci_3: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    # Candidate eval scores (mover perspective, centipawns) for arrow tiers 1-3.
+    # Raw mover-frame Win% per candidate (kept verbatim from engine output).
     arrow_score_1: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     arrow_score_2: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     arrow_score_3: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
@@ -274,19 +281,25 @@ class Lc0MoveAnalysis(Base):
     ply: Mapped[int] = mapped_column(Integer)
     san: Mapped[str] = mapped_column(String(32))
     fen: Mapped[str] = mapped_column(Text)
+    # Raw played-move WDL triple (mover frame, milli-units).
     wdl_win: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     wdl_draw: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     wdl_loss: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    cp_equiv: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    # Raw per-candidate triples (top 3 lines); fully nullable per-line (#161 F).
+    wdl_win_1: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    wdl_draw_1: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    wdl_loss_1: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    wdl_win_2: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    wdl_draw_2: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    wdl_loss_2: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    wdl_win_3: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    wdl_draw_3: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    wdl_loss_3: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     best_move: Mapped[str] = mapped_column(String(32), default="")
-    arrow_uci: Mapped[str] = mapped_column(String(8), default="")
+    # Top-3 candidate UCIs — ``arrow_uci_1`` renamed from ``arrow_uci`` (#161 F).
+    arrow_uci_1: Mapped[str] = mapped_column(String(8), default="")
     arrow_uci_2: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
     arrow_uci_3: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    # Candidate eval scores (mover perspective, centipawns equivalent) for arrow tiers 1-3.
-    arrow_score_1: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    arrow_score_2: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    arrow_score_3: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    move_win_delta: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     # WDL calibration fields (#159) — replace old classification column
     wdl_win_adj: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     wdl_draw_adj: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)

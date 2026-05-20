@@ -1,0 +1,200 @@
+{
+  "_band_ladder_version": 1,
+  "_thresholds_ref": "derivation.thresholds",
+  "cases": [
+    {
+      "name": "white_loses_40",
+      "kind": "cpl",
+      "in": {
+        "before_white": 120,
+        "after_white": 80,
+        "mover_is_white": true
+      },
+      "out": 40
+    },
+    {
+      "name": "white_gains_no_credit",
+      "kind": "cpl",
+      "in": {
+        "before_white": 80,
+        "after_white": 120,
+        "mover_is_white": true
+      },
+      "out": 0
+    },
+    {
+      "name": "black_loses_80",
+      "kind": "cpl",
+      "in": {
+        "before_white": -50,
+        "after_white": 30,
+        "mover_is_white": false
+      },
+      "out": 80
+    },
+    {
+      "name": "black_clamped",
+      "kind": "cpl",
+      "in": {
+        "before_white": -100,
+        "after_white": -200,
+        "mover_is_white": false
+      },
+      "out": 0
+    },
+    {
+      "name": "best_no_gap",
+      "kind": "classify",
+      "in": {
+        "cpl_mover": 5,
+        "second_best_gap": null,
+        "mover_win_pct": 60.0,
+        "is_capture_or_sacrifice": false
+      },
+      "out": "Best"
+    },
+    {
+      "name": "best_small_gap",
+      "kind": "classify",
+      "in": {
+        "cpl_mover": 5,
+        "second_best_gap": 40.0,
+        "mover_win_pct": 60.0,
+        "is_capture_or_sacrifice": false
+      },
+      "out": "Best"
+    },
+    {
+      "name": "great_gap_80",
+      "kind": "classify",
+      "in": {
+        "cpl_mover": 5,
+        "second_best_gap": 80.0,
+        "mover_win_pct": 60.0,
+        "is_capture_or_sacrifice": false
+      },
+      "out": "Great"
+    },
+    {
+      "name": "great_below_brilliant_no_see",
+      "kind": "classify",
+      "in": {
+        "cpl_mover": 5,
+        "second_best_gap": 200.0,
+        "mover_win_pct": 60.0,
+        "is_capture_or_sacrifice": false
+      },
+      "out": "Great"
+    },
+    {
+      "name": "brilliant_see_gap_ceiling",
+      "kind": "classify",
+      "in": {
+        "cpl_mover": 5,
+        "second_best_gap": 200.0,
+        "mover_win_pct": 60.0,
+        "is_capture_or_sacrifice": true
+      },
+      "out": "Brilliant"
+    },
+    {
+      "name": "great_high_winpct_no_brilliant",
+      "kind": "classify",
+      "in": {
+        "cpl_mover": 5,
+        "second_best_gap": 200.0,
+        "mover_win_pct": 75.0,
+        "is_capture_or_sacrifice": true
+      },
+      "out": "Great"
+    },
+    {
+      "name": "excellent",
+      "kind": "classify",
+      "in": {
+        "cpl_mover": 30,
+        "second_best_gap": null,
+        "mover_win_pct": 50.0,
+        "is_capture_or_sacrifice": false
+      },
+      "out": "Excellent"
+    },
+    {
+      "name": "excellent_boundary_49",
+      "kind": "classify",
+      "in": {
+        "cpl_mover": 49,
+        "second_best_gap": null,
+        "mover_win_pct": 50.0,
+        "is_capture_or_sacrifice": false
+      },
+      "out": "Excellent"
+    },
+    {
+      "name": "inaccuracy_50",
+      "kind": "classify",
+      "in": {
+        "cpl_mover": 50,
+        "second_best_gap": null,
+        "mover_win_pct": 50.0,
+        "is_capture_or_sacrifice": false
+      },
+      "out": "Inaccuracy"
+    },
+    {
+      "name": "inaccuracy_99",
+      "kind": "classify",
+      "in": {
+        "cpl_mover": 99,
+        "second_best_gap": null,
+        "mover_win_pct": 50.0,
+        "is_capture_or_sacrifice": false
+      },
+      "out": "Inaccuracy"
+    },
+    {
+      "name": "mistake_100",
+      "kind": "classify",
+      "in": {
+        "cpl_mover": 100,
+        "second_best_gap": null,
+        "mover_win_pct": 50.0,
+        "is_capture_or_sacrifice": false
+      },
+      "out": "Mistake"
+    },
+    {
+      "name": "mistake_299",
+      "kind": "classify",
+      "in": {
+        "cpl_mover": 299,
+        "second_best_gap": null,
+        "mover_win_pct": 50.0,
+        "is_capture_or_sacrifice": false
+      },
+      "out": "Mistake"
+    },
+    {
+      "name": "blunder_300",
+      "kind": "classify",
+      "in": {
+        "cpl_mover": 300,
+        "second_best_gap": null,
+        "mover_win_pct": 50.0,
+        "is_capture_or_sacrifice": false
+      },
+      "out": "Blunder"
+    },
+    {
+      "name": "blunder_huge",
+      "kind": "classify",
+      "in": {
+        "cpl_mover": 1500,
+        "second_best_gap": null,
+        "mover_win_pct": 50.0,
+        "is_capture_or_sacrifice": false
+      },
+      "out": "Blunder"
+    }
+  ]
+}

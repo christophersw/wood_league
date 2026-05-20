@@ -1,13 +1,19 @@
 """
-Title: wdl_calibration.py — lc0 WDL rescale/contempt port + draw-aware classify
+Title: _calibration.py — Lc0 WDL rescale/contempt port + draw-aware classify
 Description:
     Verbatim Python port of lc0's WDL rescale/contempt transform
     (pinned lc0 commit d8ce48258c39d331c119f8c8729374ceb3df8409) plus a
-    two-axis draw-aware move classifier. Pure, dependency-light, vendored
-    byte-identically into the worker and the Django app; the shared
-    wdl_calibration_vectors.json fixture is the cross-service contract.
+    two-axis draw-aware move classifier. Pure, dependency-light. This is the
+    authoritative location for #161 (Phase D); the worker-side and previously
+    app-vendored copies will be deleted in Phase H/I.
+
+    The golden vectors at ``derivation/golden_vectors/lc0.json`` are the
+    cross-service contract — bump them only when the underlying lc0 math
+    changes (then bump ``_lc0_pinned_sha`` in the JSON to match).
+
 Changelog:
-    2026-05-19: Initial creation (issue #159).
+    2026-05-19 (#159):   Initial creation.
+    2026-05-19 (#161/D): Relocated to analysis.derivation as the source of truth.
 """
 from __future__ import annotations
 

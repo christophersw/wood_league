@@ -18,18 +18,56 @@ from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
+from analysis.calibration_hash import (
+    current_lc0_sampler_settings,
+    current_lc0_settings_hash,
+)
 from analysis.models import (
     AnalysisJob,
     GameAnalysis,
-    MoveAnalysis,
     Lc0GameAnalysis,
     Lc0MoveAnalysis,
+    MoveAnalysis,
+    NetworkCalibration,
 )
 
 
 # ── Constants ────────────────────────────────────────────────────────────
 class JobCheckoutDenied(Exception):
     """Raised when a requested job checkout cannot be honored."""
+
+
+class NeedsCalibration(Exception):
+    """Raised when an lc0 checkout arrives for an uncalibrated network.
+
+    Carries the metadata the worker needs to drive the calibration sampler:
+    the resolved ``network_name``, the current ``settings_hash`` to echo
+    back on submission, the canonical sampler settings, and the sampler
+    version tag. The view layer translates this exception into a 409
+    response with ``error="NEEDS_CALIBRATION"``.
+    """
+
+    def __init__(
+        self,
+        *,
+        network_name: str,
+        settings_hash: str,
+        sampler_settings: dict,
+        sampler_version: str,
+    ) -> None:
+        """Capture the calibration request payload.
+
+        Args:
+            network_name: Resolved lc0 network identifier.
+            settings_hash: Current canonical sampler-settings hash.
+            sampler_settings: Canonical settings dict the worker must use.
+            sampler_version: Echoes settings.WL_LC0_DRAW_RATE_SAMPLER_VERSION.
+        """
+        super().__init__(f"NEEDS_CALIBRATION for {network_name}")
+        self.network_name = network_name
+        self.settings_hash = settings_hash
+        self.sampler_settings = sampler_settings
+        self.sampler_version = sampler_version
 
 
 # Error substrings that signal the job is structurally unanalysable. Retrying
@@ -86,6 +124,72 @@ def recover_stale_jobs(engine: str) -> int:
 # ── Claim jobs ───────────────────────────────────────────────────────────
 
 
+def _resolve_lc0_calibration(network_name: str) -> float:
+    """Resolve the current draw_rate_reference for ``network_name``.
+
+    Args:
+        network_name: Resolved lc0 network identifier supplied by the worker.
+
+    Returns:
+        The ``draw_rate_reference`` stored on the matching NetworkCalibration
+        row.
+
+    Raises:
+        NeedsCalibration: When no calibration row exists for the current
+            ``(network_name, settings_hash)`` pair. The exception carries the
+            sampler settings the worker must use.
+    """
+    settings_hash = current_lc0_settings_hash()
+    row = NetworkCalibration.objects.filter(
+        network_name=network_name, settings_hash=settings_hash,
+    ).only("draw_rate_reference").first()
+    if row is None:
+        sampler = current_lc0_sampler_settings()
+        raise NeedsCalibration(
+            network_name=network_name,
+            settings_hash=settings_hash,
+            sampler_settings=sampler,
+            sampler_version=sampler["sampler_version"],
+        )
+    return row.draw_rate_reference
+
+
+def _select_single_game_job(*, engine: str, game_id: str) -> list[AnalysisJob]:
+    """Return the one pending AnalysisJob for ``game_id`` under SELECT FOR UPDATE.
+
+    Args:
+        engine: 'stockfish' or 'lc0'.
+        game_id: The specific game whose pending job to claim.
+
+    Returns:
+        A single-element list with the locked pending job.
+
+    Raises:
+        JobCheckoutDenied: When the game is already completed, already running,
+            or has no pending job for this engine.
+    """
+    jobs_for_game = (
+        AnalysisJob.objects
+        .select_for_update(skip_locked=True)
+        .filter(engine=engine, game_id=game_id)
+    )
+    if (
+        _analysis_already_completed(engine=engine, game_id=game_id)
+        or jobs_for_game.filter(status=AnalysisJob.STATUS_COMPLETED).exists()
+    ):
+        raise JobCheckoutDenied('Analysis already completed for requested game')
+    if jobs_for_game.filter(status=AnalysisJob.STATUS_RUNNING).exists():
+        raise JobCheckoutDenied('Requested game is already claimed')
+    jobs = list(
+        jobs_for_game
+        .filter(status=AnalysisJob.STATUS_PENDING)
+        .order_by('-priority', '-game__played_at')[:1]
+    )
+    if not jobs:
+        raise JobCheckoutDenied('No pending job exists for requested game')
+    return jobs
+
+
 def claim_jobs(
     *,
     engine: str,
@@ -93,44 +197,31 @@ def claim_jobs(
     worker_id: str,
     key_prefix: str | None = None,
     game_id: str | None = None,
+    network_name: str = "",
 ) -> list[AnalysisJob]:
     """Atomically claim up to batch_size pending jobs using SELECT FOR UPDATE SKIP LOCKED.
 
-    Runs stale recovery before each checkout. Returns the claimed AnalysisJob
-    instances with their related Game.
+    Runs stale recovery before each checkout. For lc0 checkouts that supply a
+    ``network_name``, pre-flights the network's calibration row and raises
+    ``NeedsCalibration`` when one is absent (issue #161 Phase B). Returns the
+    claimed AnalysisJob instances with their related Game.
 
     Args:
-        engine: 'stockfish' or 'lc0'
+        engine: 'stockfish' or 'lc0'.
         batch_size: Maximum number of jobs to claim.
         worker_id: Identifier for the claiming worker (stored for tracing).
         key_prefix: API key prefix stored for audit (None for non-API callers).
         game_id: Claim only this specific game's job (optional).
+        network_name: For lc0 only: the worker's resolved network name. When
+            empty, the calibration pre-flight is skipped (legacy/test paths).
     """
+    draw_rate_reference: float | None = None
+    if engine == "lc0" and network_name:
+        draw_rate_reference = _resolve_lc0_calibration(network_name)
     with transaction.atomic():
         recover_stale_jobs(engine)
         if game_id:
-            jobs_for_game = (
-                AnalysisJob.objects
-                .select_for_update(skip_locked=True)
-                .filter(engine=engine, game_id=game_id)
-            )
-
-            if (
-                _analysis_already_completed(engine=engine, game_id=game_id)
-                or jobs_for_game.filter(status=AnalysisJob.STATUS_COMPLETED).exists()
-            ):
-                raise JobCheckoutDenied('Analysis already completed for requested game')
-
-            if jobs_for_game.filter(status=AnalysisJob.STATUS_RUNNING).exists():
-                raise JobCheckoutDenied('Requested game is already claimed')
-
-            jobs = list(
-                jobs_for_game
-                .filter(status=AnalysisJob.STATUS_PENDING)
-                .order_by('-priority', '-game__played_at')[:1]
-            )
-            if not jobs:
-                raise JobCheckoutDenied('No pending job exists for requested game')
+            jobs = _select_single_game_job(engine=engine, game_id=game_id)
         else:
             jobs = list(
                 AnalysisJob.objects
@@ -150,11 +241,16 @@ def claim_jobs(
             worker_id=worker_id,
             claimed_by_key_prefix=key_prefix,
         )
-        return list(
+        claimed = list(
             AnalysisJob.objects
             .filter(id__in=job_ids)
             .select_related('game')
         )
+        if draw_rate_reference is not None:
+            # Transient annotation read by JobSerializer; not persisted.
+            for job in claimed:
+                job.draw_rate_reference = draw_rate_reference
+        return claimed
 
 
 # ── Complete: Stockfish ──────────────────────────────────────────────────
@@ -172,6 +268,10 @@ def complete_stockfish_job(
     Raises AnalysisJob.DoesNotExist if the job is not found,
     not in 'running' state, or the worker_id / key_prefix do not match.
     """
+    # #161 Phase G: payload is *raw observables only*; everything derived runs
+    # here via ``derivation.stockfish.derive_sf_game``.
+    from analysis.derivation.stockfish import derive_sf_game
+
     with transaction.atomic():
         # Ownership check: worker_id AND key_prefix must match the claim
         filters = dict(
@@ -183,48 +283,52 @@ def complete_stockfish_job(
             filters['claimed_by_key_prefix'] = key_prefix
         job = AnalysisJob.objects.select_for_update().get(**filters)
 
-        # Upsert game_analysis
+        derived = derive_sf_game(payload, job.game)
+        derived_moves = derived.pop("moves")
+
         ga, _ = GameAnalysis.objects.update_or_create(
             game=job.game,
             defaults=dict(
-                white_accuracy=payload['white_accuracy'],
-                black_accuracy=payload['black_accuracy'],
-                white_acpl=payload['white_acpl'],
-                black_acpl=payload['black_acpl'],
-                white_blunders=payload['white_blunders'],
-                white_mistakes=payload['white_mistakes'],
-                white_inaccuracies=payload['white_inaccuracies'],
-                black_blunders=payload['black_blunders'],
-                black_mistakes=payload['black_mistakes'],
-                black_inaccuracies=payload['black_inaccuracies'],
-                engine_depth=payload['engine_depth'],
+                white_accuracy=derived["white_accuracy"],
+                black_accuracy=derived["black_accuracy"],
+                white_acpl=derived["white_acpl"],
+                black_acpl=derived["black_acpl"],
+                white_blunders=derived["white_blunders"],
+                white_mistakes=derived["white_mistakes"],
+                white_inaccuracies=derived["white_inaccuracies"],
+                black_blunders=derived["black_blunders"],
+                black_mistakes=derived["black_mistakes"],
+                black_inaccuracies=derived["black_inaccuracies"],
+                engine_depth=derived["engine_depth"],
+                summary_cp=derived["summary_cp"],
                 analyzed_at=timezone.now(),
             ),
         )
 
-        # Replace move_analysis rows for this game
         MoveAnalysis.objects.filter(analysis=ga).delete()
         MoveAnalysis.objects.bulk_create([
             MoveAnalysis(
                 analysis=ga,
-                ply=m['ply'],
-                san=m['san'],
-                fen=m['fen'],
-                cp_eval=m['cp_eval'],
-                cpl=m['cpl'],
-                best_move=m['best_move'],
-                classification=m['classification'],
-                arrow_uci=m['arrow_uci'],
-                arrow_uci_2=m['arrow_uci_2'],
-                arrow_uci_3=m['arrow_uci_3'],
-                arrow_score_1=m['arrow_score_1'],
-                arrow_score_2=m['arrow_score_2'],
-                arrow_score_3=m['arrow_score_3'],
-                pv_san_1=m['pv_san_1'],
-                pv_san_2=m['pv_san_2'],
-                pv_san_3=m['pv_san_3'],
+                ply=m["ply"],
+                san=m["san"],
+                fen=m["fen"],
+                cp_eval=m["cp_eval"],
+                mate_in=m["mate_in"],
+                cpl=m["cpl"],
+                move_win_delta=m["move_win_delta"],
+                classification=m["classification"],
+                best_move=m["best_move"],
+                arrow_uci_1=m["arrow_uci_1"] or "",
+                arrow_uci_2=m["arrow_uci_2"],
+                arrow_uci_3=m["arrow_uci_3"],
+                arrow_score_1=m["arrow_score_1"],
+                arrow_score_2=m["arrow_score_2"],
+                arrow_score_3=m["arrow_score_3"],
+                pv_san_1=m["pv_san_1"],
+                pv_san_2=m["pv_san_2"],
+                pv_san_3=m["pv_san_3"],
             )
-            for m in payload['moves']
+            for m in derived_moves
         ])
 
         job.status = AnalysisJob.STATUS_COMPLETED
@@ -246,6 +350,10 @@ def complete_lc0_job(
 
     Same ownership semantics as complete_stockfish_job.
     """
+    # #161 Phase G: payload is *raw observables only*; everything derived runs
+    # here via ``derivation.lc0.derive_lc0_game``.
+    from analysis.derivation.lc0 import derive_lc0_game
+
     with transaction.atomic():
         filters = dict(
             id=job_id,
@@ -256,28 +364,30 @@ def complete_lc0_job(
             filters['claimed_by_key_prefix'] = key_prefix
         job = AnalysisJob.objects.select_for_update().get(**filters)
 
+        derived = derive_lc0_game(payload, job.game)
+        derived_moves = derived.pop("moves")
+
         lga, _ = Lc0GameAnalysis.objects.update_or_create(
             game=job.game,
             defaults=dict(
-                white_win_prob=payload['white_win_prob'],
-                white_draw_prob=payload['white_draw_prob'],
-                white_loss_prob=payload['white_loss_prob'],
-                black_win_prob=payload['black_win_prob'],
-                black_draw_prob=payload['black_draw_prob'],
-                black_loss_prob=payload['black_loss_prob'],
-                white_blunders=payload['white_blunders'],
-                white_mistakes=payload['white_mistakes'],
-                white_inaccuracies=payload['white_inaccuracies'],
-                black_blunders=payload['black_blunders'],
-                black_mistakes=payload['black_mistakes'],
-                black_inaccuracies=payload['black_inaccuracies'],
-                engine_nodes=payload['engine_nodes'],
-                network_name=payload.get('network_name', ''),
+                white_win_prob=derived["white_win_prob"],
+                white_draw_prob=derived["white_draw_prob"],
+                white_loss_prob=derived["white_loss_prob"],
+                black_win_prob=derived["black_win_prob"],
+                black_draw_prob=derived["black_draw_prob"],
+                black_loss_prob=derived["black_loss_prob"],
+                white_blunders=derived["white_blunders"],
+                white_mistakes=derived["white_mistakes"],
+                white_inaccuracies=derived["white_inaccuracies"],
+                black_blunders=derived["black_blunders"],
+                black_mistakes=derived["black_mistakes"],
+                black_inaccuracies=derived["black_inaccuracies"],
+                engine_nodes=derived["engine_nodes"],
+                network_name=derived["network_name"],
+                draw_rate_reference=derived["draw_rate_reference"],
+                wdl_calibration_elo=derived["wdl_calibration_elo"],
+                contempt=derived["contempt"],
                 analyzed_at=timezone.now(),
-                # WDL calibration metadata (#159)
-                draw_rate_reference=payload.get('draw_rate_reference'),
-                wdl_calibration_elo=payload.get('wdl_calibration_elo'),
-                contempt=payload.get('contempt'),
             ),
         )
 
@@ -285,37 +395,41 @@ def complete_lc0_job(
         Lc0MoveAnalysis.objects.bulk_create([
             Lc0MoveAnalysis(
                 analysis=lga,
-                ply=m['ply'],
-                san=m['san'],
-                fen=m['fen'],
-                wdl_win=m['wdl_win'],
-                wdl_draw=m['wdl_draw'],
-                wdl_loss=m['wdl_loss'],
-                # Rescaled WDL triple (#159)
-                wdl_win_adj=m.get('wdl_win_adj'),
-                wdl_draw_adj=m.get('wdl_draw_adj'),
-                wdl_loss_adj=m.get('wdl_loss_adj'),
-                # Expected-score and delta metrics (#159)
-                wdl_mu=m.get('wdl_mu'),
-                delta_mu=m.get('delta_mu'),
-                delta_d=m.get('delta_d'),
-                cp_equiv=m.get('cp_equiv'),
-                best_move=m['best_move'],
-                arrow_uci=m.get('arrow_uci', ''),
-                arrow_uci_2=m.get('arrow_uci_2', ''),
-                arrow_uci_3=m.get('arrow_uci_3', ''),
-                arrow_score_1=m.get('arrow_score_1'),
-                arrow_score_2=m.get('arrow_score_2'),
-                arrow_score_3=m.get('arrow_score_3'),
-                pv_san_1=m.get('pv_san_1'),
-                pv_san_2=m.get('pv_san_2'),
-                pv_san_3=m.get('pv_san_3'),
-                move_win_delta=m['move_win_delta'],
-                # Severity labels replacing the old classification field (#159)
-                base_severity=m.get('base_severity'),
-                draw_character=m.get('draw_character'),
+                ply=m["ply"],
+                san=m["san"],
+                fen=m["fen"],
+                # Raw played-move triple (mover frame).
+                wdl_win=m["wdl_win"],
+                wdl_draw=m["wdl_draw"],
+                wdl_loss=m["wdl_loss"],
+                # Raw per-candidate triples.
+                wdl_win_1=m["wdl_win_1"],
+                wdl_draw_1=m["wdl_draw_1"],
+                wdl_loss_1=m["wdl_loss_1"],
+                wdl_win_2=m["wdl_win_2"],
+                wdl_draw_2=m["wdl_draw_2"],
+                wdl_loss_2=m["wdl_loss_2"],
+                wdl_win_3=m["wdl_win_3"],
+                wdl_draw_3=m["wdl_draw_3"],
+                wdl_loss_3=m["wdl_loss_3"],
+                # Derived (post-rescale, post-classify).
+                wdl_win_adj=m["wdl_win_adj"],
+                wdl_draw_adj=m["wdl_draw_adj"],
+                wdl_loss_adj=m["wdl_loss_adj"],
+                wdl_mu=m["wdl_mu"],
+                delta_mu=m["delta_mu"],
+                delta_d=m["delta_d"],
+                base_severity=m["base_severity"],
+                draw_character=m["draw_character"],
+                best_move=m["arrow_uci_1"] or "",
+                arrow_uci_1=m["arrow_uci_1"] or "",
+                arrow_uci_2=m["arrow_uci_2"],
+                arrow_uci_3=m["arrow_uci_3"],
+                pv_san_1=m["pv_san_1"],
+                pv_san_2=m["pv_san_2"],
+                pv_san_3=m["pv_san_3"],
             )
-            for m in payload['moves']
+            for m in derived_moves
         ])
 
         job.status = AnalysisJob.STATUS_COMPLETED

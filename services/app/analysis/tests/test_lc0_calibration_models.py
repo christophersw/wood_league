@@ -65,7 +65,7 @@ def test_new_fields_persist():
         wdl_mu=0.1,
         delta_mu=0.02,
         delta_d=-0.05,
-        cp_equiv=10,
+        # cp_equiv removed from Lc0MoveAnalysis in #161 Phase F.
         best_move="e4",
         base_severity="Excellent",
         draw_character=None,

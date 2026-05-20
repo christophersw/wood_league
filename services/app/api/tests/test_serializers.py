@@ -82,6 +82,8 @@ def _valid_lc0_move_payload(**overrides) -> dict:
     Returns:
         Dict suitable for ``Lc0MoveSerializer(data=...)``.
     """
+    # #161 G: payload is *raw* only. Rescaled WDL / severity / cp_equiv etc.
+    # are derived app-side; they no longer belong in the worker's payload.
     base = {
         'ply': 1,
         'san': 'e4',
@@ -89,25 +91,9 @@ def _valid_lc0_move_payload(**overrides) -> dict:
         'wdl_win': 500,
         'wdl_draw': 400,
         'wdl_loss': 100,
-        # Rescaled WDL triple (#159/D2)
-        'wdl_win_adj': 480,
-        'wdl_draw_adj': 380,
-        'wdl_loss_adj': 140,
-        'wdl_mu': 0.67,
-        'delta_mu': 0.02,
-        'delta_d': -0.01,
-        'cp_equiv': 28,
-        'best_move': 'e4',
-        'move_win_delta': 0.7,
-        # classification replaced by base_severity + draw_character (#159)
-        'base_severity': 'Best',
-        'draw_character': None,
-        'arrow_uci': 'e2e4',
+        'arrow_uci_1': 'e2e4',
         'arrow_uci_2': 'd2d4',
         'arrow_uci_3': 'g1f3',
-        'arrow_score_1': 50.0,
-        'arrow_score_2': 49.0,
-        'arrow_score_3': 48.0,
         'pv_san_1': '["e4"]',
         'pv_san_2': '["d4"]',
         'pv_san_3': '["Nf3"]',
@@ -138,26 +124,34 @@ class Lc0MoveSerializerArrowUciBlankTests(SimpleTestCase):
 
     def test_blank_primary_arrow_uci_is_accepted(self):
         """And to the primary arrow — kept consistent with the stockfish path."""
-        ser = Lc0MoveSerializer(data=_valid_lc0_move_payload(arrow_uci=''))
+        ser = Lc0MoveSerializer(data=_valid_lc0_move_payload(arrow_uci_1=''))
         self.assertTrue(ser.is_valid(), msg=ser.errors)
-        self.assertEqual(ser.validated_data['arrow_uci'], '')
+        self.assertEqual(ser.validated_data['arrow_uci_1'], '')
 
     def test_all_three_blank_is_accepted(self):
         """Combined: a terminal position with no PV candidates."""
         ser = Lc0MoveSerializer(data=_valid_lc0_move_payload(
-            arrow_uci='', arrow_uci_2='', arrow_uci_3='',
+            arrow_uci_1='', arrow_uci_2='', arrow_uci_3='',
         ))
         self.assertTrue(ser.is_valid(), msg=ser.errors)
 
-    def test_missing_arrow_uci_keys_still_default_to_blank(self):
-        """Field is required=False; missing keys default to ''."""
+    def test_missing_secondary_arrow_uci_keys_default_to_null(self):
+        """#161 G: _2/_3 are optional+nullable; _1 is required (raw best-line UCI)."""
         payload = _valid_lc0_move_payload()
-        for key in ('arrow_uci', 'arrow_uci_2', 'arrow_uci_3'):
+        for key in ('arrow_uci_2', 'arrow_uci_3'):
             payload.pop(key, None)
         ser = Lc0MoveSerializer(data=payload)
         self.assertTrue(ser.is_valid(), msg=ser.errors)
-        for key in ('arrow_uci', 'arrow_uci_2', 'arrow_uci_3'):
-            self.assertEqual(ser.validated_data[key], '')
+        for key in ('arrow_uci_2', 'arrow_uci_3'):
+            self.assertIsNone(ser.validated_data[key])
+
+    def test_missing_primary_arrow_uci_is_rejected(self):
+        """#161 G: arrow_uci_1 carries the engine's top candidate; required."""
+        payload = _valid_lc0_move_payload()
+        payload.pop('arrow_uci_1')
+        ser = Lc0MoveSerializer(data=payload)
+        self.assertFalse(ser.is_valid())
+        self.assertIn('arrow_uci_1', ser.errors)
 
     def test_oversize_arrow_uci_still_rejected(self):
         """allow_blank=True must not relax the max_length=8 guard."""
