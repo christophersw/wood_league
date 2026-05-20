@@ -1,10 +1,14 @@
-{#
+{% comment %}
   Title:       wc-modal — reusable modal shell
   Description: A shell-only modal partial. Content is injected at runtime via
                HTMX swap into .wc-modal__panel-body. Rendered hidden by default.
                Open/close is managed by wc_modal.js.
   Changelog:
     2026-05-20  Initial implementation. Task 9 of #162 search-page rework.
+    2026-05-20  #169 — switch multi-line {# #} header to {% comment %};
+                Django's {# #} comments are single-line only, so the example
+                {% include %} below was being parsed and rendered, causing
+                self-recursion when base.html included this partial.
 
   Usage:
     {% include "components/_modal.html" with modal_id="search-modal" %}
@@ -14,7 +18,7 @@
 
   JS trigger pattern (on any element):
     data-wc-modal-open="search-modal"
-#}
+{% endcomment %}
 {% load static %}
 
 <div class="wc-modal" id="{{ modal_id }}" role="dialog" aria-modal="true" aria-labelledby="{{ modal_id }}-title">
