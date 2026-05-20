@@ -4,6 +4,8 @@ Description: Asserts copy changes, current_user_username threading, and the
     new modal partial endpoint.
 Changelog:
     2026-05-20: Initial creation (#162).
+    2026-05-20: #169 — restore full-render test now that components/_modal.html
+                no longer self-recurses via a mis-formatted {# #} comment.
 """
 from unittest import mock
 
@@ -16,14 +18,22 @@ from players.models import Player
 
 
 def test_search_index_url_resolves():
-    """search_index URL name resolves without errors.
-
-    Full render deferred — base.html triggers a pre-existing instrumented_test_render
-    recursion in Django 5 / Python 3.13 that is unrelated to this task.
-    Copy assertion ("validated SQL" not in body) lands in Task 12 (#162).
-    """
+    """search_index URL name resolves to /search/."""
     url = reverse("search_index")
     assert url == "/search/"
+
+
+@pytest.mark.django_db
+def test_search_index_full_render(client):
+    """GET /search/ renders the page through base.html without recursion (#169)."""
+    resp = client.get("/search/", secure=True)
+    assert resp.status_code == 200
+    body = resp.content.decode()
+    # Modal shell from base.html is present — proves _modal.html rendered once,
+    # not in an infinite include loop.
+    assert 'id="search-modal"' in body
+    # Older copy must stay gone (#162 Task 12).
+    assert "validated SQL" not in body
 
 
 @pytest.mark.django_db
