@@ -57,23 +57,37 @@ class GameAnalysis(models.Model):
 
 
 class MoveAnalysis(models.Model):
-    """Stores Stockfish engine evaluation and classification for individual moves."""
+    """Stockfish per-move analysis — raw worker output + app-derived fields (#161 F).
+
+    Raw fields (worker → app, untouched): cp_eval, mate_in, arrow_uci_1/2/3,
+    arrow_score_1/2/3, pv_san_1/2/3, san, fen, ply.
+    Derived fields (computed by ``derivation.stockfish``): cpl,
+    move_win_delta, classification, best_move.
+    """
     analysis = models.ForeignKey(
         GameAnalysis, on_delete=models.CASCADE, related_name="moves"
     )
     ply = models.IntegerField()
     san = models.CharField(max_length=32)
     fen = models.TextField()
+    # Raw: white-frame post-move cp eval.
     cp_eval = models.FloatField()
+    # Raw: signed mate distance; positive = White mates, NULL if not in mate.
+    mate_in = models.IntegerField(null=True, blank=True)
+    # Derived: mover-frame centipawn loss.
     cpl = models.FloatField(null=True, blank=True)
-    best_move = models.CharField(max_length=32, default="")
-    arrow_uci = models.CharField(max_length=8, default="")
+    # Derived: mover-frame Win% drop (#161 Phase E).
+    move_win_delta = models.FloatField(null=True, blank=True)
+    # Top-3 candidates (raw); ``arrow_uci_1`` renamed from ``arrow_uci`` in F.
+    arrow_uci_1 = models.CharField(max_length=8, default="")
     arrow_uci_2 = models.CharField(max_length=8, null=True, blank=True)
     arrow_uci_3 = models.CharField(max_length=8, null=True, blank=True)
     arrow_score_1 = models.FloatField(null=True, blank=True)
     arrow_score_2 = models.FloatField(null=True, blank=True)
     arrow_score_3 = models.FloatField(null=True, blank=True)
+    # Derived severity label.
     classification = models.CharField(max_length=16, null=True, blank=True)
+    best_move = models.CharField(max_length=32, default="")
     pv_san_1 = models.TextField(null=True, blank=True)
     pv_san_2 = models.TextField(null=True, blank=True)
     pv_san_3 = models.TextField(null=True, blank=True)
@@ -145,38 +159,55 @@ class Lc0GameAnalysis(models.Model):
 
 
 class Lc0MoveAnalysis(models.Model):
-    """Stores Lc0 engine evaluation and win/draw/loss metrics for individual moves."""
+    """Lc0 per-move analysis — raw worker output + app-derived fields (#161 F).
+
+    Raw fields: ply, san, fen, played-move ``wdl_win/draw/loss`` triple, three
+    candidate triples ``wdl_(win|draw|loss)_(1|2|3)``, ``arrow_uci_1/2/3``,
+    ``pv_san_1/2/3``.
+    Derived fields (from ``derivation.lc0.derive_lc0_game``):
+    ``wdl_*_adj``, ``wdl_mu``, ``delta_mu``, ``delta_d``, ``base_severity``,
+    ``draw_character``, ``best_move``.
+
+    Phase F removed ``cp_equiv``, ``arrow_uci`` (renamed ``arrow_uci_1``),
+    ``arrow_score_*``, and ``move_win_delta`` — none survive the raw contract.
+    """
     analysis = models.ForeignKey(
         Lc0GameAnalysis, on_delete=models.CASCADE, related_name="moves"
     )
     ply = models.IntegerField()
     san = models.CharField(max_length=32)
     fen = models.TextField()
+    # Raw played-move triple, mover frame, milli-units.
     wdl_win = models.IntegerField(null=True, blank=True)
     wdl_draw = models.IntegerField(null=True, blank=True)
     wdl_loss = models.IntegerField(null=True, blank=True)
-    cp_equiv = models.FloatField(null=True, blank=True)
-    best_move = models.CharField(max_length=32, default="")
-    arrow_uci = models.CharField(max_length=8, default="")
+    # Raw per-candidate triples (top 3 lines); fully nullable per-line.
+    wdl_win_1 = models.IntegerField(null=True, blank=True)
+    wdl_draw_1 = models.IntegerField(null=True, blank=True)
+    wdl_loss_1 = models.IntegerField(null=True, blank=True)
+    wdl_win_2 = models.IntegerField(null=True, blank=True)
+    wdl_draw_2 = models.IntegerField(null=True, blank=True)
+    wdl_loss_2 = models.IntegerField(null=True, blank=True)
+    wdl_win_3 = models.IntegerField(null=True, blank=True)
+    wdl_draw_3 = models.IntegerField(null=True, blank=True)
+    wdl_loss_3 = models.IntegerField(null=True, blank=True)
+    # Top-3 candidate UCIs (raw); ``arrow_uci_1`` renamed from ``arrow_uci`` in F.
+    arrow_uci_1 = models.CharField(max_length=8, default="")
     arrow_uci_2 = models.CharField(max_length=8, null=True, blank=True)
     arrow_uci_3 = models.CharField(max_length=8, null=True, blank=True)
-    arrow_score_1 = models.FloatField(null=True, blank=True)
-    arrow_score_2 = models.FloatField(null=True, blank=True)
-    arrow_score_3 = models.FloatField(null=True, blank=True)
-    move_win_delta = models.FloatField(null=True, blank=True)
-    # Rescaled WDL triple after draw-rate reference correction (#159)
+    # Derived: rescaled WDL triple in White's frame (#159 + #161 F).
     wdl_win_adj = models.IntegerField(null=True, blank=True)
     wdl_draw_adj = models.IntegerField(null=True, blank=True)
     wdl_loss_adj = models.IntegerField(null=True, blank=True)
-    # Expected-score fraction from rescaled WDL; nullable for degenerate WDL paths
+    # Derived: expected-score fraction (White-frame) from rescaled WDL.
     wdl_mu = models.FloatField(null=True, blank=True)
-    # Move-level changes in expected-score and draw-fraction vs. the position before
+    # Derived: per-move change in expected score / drawishness.
     delta_mu = models.FloatField(null=True, blank=True)
     delta_d = models.FloatField(null=True, blank=True)
-    # Severity label from classify_draw_aware/_base_severity (always set for new rows)
+    # Derived: severity label + optional draw-character overlay.
     base_severity = models.CharField(max_length=16, null=True, blank=True)
-    # Optional draw-character label; None for most moves
     draw_character = models.CharField(max_length=16, null=True, blank=True)
+    best_move = models.CharField(max_length=32, default="")
     pv_san_1 = models.TextField(null=True, blank=True)
     pv_san_2 = models.TextField(null=True, blank=True)
     pv_san_3 = models.TextField(null=True, blank=True)
@@ -501,3 +532,44 @@ class RecurringAnalysisSchedule(models.Model):
         """
         from django.conf import settings as _s
         return self.max_jobs if self.max_jobs is not None else _s.VAST_MAX_JOBS
+
+
+class NetworkCalibration(models.Model):
+    """One-shot population draw-rate measurement for an lc0 network.
+
+    Rows are keyed by (network_name, settings_hash). The hash binds the
+    measurement to the exact sampler parameters that produced it — bumping any
+    sampler setting (see ``analysis.calibration_hash``) yields a fresh hash and
+    therefore a fresh row, never an in-place mutation of an existing one.
+
+    Concurrent submissions from racing workers are idempotent at the DB layer
+    via the unique_together constraint; the view layer translates the second
+    insert into a 200 no-op via get_or_create.
+    """
+    network_name = models.CharField(max_length=64)
+    settings_hash = models.CharField(max_length=64)
+    draw_rate_reference = models.FloatField(
+        help_text="Population draw rate measured by the sampler; in (0.001, 0.999).",
+    )
+    sample_size = models.IntegerField(
+        help_text="Positions sampled before convergence or max_positions cap.",
+    )
+    sem = models.FloatField(
+        help_text="Standard error of the mean achieved by the sampler.",
+    )
+    sampler_version = models.CharField(
+        max_length=32,
+        help_text="Echoes settings.WL_LC0_DRAW_RATE_SAMPLER_VERSION at measure time.",
+    )
+    measured_at = models.DateTimeField(auto_now_add=True)
+    submitted_by_worker_id = models.CharField(max_length=64)
+
+    class Meta:
+        db_table = "network_calibration"
+        unique_together = [("network_name", "settings_hash")]
+        verbose_name = "Network Calibration"
+        verbose_name_plural = "Network Calibrations"
+
+    def __str__(self) -> str:
+        """Return a human-readable identifier for this calibration."""
+        return f"NetworkCalibration[{self.network_name} @ {self.settings_hash[:8]}]"

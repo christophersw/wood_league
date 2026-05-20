@@ -238,6 +238,19 @@ WL_LC0_CONTEMPT_ATTENUATION = 1.0
 #   calibration samples to collect before trusting its draw-rate estimate.
 WL_LC0_DRAW_RATE_SEM_TARGET = 0.005
 
+# WL_LC0_DRAW_RATE_NODES: nodes per sampled position when measuring a network's
+#   population draw rate. Larger = lower per-position variance but slower.
+WL_LC0_DRAW_RATE_NODES = 800
+
+# WL_LC0_DRAW_RATE_MAX_POSITIONS: ceiling on positions sampled before the
+#   sampler gives up on hitting WL_LC0_DRAW_RATE_SEM_TARGET.
+WL_LC0_DRAW_RATE_MAX_POSITIONS = 10000
+
+# WL_LC0_DRAW_RATE_SAMPLER_VERSION: opaque version tag for the sampler
+#   algorithm. Bumping it invalidates every existing NetworkCalibration row
+#   (the (network_name, settings_hash) key changes), forcing a re-measure.
+WL_LC0_DRAW_RATE_SAMPLER_VERSION = "v1"
+
 # RunPod serverless dispatch settings
 RUNPOD_API_KEY = os.environ.get("RUNPOD_API_KEY", "")
 RUNPOD_STOCKFISH_ENDPOINT_ID = (

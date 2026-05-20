@@ -19,7 +19,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from api.authentication import HasWorkerAPIKey
 
-from analysis.models import AnalysisJob, WorkerHeartbeat
+from analysis.models import AnalysisJob, NetworkCalibration, WorkerHeartbeat
 from analysis.services import jobs as job_service
 from . import serializers as sz
 
@@ -64,6 +64,18 @@ class JobCheckoutView(APIView):
                 worker_id=d['worker_id'],
                 key_prefix=_key_prefix(request),
                 game_id=d.get('game_id'),
+                network_name=d.get('network_name', ''),
+            )
+        except job_service.NeedsCalibration as exc:
+            return Response(
+                {
+                    'error': 'NEEDS_CALIBRATION',
+                    'network_name': exc.network_name,
+                    'settings_hash': exc.settings_hash,
+                    'sampler_settings': exc.sampler_settings,
+                    'sampler_version': exc.sampler_version,
+                },
+                status=status.HTTP_409_CONFLICT,
             )
         except job_service.JobCheckoutDenied as exc:
             return Response({'error': str(exc)}, status=status.HTTP_409_CONFLICT)
@@ -223,3 +235,58 @@ class QueueStatusView(APIView):
         )
         _touch_key(request)
         return Response({'queue': list(counts)})
+
+
+class NetworkCalibrationView(APIView):
+    """POST /api/v1/network_calibrations/ — record an lc0 draw-rate measurement.
+
+    Phase A of issue #161. The endpoint is idempotent on
+    ``(network_name, settings_hash)``: the first writer creates the row and
+    receives 201; later writers with the same key receive 200 and the row is
+    untouched. This lets multiple workers race the same calibration without
+    corrupting state — the loser simply re-fetches the canonical value on
+    its next checkout.
+    """
+
+    permission_classes: list[type] = [HasWorkerAPIKey]
+    throttle_scope = "complete"
+
+    def post(self, request):
+        """Validate the payload and upsert a NetworkCalibration row.
+
+        Returns:
+            Response: 201 + ``{"created": True, ...}`` on first write;
+                200 + ``{"created": False, ...}`` when the key already exists;
+                400 with field errors on validation failure.
+        """
+        ser = sz.NetworkCalibrationSubmitSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        d = ser.validated_data
+
+        row, created = NetworkCalibration.objects.get_or_create(
+            network_name=d["network_name"],
+            settings_hash=d["settings_hash"],
+            defaults=dict(
+                draw_rate_reference=d["draw_rate_reference"],
+                sample_size=d["sample_size"],
+                sem=d["sem"],
+                sampler_version=d["sampler_version"],
+                submitted_by_worker_id=d["worker_id"],
+            ),
+        )
+        _touch_key(request)
+        body = {
+            "created": created,
+            "network_name": row.network_name,
+            "settings_hash": row.settings_hash,
+            "draw_rate_reference": row.draw_rate_reference,
+            "sample_size": row.sample_size,
+            "sem": row.sem,
+            "sampler_version": row.sampler_version,
+            "measured_at": row.measured_at.isoformat() if row.measured_at else None,
+            "submitted_by_worker_id": row.submitted_by_worker_id,
+        }
+        return Response(
+            body,
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )

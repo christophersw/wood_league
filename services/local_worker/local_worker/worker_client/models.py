@@ -26,3 +26,7 @@ class Job:
     nodes: int | None
     white_rating: Optional[int] = None
     black_rating: Optional[int] = None
+    # Per-network calibrated draw rate; populated by the app for lc0 jobs once
+    # the network has a NetworkCalibration row (#161 Phase B). None for
+    # stockfish jobs and pre-#161 lc0 deployments.
+    draw_rate_reference: Optional[float] = None

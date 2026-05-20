@@ -314,15 +314,19 @@ def _lc0_moves_from_db(move_rows: list["Lc0MoveAnalysis"]) -> pd.DataFrame:
             "wdl_win": m.wdl_win,
             "wdl_draw": m.wdl_draw,
             "wdl_loss": m.wdl_loss,
-            "cp_equiv": m.cp_equiv,
+            # cp_equiv, arrow_score_*, move_win_delta gone from Lc0MoveAnalysis
+            # in #161 Phase F. Keys preserved as None so downstream consumers
+            # that read by name don't KeyError mid-cutover; populate from new
+            # derived columns (wdl_mu / delta_mu / delta_d) in Phase G/J.
+            "cp_equiv": None,
             "best_move": m.best_move,
-            "arrow_uci": m.arrow_uci,
+            "arrow_uci": m.arrow_uci_1,
             "arrow_uci_2": m.arrow_uci_2 or "",
             "arrow_uci_3": m.arrow_uci_3 or "",
-            "arrow_score_1": m.arrow_score_1,
-            "arrow_score_2": m.arrow_score_2,
-            "arrow_score_3": m.arrow_score_3,
-            "move_win_delta": m.move_win_delta,
+            "arrow_score_1": None,
+            "arrow_score_2": None,
+            "arrow_score_3": None,
+            "move_win_delta": None,
             # base_severity + draw_character replace old classification (#159)
             "base_severity": m.base_severity,
             "draw_character": m.draw_character,
@@ -341,14 +345,17 @@ def _moves_from_db(move_rows: list[MoveAnalysis]) -> pd.DataFrame:
             "san": m.san,
             "fen": m.fen,
             "cp_eval": m.cp_eval,
+            "mate_in": m.mate_in,
             "best_move": m.best_move,
-            "arrow_uci": m.arrow_uci,
+            # ``arrow_uci_1`` (model) → ``arrow_uci`` (dict key) for templates.
+            "arrow_uci": m.arrow_uci_1,
             "arrow_uci_2": m.arrow_uci_2 or "",
             "arrow_uci_3": m.arrow_uci_3 or "",
             "arrow_score_1": m.arrow_score_1,
             "arrow_score_2": m.arrow_score_2,
             "arrow_score_3": m.arrow_score_3,
             "cpl": m.cpl,
+            "move_win_delta": m.move_win_delta,
             "classification": m.classification,
         }
         for m in sorted_moves

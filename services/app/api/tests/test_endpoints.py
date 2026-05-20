@@ -267,31 +267,24 @@ class JobCompleteTests(TestCase):
         )
 
     def test_complete_stockfish_job_writes_results(self):
-        """Complete endpoint writes GameAnalysis and MoveAnalysis with multi-PV fields."""
+        """Complete endpoint writes GameAnalysis + MoveAnalysis with derived fields.
+
+        #161 G: payload is raw observables only — accuracy / ACPL / counters
+        / classifications are all derived app-side by ``derivation.stockfish``.
+        """
         payload = {
             'worker_id': 'my-worker',
             'engine': 'stockfish',
             'engine_depth': 20,
-            'white_accuracy': 95.5,
-            'black_accuracy': 87.2,
-            'white_acpl': 25.0,
-            'black_acpl': 35.5,
-            'white_blunders': 0,
-            'white_mistakes': 1,
-            'white_inaccuracies': 2,
-            'black_blunders': 1,
-            'black_mistakes': 2,
-            'black_inaccuracies': 3,
+            'engine_name': 'Stockfish 16',
             'moves': [
                 {
                     'ply': 1,
                     'san': 'e4',
                     'fen': 'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1',
                     'cp_eval': 35,
-                    'cpl': 0,
-                    'best_move': 'e4',
-                    'classification': 'Best',
-                    'arrow_uci': 'e2e4',
+                    'mate_in': None,
+                    'arrow_uci_1': 'e2e4',
                     'arrow_uci_2': 'd2d4',
                     'arrow_uci_3': 'g1f3',
                     'arrow_score_1': 55.1,
@@ -308,16 +301,16 @@ class JobCompleteTests(TestCase):
             f'/api/v1/jobs/{self.job.id}/complete/', payload, format='json'
         )
 
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 200, response.content)
         self.job.refresh_from_db()
         self.assertEqual(self.job.status, AnalysisJob.STATUS_COMPLETED)
 
         analysis = GameAnalysis.objects.get(game=self.game)
-        self.assertEqual(analysis.white_accuracy, 95.5)
+        self.assertIsNotNone(analysis.white_accuracy)  # derived app-side now
 
         move = MoveAnalysis.objects.get(analysis=analysis)
         self.assertEqual(move.ply, 1)
-        self.assertEqual(move.arrow_uci, 'e2e4')
+        self.assertEqual(move.arrow_uci_1, 'e2e4')
         self.assertEqual(move.arrow_uci_2, 'd2d4')
         self.assertEqual(move.arrow_uci_3, 'g1f3')
         self.assertAlmostEqual(move.arrow_score_1, 55.1, places=4)
@@ -326,6 +319,9 @@ class JobCompleteTests(TestCase):
         self.assertEqual(move.pv_san_1, '["e4", "e5", "Nf3"]')
         self.assertEqual(move.pv_san_2, '["d4", "d5"]')
         self.assertIsNone(move.pv_san_3)
+        # Derived now lives app-side.
+        self.assertIsNotNone(move.cpl)
+        self.assertIsNotNone(move.classification)
 
     def test_complete_stockfish_job_replaces_existing_move_analysis(self):
         """Re-completing a job for a game with prior MoveAnalysis rows replaces them.
@@ -364,26 +360,15 @@ class JobCompleteTests(TestCase):
             'worker_id': 'my-worker',
             'engine': 'stockfish',
             'engine_depth': 20,
-            'white_accuracy': 95.5,
-            'black_accuracy': 87.2,
-            'white_acpl': 25.0,
-            'black_acpl': 35.5,
-            'white_blunders': 0,
-            'white_mistakes': 1,
-            'white_inaccuracies': 2,
-            'black_blunders': 1,
-            'black_mistakes': 2,
-            'black_inaccuracies': 3,
+            'engine_name': 'Stockfish 16',
             'moves': [
                 {
                     'ply': 1,
                     'san': 'e4',
                     'fen': 'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1',
                     'cp_eval': 35,
-                    'cpl': 0,
-                    'best_move': 'e4',
-                    'classification': 'Best',
-                    'arrow_uci': 'e2e4',
+                    'mate_in': None,
+                    'arrow_uci_1': 'e2e4',
                     'arrow_uci_2': '',
                     'arrow_uci_3': '',
                     'arrow_score_1': None,
@@ -414,16 +399,7 @@ class JobCompleteTests(TestCase):
             'worker_id': 'wrong-worker',
             'engine': 'stockfish',
             'engine_depth': 20,
-            'white_accuracy': 95.5,
-            'black_accuracy': 87.2,
-            'white_acpl': 25.0,
-            'black_acpl': 35.5,
-            'white_blunders': 0,
-            'white_mistakes': 0,
-            'white_inaccuracies': 0,
-            'black_blunders': 0,
-            'black_mistakes': 0,
-            'black_inaccuracies': 0,
+            'engine_name': 'Stockfish 16',
             'moves': [],
         }, format='json')
 
@@ -438,16 +414,7 @@ class JobCompleteTests(TestCase):
             'worker_id': 'my-worker',
             'engine': 'stockfish',
             'engine_depth': 20,
-            'white_accuracy': 95.5,
-            'black_accuracy': 87.2,
-            'white_acpl': 25.0,
-            'black_acpl': 35.5,
-            'white_blunders': 0,
-            'white_mistakes': 0,
-            'white_inaccuracies': 0,
-            'black_blunders': 0,
-            'black_mistakes': 0,
-            'black_inaccuracies': 0,
+            'engine_name': 'Stockfish 16',
             'moves': [],
         }, format='json')
 

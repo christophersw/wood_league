@@ -163,7 +163,9 @@ def get_game_analysis(slug: str) -> GameAnalysisData | None:
                 cp_eval=m.cp_eval,
                 cpl=m.cpl,
                 best_move=m.best_move or "",
-                arrow_uci=m.arrow_uci or "",
+                # ``arrow_uci`` is the MoveRow UI field name; the model column was
+                # renamed to ``arrow_uci_1`` in #161 Phase F.
+                arrow_uci=m.arrow_uci_1 or "",
                 arrow_uci_2=m.arrow_uci_2 or "",
                 arrow_uci_3=m.arrow_uci_3 or "",
                 arrow_score_1=m.arrow_score_1,
@@ -223,7 +225,11 @@ def get_game_analysis(slug: str) -> GameAnalysisData | None:
                 ply=abs_ply,
                 san=san,
                 fen=board.fen(),
-                cp_eval=float(lm.cp_equiv) if lm and lm.cp_equiv is not None else None,
+                # Phase F removed Lc0MoveAnalysis.cp_equiv; lc0 rows no longer
+                # surface a cp-equivalent eval to the PGN-derived fallback path.
+                cp_eval=None,
+                # ``lm`` is a MoveRow dataclass built by _lc0_move_rows, not a
+                # Lc0MoveAnalysis ORM row — its field names follow MoveRow.
                 best_move=lm.best_move if lm else "",
                 arrow_uci=lm.arrow_uci if lm else "",
                 classification=lm.classification if lm else None,
@@ -285,16 +291,20 @@ def _lc0_move_rows(lga: Lc0GameAnalysis | None) -> list[MoveRow] | None:
             wdl_win=m.wdl_win,
             wdl_draw=m.wdl_draw,
             wdl_loss=m.wdl_loss,
-            cp_equiv=m.cp_equiv,
+            # cp_equiv, arrow_score_*, move_win_delta, classification removed
+            # from Lc0MoveAnalysis in #161 Phase F. UI dataclass keeps the slots
+            # for SF interop; lc0 rows leave them None and surface base_severity
+            # as the closest analogue to the old classification column.
+            cp_equiv=None,
             best_move=m.best_move or "",
-            arrow_uci=m.arrow_uci or "",
+            arrow_uci=m.arrow_uci_1 or "",
             arrow_uci_2=m.arrow_uci_2 or "",
             arrow_uci_3=m.arrow_uci_3 or "",
-            arrow_score_1=m.arrow_score_1,
-            arrow_score_2=m.arrow_score_2,
-            arrow_score_3=m.arrow_score_3,
-            move_win_delta=m.move_win_delta,
-            classification=m.classification,
+            arrow_score_1=None,
+            arrow_score_2=None,
+            arrow_score_3=None,
+            move_win_delta=None,
+            classification=m.base_severity,
             pv_san_1=m.pv_san_1,
             pv_san_2=m.pv_san_2,
             pv_san_3=m.pv_san_3,
