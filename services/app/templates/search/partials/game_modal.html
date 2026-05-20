@@ -39,15 +39,7 @@
     templates when sf or lc is None — club_accuracy_chips normalises "" → None
     internally, so passing these through directly is safe.
   {% endcomment %}
-  {% club_accuracy_chips
-       white_username=game.white_username
-       black_username=game.black_username
-       club_usernames=club_usernames
-       sf_white=sf.white_accuracy
-       sf_black=sf.black_accuracy
-       lc0_white=lc.white_accuracy
-       lc0_black=lc.black_accuracy
-     as chips %}
+  {% club_accuracy_chips white_username=game.white_username black_username=game.black_username club_usernames=club_usernames sf_white=sf.white_accuracy sf_black=sf.black_accuracy lc0_white=lc.white_accuracy lc0_black=lc.black_accuracy as chips %}
   {% if chips %}
   <div class="flex flex-wrap gap-2">
     {% for chip in chips %}
