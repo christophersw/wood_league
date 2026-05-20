@@ -146,8 +146,10 @@ def _populate_opening_ids_for_recent_games(*, since, stdout) -> int:
     """Resolve and persist ``Game.opening_id`` for games with non-empty PGN.
 
     Calls ``resolve_opening_id`` for each candidate game and bulk-updates the
-    ``opening_id`` FK column in a single queryset ``update`` per game. Idempotent:
-    re-running overwrites any previously-set value with the current resolver result.
+    ``opening_id`` FK column in a single queryset ``update`` per game. Only
+    rows whose ``opening_id`` is NULL are considered, so the sweep is cheap in
+    steady state (#168). To re-resolve already-populated rows (e.g. after the
+    resolver improves) use the ``backfill_opening_ids`` management command.
 
     Args:
         since: Optional datetime. If provided, only games created on or after
@@ -163,7 +165,7 @@ def _populate_opening_ids_for_recent_games(*, since, stdout) -> int:
         Errors for individual games are written to ``stdout`` and skipped.
     """
     processed = 0
-    candidates = Game.objects.filter(pgn__gt="")
+    candidates = Game.objects.filter(pgn__gt="", opening_id__isnull=True)
     if since is not None:
         candidates = candidates.filter(created_at__gte=since)
 

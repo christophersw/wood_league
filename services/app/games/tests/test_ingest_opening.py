@@ -80,6 +80,54 @@ def test_populate_opening_ids_skips_empty_pgn() -> None:
 
 
 @pytest.mark.django_db
+def test_populate_opening_ids_skips_already_resolved() -> None:
+    """Games whose ``opening_id`` is already populated are skipped (#168).
+
+    The per-cycle post-step must not re-walk rows that have already been
+    resolved. The resolver should be called once for the un-resolved game and
+    not for the resolved one.
+    """
+    import io
+    fake_stdout = io.StringIO()
+
+    opening = OpeningBook.objects.create(
+        eco="B00",
+        name="Test Opening",
+        pgn="1. e4",
+        epd="rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq -",
+    )
+
+    # Already-resolved game — must be skipped.
+    Game.objects.create(
+        id="resolved-game",
+        slug="resolved-game",
+        played_at="2026-01-01T00:00:00Z",
+        time_control="600",
+        pgn="[Event \"t\"]\n\n1. e4 *",
+        opening_id=opening.id,
+    )
+    # Unresolved game — must be processed.
+    Game.objects.create(
+        id="unresolved-game",
+        slug="unresolved-game",
+        played_at="2026-01-01T00:00:00Z",
+        time_control="600",
+        pgn="[Event \"t\"]\n\n1. d4 *",
+    )
+
+    with mock.patch(
+        "ingest.management.commands.sync_games.resolve_opening_id",
+        return_value=opening.id,
+    ) as mock_resolver:
+        count = _populate_opening_ids_for_recent_games(since=None, stdout=fake_stdout)
+
+    assert count == 1
+    assert mock_resolver.call_count == 1
+    # The already-resolved row is untouched.
+    assert Game.objects.get(id="resolved-game").opening_id == opening.id
+
+
+@pytest.mark.django_db
 def test_populate_opening_ids_none_resolver_result() -> None:
     """When resolver returns None the column stays None (not 0 or raising)."""
     import io
