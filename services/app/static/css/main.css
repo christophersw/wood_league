@@ -494,6 +494,107 @@
     margin-bottom: 2rem;
   }
 
+  /* Optional title strip inside a .filter-panel — same uppercase mono
+     treatment as .pg-title but scoped to a card, so a panel can stand
+     alone above/beside a table without needing its own .pg-head rule. */
+  .filter-panel__title {
+    font-family: var(--font-display);
+    font-size: 0.85rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-forest);
+    margin: 0 0 0.75rem;
+  }
+
+  .filter-panel__caption {
+    font-family: var(--font-mono);
+    font-size: 0.6rem;
+    letter-spacing: 0.08em;
+    color: var(--color-peat);
+    margin: -0.5rem 0 0.85rem;
+  }
+
+  /* Two-column panel grid — used by the scheduling page to put a
+     primary action (Run once) and a creation form (New rule) side
+     by side on wider screens, stacking on narrow ones. */
+  .panel-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1.25rem;
+    margin-bottom: 2rem;
+  }
+  @media (min-width: 880px) {
+    .panel-grid--2 { grid-template-columns: 1fr 1.4fr; }
+  }
+
+  /* Form field grid — pairs labels+inputs in a responsive 2-up
+     layout inside a panel, with the last child optionally spanning
+     full width via .wc-form-grid__full. */
+  .wc-form-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.75rem 1rem;
+    margin-bottom: 0.85rem;
+  }
+  @media (min-width: 520px) {
+    .wc-form-grid--2 { grid-template-columns: 1fr 1fr; }
+    .wc-form-grid--3 { grid-template-columns: 1fr 1fr 1fr; }
+  }
+  .wc-form-grid__full { grid-column: 1 / -1; }
+
+  /* Inline button row — used in table action cells and at the
+     bottom of forms; consistent gap, no wrapping past one line. */
+  .wc-btn-row {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    align-items: center;
+  }
+
+  /* Compact button + input variants for table-row actions and
+     inline edit disclosures — the standard sizes are too tall to
+     sit inside a .wc-table row without breaking the rhythm. */
+  .wc-btn--sm {
+    font-size: 0.55rem;
+    padding: 0.3rem 0.6rem;
+    letter-spacing: 0.1em;
+  }
+  .wc-input--sm,
+  .wc-select--sm {
+    font-size: 0.75rem;
+    padding: 0.3rem 0.55rem;
+  }
+
+  /* Inline-edit disclosure inside a table row. Keeps the row scan-
+     able by default; expands to a tidy strip of compact inputs when
+     the operator chooses to edit. */
+  .wc-row-edit {
+    margin-top: 0.55rem;
+    padding: 0.6rem 0.75rem;
+    border: 1px dashed color-mix(in srgb, var(--color-peat) 35%, transparent);
+    background: color-mix(in srgb, var(--color-parchment) 55%, var(--color-cream));
+  }
+  .wc-row-edit__summary {
+    cursor: pointer;
+    font-family: var(--font-mono);
+    font-size: 0.58rem;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--color-peat);
+    list-style: none;
+  }
+  .wc-row-edit__summary::-webkit-details-marker { display: none; }
+  .wc-row-edit__summary::before {
+    content: "▸ ";
+    display: inline-block;
+    transition: transform 0.14s;
+  }
+  .wc-row-edit[open] .wc-row-edit__summary::before {
+    transform: rotate(90deg);
+  }
+
   /* ── Status badges ────────────────────────────────────────────────────── */
 
   .wc-badge {
