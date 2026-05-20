@@ -1,0 +1,19 @@
+<!--
+Title: game_modal.html — Game preview modal partial
+Description:
+    HTMX partial stub for the search-result game modal. Renders the basic
+    game header (white vs black) and a link to the full analysis page.
+    Full template content lands in Task 14 of the #162 plan.
+Changelog:
+    2026-05-20: Stub created for Task 11 (#162).
+-->
+{# Stub — full template lands in Task 14 of #162 plan #}
+<div class="space-y-4">
+  <h2>
+    {{ game.white_username }} v. {{ game.black_username }}
+  </h2>
+  {% if game.slug %}
+  <a href="{% url 'games:analysis' game.slug %}">OPEN ANALYSIS</a>
+  {% endif %}
+  {% if board_html %}{{ board_html|safe }}{% endif %}
+</div>

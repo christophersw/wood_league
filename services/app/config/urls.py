@@ -11,11 +11,15 @@ Changelog:
 from django.contrib import admin
 from django.urls import include, path
 
+from search import views as search_views
+
 urlpatterns = [
     path("django-admin/", admin.site.urls),
     path("", include("dashboard.urls")),
     path("games/", include("games.urls")),
     path("search/", include("search.urls")),
+    # Flat alias so reverse("search_index") works in tests + non-namespaced code
+    path("search/", search_views.search_index, name="search_index"),
     path("openings/", include("openings.urls")),
     path("auth/", include("accounts.urls")),
     path("admin/", include("players.urls")),
