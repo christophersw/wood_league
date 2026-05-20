@@ -150,7 +150,7 @@ def test_analyze_one_move_skips_engine_when_played_move_mates() -> None:
     ]
     engine = _FakeEngine(multipv)
 
-    result, mover, wdl_white = _analyze_one_move(
+    result, mover, wdl_white, _bucket = _analyze_one_move(
         board, move, 7, engine, chess.engine.Limit(nodes=1000),
         cache=None, network="", nodes=0,
     )

@@ -4,7 +4,8 @@ Description:
     Tests that WorkerStats accumulates counts correctly and that
     run_one_job dispatches to the right engine analyser. Also covers
     run_batch one-at-a-time checkout behaviour and max_jobs cap (E-T2),
-    and WorkerClient.heartbeat batch-field forwarding (issue #128).
+    WorkerClient.heartbeat batch-field forwarding (issue #128), and
+    Job.white_rating/black_rating plumbing + _resolve_job_elos (issue #159).
 
 Changelog:
     2026-05-09: Initial creation
@@ -13,6 +14,7 @@ Changelog:
     2026-05-16: Add run_batch TDD tests for one-at-a-time checkout and
         max_jobs run cap (task E-T2).
     2026-05-17 (#128): Add heartbeat batch-field tests.
+    2026-05-19 (#159): Add Job rating field + _resolve_job_elos tests.
 """
 from dataclasses import dataclass
 from types import SimpleNamespace
@@ -21,9 +23,10 @@ from typing import Any, cast
 import pytest
 
 from local_worker import loop as worker_loop
-from local_worker.loop import WorkerStats, run_batch, run_one_job
+from local_worker.loop import WorkerStats, run_batch, run_one_job, _resolve_job_elos
 from local_worker.config import Settings
 from local_worker.worker_client import WorkerClient
+from local_worker.worker_client.models import Job
 
 
 def test_stats_initial_state():
@@ -407,9 +410,9 @@ def test_run_batch_lc0_warm_engine_launched_once(
         def quit(self) -> None:
             pass
 
-    def fake_launch_engine(**kwargs: Any) -> tuple[_FakeEngine, str]:
+    def fake_launch_engine(**kwargs: Any) -> tuple[_FakeEngine, str, float]:
         launch_calls.append(kwargs)
-        return _FakeEngine(), "fake-net"
+        return _FakeEngine(), "fake-net", 0.35
 
     monkeypatch.setattr(worker_loop, "lc0_launch_engine", fake_launch_engine)
     fake_client = _FakeCheckoutClient(_stub_lc0_jobs(3, engine="lc0"))
@@ -496,3 +499,75 @@ def test_heartbeat_legacy_call_omits_batch_fields(monkeypatch: pytest.MonkeyPatc
     assert "batch_total" not in captured["payload"]
     assert "batch_processed" not in captured["payload"]
     assert "session_started_at" not in captured["payload"]
+
+
+# ---------------------------------------------------------------------------
+# FIX 1 (issue #159): Job.white_rating / black_rating plumbing
+# ---------------------------------------------------------------------------
+
+
+def test_job_rating_fields_populated_from_api_dict(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Job.white_rating / black_rating are populated from the API payload when present,
+    and default to None when the API dict omits those keys (forward-wire for Phase D1).
+
+    Uses real Job construction, not mocked, to verify the dataclass fields and
+    the WorkerClient.checkout() path both work end-to-end.
+    """
+    # --- With ratings present ---
+    def fake_post_with_ratings(self: WorkerClient, path: str, payload: dict) -> dict:
+        return {
+            "jobs": [{
+                "id": 1,
+                "game_id": "g1",
+                "pgn": "1. e4 *",
+                "engine": "lc0",
+                "depth": 0,
+                "nodes": 200,
+                "white_rating": 900,
+                "black_rating": 1300,
+            }]
+        }
+
+    monkeypatch.setattr(WorkerClient, "_post", fake_post_with_ratings)
+    c = WorkerClient(base_url="http://x", api_key="k")
+    jobs_with = c.checkout(engine="lc0", worker_id="w")
+    assert len(jobs_with) == 1
+    assert jobs_with[0].white_rating == 900
+    assert jobs_with[0].black_rating == 1300
+
+    # --- With ratings absent ---
+    def fake_post_without_ratings(self: WorkerClient, path: str, payload: dict) -> dict:
+        return {
+            "jobs": [{
+                "id": 2,
+                "game_id": "g2",
+                "pgn": "1. e4 *",
+                "engine": "lc0",
+                "depth": 0,
+                "nodes": 200,
+            }]
+        }
+
+    monkeypatch.setattr(WorkerClient, "_post", fake_post_without_ratings)
+    jobs_without = c.checkout(engine="lc0", worker_id="w")
+    assert len(jobs_without) == 1
+    assert jobs_without[0].white_rating is None
+    assert jobs_without[0].black_rating is None
+
+
+def test_resolve_job_elos_returns_ratings_and_sentinel() -> None:
+    """_resolve_job_elos returns the dataclass rating fields when present, and (0, 0) when absent.
+
+    Verifies the Job-dataclass-only plumbing: no dict branch, just getattr.
+    """
+    job_with_ratings = Job(
+        id=1, game_id="g1", pgn="", engine="lc0", depth=0, nodes=200,
+        white_rating=900, black_rating=1300,
+    )
+    assert _resolve_job_elos(job_with_ratings) == (900, 1300)
+
+    job_no_ratings = Job(
+        id=2, game_id="g2", pgn="", engine="lc0", depth=0, nodes=200,
+        white_rating=None, black_rating=None,
+    )
+    assert _resolve_job_elos(job_no_ratings) == (0, 0)

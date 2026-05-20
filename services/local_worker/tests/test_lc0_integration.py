@@ -29,7 +29,7 @@ from typing import Optional
 
 import pytest
 
-from tests._shared import VALID_CLASSIFICATIONS as _VALID
+_VALID = {"Best", "Excellent", "Good", "Inaccuracy", "Mistake", "Blunder"}
 
 LC0_PATH = "/opt/homebrew/bin/lc0"
 _BUNDLED = "/opt/homebrew/Cellar/lc0/0.32.1/libexec/42850.pb.gz"
@@ -75,13 +75,13 @@ def _check(r, n: int) -> None:
     assert len(r.moves) == n and 0.0 <= r.white_win_prob <= 1.0
     for m in r.moves:
         assert 0 <= m.wdl_win <= 1000 and m.move_win_delta >= 0.0
-        assert m.classification in _VALID
+        assert m.base_severity in _VALID
 
 
 def _check_payload(p: dict) -> None:
     assert p["engine"] == "lc0" and len(p["moves"]) == 4
     for d in p["moves"]:
-        assert d["classification"] in _VALID and d["move_win_delta"] >= 0.0
+        assert d["base_severity"] in _VALID and d["move_win_delta"] >= 0.0
 
 
 def test_smoke_game_result():

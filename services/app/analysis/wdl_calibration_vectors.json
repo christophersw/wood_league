@@ -1,0 +1,153 @@
+{
+  "_lc0_pinned_sha": "d8ce48258c39d331c119f8c8729374ceb3df8409",
+  "rescale": [
+    {
+      "name": "sym_club_white_to_move",
+      "in": {
+        "raw_win": 520,
+        "raw_draw": 300,
+        "raw_loss": 180,
+        "white_elo": 1100,
+        "black_elo": 1100,
+        "white_to_move": true,
+        "draw_rate_reference": 0.58
+      },
+      "out": {
+        "wdl_white": [
+          502,
+          46,
+          452
+        ],
+        "mu": 1.104976
+      }
+    },
+    {
+      "name": "asym_weak_white",
+      "in": {
+        "raw_win": 500,
+        "raw_draw": 300,
+        "raw_loss": 200,
+        "white_elo": 900,
+        "black_elo": 1300,
+        "white_to_move": true,
+        "draw_rate_reference": 0.58
+      },
+      "out": {
+        "wdl_white": [
+          14,
+          3,
+          983
+        ],
+        "mu": -44.761871
+      }
+    },
+    {
+      "name": "asym_black_to_move",
+      "in": {
+        "raw_win": 400,
+        "raw_draw": 350,
+        "raw_loss": 250,
+        "white_elo": 1200,
+        "black_elo": 900,
+        "white_to_move": false,
+        "draw_rate_reference": 0.58
+      },
+      "out": {
+        "wdl_white": [
+          951,
+          8,
+          41
+        ],
+        "mu": -32.422718
+      }
+    },
+    {
+      "name": "extreme_passthrough",
+      "in": {
+        "raw_win": 0,
+        "raw_draw": 0,
+        "raw_loss": 1000,
+        "white_elo": 1100,
+        "black_elo": 1100,
+        "white_to_move": true,
+        "draw_rate_reference": 0.58
+      },
+      "out": {
+        "wdl_white": [
+          0,
+          0,
+          1000
+        ],
+        "mu": 0.0
+      }
+    }
+  ],
+  "classify": [
+    {
+      "name": "best",
+      "in": {
+        "delta_mu": 0.0,
+        "delta_d": 0.0
+      },
+      "out": [
+        "Best",
+        null
+      ]
+    },
+    {
+      "name": "missed_win",
+      "in": {
+        "delta_mu": 0.15,
+        "delta_d": 0.25
+      },
+      "out": [
+        "Mistake",
+        "Missed Win"
+      ]
+    },
+    {
+      "name": "losing_blunder",
+      "in": {
+        "delta_mu": 0.25,
+        "delta_d": -0.1
+      },
+      "out": [
+        "Blunder",
+        "Losing Blunder"
+      ]
+    },
+    {
+      "name": "risky",
+      "in": {
+        "delta_mu": 0.03,
+        "delta_d": -0.25
+      },
+      "out": [
+        "Good",
+        "Risky"
+      ]
+    },
+    {
+      "name": "simplification",
+      "in": {
+        "delta_mu": 0.03,
+        "delta_d": 0.25
+      },
+      "out": [
+        "Good",
+        "Simplification"
+      ]
+    },
+    {
+      "name": "gate_exact_none",
+      "in": {
+        "delta_mu": 0.1,
+        "delta_d": 0.2
+      },
+      "out": [
+        "Inaccuracy",
+        null
+      ]
+    }
+  ]
+}

@@ -11,6 +11,9 @@ Changelog:
     2026-05-10: Removed DISPATCH_CHOICES and dispatch_mode field from CheckoutRequestSerializer
     2026-05-17 (#128): Add batch_total, batch_processed, session_started_at to HeartbeatSerializer
     2026-05-17 (#141): JobSerializer resolves null lc0 nodes -> settings.LC0_NODES
+    2026-05-19 (#159): JobSerializer exposes white_rating/black_rating for WDL calibration
+    2026-05-19 (#159/D2): Lc0MoveSerializer carries rescaled WDL + severity fields;
+        Lc0CompleteSerializer carries draw_rate_reference / wdl_calibration_elo / contempt
 """
 from django.conf import settings
 from rest_framework import serializers
@@ -20,6 +23,18 @@ ENGINE_CHOICES = ['stockfish', 'lc0']
 CLASSIFICATION_CHOICES = [
     'Brilliant', 'Great', 'Best', 'Excellent',
     'Inaccuracy', 'Mistake', 'Blunder',
+]
+
+# Lc0-specific severity labels produced by classify_draw_aware / _base_severity
+# in the worker's wdl_calibration module.  These intentionally omit 'Brilliant'
+# and 'Great' (those are Stockfish-only classifications).
+LC0_SEVERITY_CHOICES = [
+    'Best', 'Excellent', 'Good', 'Inaccuracy', 'Mistake', 'Blunder',
+]
+
+# Optional draw-character labels; most moves will have draw_character=None.
+LC0_DRAW_CHARACTER_CHOICES = [
+    'Missed Win', 'Losing Blunder', 'Risky', 'Simplification',
 ]
 
 
@@ -43,6 +58,11 @@ class JobSerializer(serializers.Serializer):
     nodes = serializers.SerializerMethodField()  # Lc0 nodes (resolved)
     worker_id = serializers.CharField()
     claimed_by_key_prefix = serializers.CharField()
+
+    white_rating = serializers.IntegerField(
+        source='game.white_rating', required=False, allow_null=True, default=None)
+    black_rating = serializers.IntegerField(
+        source='game.black_rating', required=False, allow_null=True, default=None)
 
     def get_nodes(self, obj) -> int | None:
         """Resolve the lc0 node budget the worker must use.
@@ -107,14 +127,38 @@ class StockfishCompleteSerializer(serializers.Serializer):
 
 
 class Lc0MoveSerializer(serializers.Serializer):
-    """Individual move analysis from Lc0."""
+    """Individual move analysis from Lc0, including WDL calibration fields.
+
+    Raw WDL triple (wdl_win/draw/loss) is the lc0 engine output in milli-units
+    (0-1000, summing to 1000).  The rescaled triple (_adj suffix) is the
+    population-adjusted WDL after applying the draw-rate reference correction
+    from wdl_calibration.  wdl_mu is the expected-score fraction derived from
+    the rescaled triple, and delta_mu/delta_d are the move-level changes in mu
+    and draw fraction versus the position before the move.
+
+    base_severity is one of LC0_SEVERITY_CHOICES (always set).
+    draw_character is one of LC0_DRAW_CHARACTER_CHOICES or None (most moves).
+    The old ``classification`` field has been removed — it was replaced by
+    base_severity + draw_character in #159.
+    """
 
     ply = serializers.IntegerField(min_value=1)
     san = serializers.CharField(max_length=10)
     fen = serializers.CharField(max_length=100)
+    # Raw lc0 WDL triple (engine output, milli-units, sum=1000)
     wdl_win = serializers.IntegerField(min_value=0, max_value=1000)
     wdl_draw = serializers.IntegerField(min_value=0, max_value=1000)
     wdl_loss = serializers.IntegerField(min_value=0, max_value=1000)
+    # Rescaled WDL triple after draw-rate reference correction
+    wdl_win_adj = serializers.IntegerField(min_value=0, max_value=1000)
+    wdl_draw_adj = serializers.IntegerField(min_value=0, max_value=1000)
+    wdl_loss_adj = serializers.IntegerField(min_value=0, max_value=1000)
+    # wdl_mu = (W + 0.5*D) / total from rescaled triple; nullable for edge cases
+    wdl_mu = serializers.FloatField(required=False, allow_null=True, default=None)
+    # delta_mu = change in expected score versus position before move (signed)
+    delta_mu = serializers.FloatField()
+    # delta_d = change in draw fraction (signed; negative means draw fraction fell)
+    delta_d = serializers.FloatField()
     cp_equiv = serializers.IntegerField(required=False, allow_null=True)
     best_move = serializers.CharField(max_length=10)
     # CharField rejects empty strings by default — the worker legitimately
@@ -126,7 +170,15 @@ class Lc0MoveSerializer(serializers.Serializer):
         max_length=8, required=False, default='', allow_blank=True,
     )
     move_win_delta = serializers.FloatField()
-    classification = serializers.ChoiceField(choices=CLASSIFICATION_CHOICES)
+    # base_severity from classify_draw_aware/_base_severity (always set)
+    base_severity = serializers.ChoiceField(choices=LC0_SEVERITY_CHOICES)
+    # draw_character from classify_draw_aware (None for most moves)
+    draw_character = serializers.ChoiceField(
+        choices=LC0_DRAW_CHARACTER_CHOICES,
+        required=False,
+        allow_null=True,
+        default=None,
+    )
     arrow_uci_2 = serializers.CharField(
         max_length=8, required=False, default='', allow_blank=True,
     )
@@ -142,11 +194,21 @@ class Lc0MoveSerializer(serializers.Serializer):
 
 
 class Lc0CompleteSerializer(serializers.Serializer):
-    """Request to complete an Lc0 analysis job."""
+    """Request to complete an Lc0 analysis job, including WDL calibration metadata.
+
+    New fields vs. the pre-#159 shape:
+    - draw_rate_reference: population draw-rate used to rescale WDL triples (0.001–0.999)
+    - wdl_calibration_elo: the Elo at which draw_rate_reference was looked up (>= 0)
+    - contempt: lc0 contempt setting at time of analysis (signed integer; 0 = neutral)
+    """
 
     worker_id = serializers.CharField(max_length=64)
     engine_nodes = serializers.IntegerField(min_value=1)
     network_name = serializers.CharField(max_length=128, required=False, default='')
+    # WDL calibration metadata
+    draw_rate_reference = serializers.FloatField(min_value=0.001, max_value=0.999)
+    wdl_calibration_elo = serializers.IntegerField(min_value=0)
+    contempt = serializers.IntegerField()
     white_win_prob = serializers.FloatField(min_value=0, max_value=1)
     white_draw_prob = serializers.FloatField(min_value=0, max_value=1)
     white_loss_prob = serializers.FloatField(min_value=0, max_value=1)

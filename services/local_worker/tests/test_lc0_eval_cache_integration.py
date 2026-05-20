@@ -105,7 +105,7 @@ def test_second_call_hits_and_skips_engine(tmp_path: Path) -> None:
     board, move = _starting()
     engine = _FakeEngine(_multipv_payload(), {"score": _PovScore(0, 0, 0)})
 
-    result, _mover, wdl_white = _analyze_one_move(
+    result, _mover, wdl_white, _bucket = _analyze_one_move(
         board, move, 1, engine, chess.engine.Limit(nodes=1000),
         cache=cache, network="BT4", nodes=25000,
     )

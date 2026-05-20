@@ -120,6 +120,19 @@ class Lc0GameAnalysis(models.Model):
     black_blunders = models.IntegerField(null=True, blank=True)
     black_mistakes = models.IntegerField(null=True, blank=True)
     black_inaccuracies = models.IntegerField(null=True, blank=True)
+    # WDL calibration metadata (#159)
+    draw_rate_reference = models.FloatField(
+        null=True, blank=True,
+        help_text="Population draw-rate used to rescale WDL triples (0.001–0.999).",
+    )
+    wdl_calibration_elo = models.IntegerField(
+        null=True, blank=True,
+        help_text="Elo at which draw_rate_reference was looked up.",
+    )
+    contempt = models.IntegerField(
+        null=True, blank=True,
+        help_text="Lc0 contempt setting at time of analysis (signed integer; 0 = neutral).",
+    )
 
     class Meta:
         db_table = "lc0_game_analysis"
@@ -151,7 +164,19 @@ class Lc0MoveAnalysis(models.Model):
     arrow_score_2 = models.FloatField(null=True, blank=True)
     arrow_score_3 = models.FloatField(null=True, blank=True)
     move_win_delta = models.FloatField(null=True, blank=True)
-    classification = models.CharField(max_length=16, null=True, blank=True)
+    # Rescaled WDL triple after draw-rate reference correction (#159)
+    wdl_win_adj = models.IntegerField(null=True, blank=True)
+    wdl_draw_adj = models.IntegerField(null=True, blank=True)
+    wdl_loss_adj = models.IntegerField(null=True, blank=True)
+    # Expected-score fraction from rescaled WDL; nullable for degenerate WDL paths
+    wdl_mu = models.FloatField(null=True, blank=True)
+    # Move-level changes in expected-score and draw-fraction vs. the position before
+    delta_mu = models.FloatField(null=True, blank=True)
+    delta_d = models.FloatField(null=True, blank=True)
+    # Severity label from classify_draw_aware/_base_severity (always set for new rows)
+    base_severity = models.CharField(max_length=16, null=True, blank=True)
+    # Optional draw-character label; None for most moves
+    draw_character = models.CharField(max_length=16, null=True, blank=True)
     pv_san_1 = models.TextField(null=True, blank=True)
     pv_san_2 = models.TextField(null=True, blank=True)
     pv_san_3 = models.TextField(null=True, blank=True)

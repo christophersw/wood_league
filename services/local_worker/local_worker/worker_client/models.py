@@ -7,9 +7,11 @@ Description:
 Changelog:
     2026-05-08: Created
     2026-05-10: Copied from packages/shared to make local_worker self-contained for PyPI
+    2026-05-19 (#159): Job gains white_rating/black_rating for D1 Elo passthrough.
 """
 from __future__ import annotations
 from dataclasses import dataclass
+from typing import Optional
 
 
 @dataclass
@@ -22,3 +24,5 @@ class Job:
     engine: str
     depth: int
     nodes: int | None
+    white_rating: Optional[int] = None
+    black_rating: Optional[int] = None

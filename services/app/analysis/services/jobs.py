@@ -274,6 +274,10 @@ def complete_lc0_job(
                 engine_nodes=payload['engine_nodes'],
                 network_name=payload.get('network_name', ''),
                 analyzed_at=timezone.now(),
+                # WDL calibration metadata (#159)
+                draw_rate_reference=payload.get('draw_rate_reference'),
+                wdl_calibration_elo=payload.get('wdl_calibration_elo'),
+                contempt=payload.get('contempt'),
             ),
         )
 
@@ -287,6 +291,14 @@ def complete_lc0_job(
                 wdl_win=m['wdl_win'],
                 wdl_draw=m['wdl_draw'],
                 wdl_loss=m['wdl_loss'],
+                # Rescaled WDL triple (#159)
+                wdl_win_adj=m.get('wdl_win_adj'),
+                wdl_draw_adj=m.get('wdl_draw_adj'),
+                wdl_loss_adj=m.get('wdl_loss_adj'),
+                # Expected-score and delta metrics (#159)
+                wdl_mu=m.get('wdl_mu'),
+                delta_mu=m.get('delta_mu'),
+                delta_d=m.get('delta_d'),
                 cp_equiv=m.get('cp_equiv'),
                 best_move=m['best_move'],
                 arrow_uci=m.get('arrow_uci', ''),
@@ -299,7 +311,9 @@ def complete_lc0_job(
                 pv_san_2=m.get('pv_san_2'),
                 pv_san_3=m.get('pv_san_3'),
                 move_win_delta=m['move_win_delta'],
-                classification=m['classification'],
+                # Severity labels replacing the old classification field (#159)
+                base_severity=m.get('base_severity'),
+                draw_character=m.get('draw_character'),
             )
             for m in payload['moves']
         ])

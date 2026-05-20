@@ -119,6 +119,8 @@ class WorkerClient:
                 engine=j['engine'],
                 depth=j['depth'],
                 nodes=j.get('nodes'),
+                white_rating=j.get('white_rating'),
+                black_rating=j.get('black_rating'),
             )
             for j in data.get('jobs', [])
         ]

@@ -10,8 +10,18 @@ Description:
     single-entry). Fail-soft throughout, exactly like cache_sync.py: an
     object-storage failure must never interrupt analysis — the worker
     just recalibrates as it does today (issue #150).
+
+    Per-network draw-rate measurements (issue #159) are stored in the same
+    lc0_tuning.json file under a ``draw_rate`` section keyed by network
+    name.  push_draw_rate / pull_draw_rate manage that section with the
+    same fail-soft discipline.
 Changelog:
     2026-05-17: Initial creation (issue #150).
+    2026-05-19: Add push_draw_rate / pull_draw_rate for per-network draw-rate
+                persistence in the existing lc0_tuning.json store (issue #159).
+    2026-05-19: push_draw_rate now writes via tmp→replace (atomic) matching
+                lc0_tuning.save_cache idiom; fix sample stdev in lc0_draw_rate
+                (issue #159 B1).
 """
 from __future__ import annotations
 
@@ -105,6 +115,74 @@ def push_tuning(client: Any, bucket: str, cache_path: Path) -> None:
         )
     except Exception as exc:  # noqa: BLE001 — push must not break the run
         log.warning("lc0_tuning_sync: push failed (%s); ignored", exc)
+
+
+def pull_draw_rate(network: str, cache_path: Path) -> "float | None":
+    """Read a previously-persisted draw rate for ``network`` from the local cache.
+
+    The draw rate lives in the ``draw_rate`` section of lc0_tuning.json,
+    keyed by network name.  Returns None (fail-soft) when the file is
+    absent, malformed, or the network has no entry.
+
+    Args:
+        network: Resolved network identifier (e.g. ``"BT4"``).
+        cache_path: Path to the local lc0_tuning.json file.
+
+    Returns:
+        Persisted draw rate float, or None if unavailable.
+    """
+    try:
+        payload = json.loads(cache_path.read_text())
+        draw_rate_section = payload.get("draw_rate", {})
+        value = draw_rate_section.get(network)
+        if value is None:
+            return None
+        return float(value)
+    except Exception as exc:  # noqa: BLE001 — fail-soft is the contract
+        log.warning(
+            "lc0_tuning_sync: pull_draw_rate for net=%s failed (%s); will measure",
+            network,
+            exc,
+        )
+        return None
+
+
+def push_draw_rate(network: str, draw_rate: float, cache_path: Path) -> None:
+    """Persist ``draw_rate`` for ``network`` in the local lc0_tuning.json.
+
+    Reads the existing file (if any), merges the new value into the
+    ``draw_rate`` section, and writes the updated payload atomically.
+    Creates the file from scratch when it does not yet exist.  Never
+    raises — a write failure is logged and silently ignored so analysis
+    is never interrupted.
+
+    Args:
+        network: Resolved network identifier (e.g. ``"BT4"``).
+        draw_rate: Measured draw fraction to persist.
+        cache_path: Path to the local lc0_tuning.json file.
+    """
+    try:
+        if cache_path.exists():
+            payload: dict = json.loads(cache_path.read_text())
+        else:
+            payload = {}
+        draw_rate_section: dict = payload.setdefault("draw_rate", {})
+        draw_rate_section[network] = draw_rate
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = cache_path.with_suffix(cache_path.suffix + ".tmp")
+        tmp.write_text(json.dumps(payload))
+        tmp.replace(cache_path)
+        log.info(
+            "lc0_tuning_sync: persisted draw_rate=%.4f for net=%s",
+            draw_rate,
+            network,
+        )
+    except Exception as exc:  # noqa: BLE001 — never interrupt analysis
+        log.warning(
+            "lc0_tuning_sync: push_draw_rate for net=%s failed (%s); ignored",
+            network,
+            exc,
+        )
 
 
 def push_after_calibrate(cache_path: Path) -> None:
