@@ -11,10 +11,8 @@ Changelog:
 """
 
 import io
-import json
 
 import chess.pgn
-import chess.svg
 from django.conf import settings
 from django.http import HttpResponse
 from django.shortcuts import render
@@ -23,6 +21,7 @@ from django.views.decorators.http import require_POST
 from accounts.services import resolve_current_player
 from games.models import Game
 from players.models import Player
+from search.board_preview import render_animation_html
 from search.services import (
     SearchPlanError,
     execute_sql_search,
@@ -157,7 +156,7 @@ def game_modal_partial(request, game_id):
             status=404,
         )
     pgn_text = (game.pgn or "").strip()
-    board_html = _board_animation_html(pgn_text)
+    board_html = render_animation_html(pgn_text)
     return render(request, "search/partials/game_modal.html", {
         "game": game,
         "board_html": board_html,
@@ -259,60 +258,4 @@ def _move_count(pgn_text):
     return (plies + 1) // 2
 
 
-def _board_animation_html(pgn_text: str, interval_ms: int = 700) -> str:
-    """Generate interactive animated board HTML with SVG frames from PGN."""
-    if not pgn_text:
-        return ""
-    game = chess.pgn.read_game(io.StringIO(pgn_text))
-    if game is None:
-        return ""
-    board = game.board()
-    frames = [chess.svg.board(board, size=340)]
-    for move in game.mainline_moves():
-        board.push(move)
-        frames.append(chess.svg.board(board, lastmove=move, size=340))
-    if len(frames) <= 1:
-        return frames[0] if frames else ""
-
-    frames_json = json.dumps(frames)
-    total = len(frames)
-    return f"""
-<style>
-#chess-anim-preview{{width:340px;font-family:monospace;}}
-#cap-board-frame svg{{display:block;}}
-#cap-controls{{margin-top:6px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;}}
-#cap-btn-pp{{padding:2px 10px;cursor:pointer;font-size:13px;border:1px solid #1A1A1A;background:transparent;}}
-#cap-btn-pp:hover{{background:#1A1A1A;color:#F2E6D0;}}
-#cap-scrubber{{flex:1;cursor:pointer;accent-color:#D4A843;}}
-#cap-frame-lbl{{font-size:11px;color:#8B3A2A;min-width:60px;text-align:right;}}
-</style>
-<div id="chess-anim-preview">
-  <div id="cap-board-frame"></div>
-  <div id="cap-controls">
-    <button id="cap-btn-pp" onclick="capToggle()">&#9646;&#9646;</button>
-    <input id="cap-scrubber" type="range" min="0" max="{total - 1}" value="0" oninput="capScrub(this.value)"/>
-    <span id="cap-frame-lbl">Start</span>
-  </div>
-</div>
-<script>
-(function(){{
-  const frames={frames_json};
-  let idx=0,playing=true;
-  let timer=setInterval(advance,{interval_ms});
-  function render(){{
-    document.getElementById('cap-board-frame').innerHTML=frames[idx];
-    document.getElementById('cap-scrubber').value=idx;
-    document.getElementById('cap-frame-lbl').textContent=idx===0?'Start':'Ply '+idx;
-  }}
-  function advance(){{idx=(idx+1)%frames.length;render();}}
-  window.capScrub=function(v){{idx=parseInt(v);render();}};
-  window.capToggle=function(){{
-    playing=!playing;
-    const btn=document.getElementById('cap-btn-pp');
-    if(playing){{timer=setInterval(advance,{interval_ms});btn.innerHTML='&#9646;&#9646;';}}
-    else{{clearInterval(timer);btn.innerHTML='&#9654;';}}
-  }};
-  render();
-}})();
-</script>
-"""
+# Animated-board preview moved to search.board_preview (see render_animation_html).
