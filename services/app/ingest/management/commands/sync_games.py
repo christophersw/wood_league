@@ -30,6 +30,7 @@ from analysis.services.enqueue import enqueue_analysis_job
 from core.models import SiteSettings
 from games.clock_parser import parse_move_times
 from games.models import Game, GameMoveTime
+from games.opening_resolver import resolve_opening_id
 from ingest.models import SystemEvent
 from players.models import Player
 
@@ -139,6 +140,43 @@ def _populate_move_times_for_recent_games(*, since, stdout) -> int:
             ])
             written += len(move_times)
     return written
+
+
+def _populate_opening_ids_for_recent_games(*, since, stdout) -> int:
+    """Resolve and persist ``Game.opening_id`` for games with non-empty PGN.
+
+    Calls ``resolve_opening_id`` for each candidate game and bulk-updates the
+    ``opening_id`` FK column in a single queryset ``update`` per game. Idempotent:
+    re-running overwrites any previously-set value with the current resolver result.
+
+    Args:
+        since: Optional datetime. If provided, only games created on or after
+            this timestamp are processed. Pass None to sweep all games.
+        stdout: A file-like object for progress/error output (e.g. self.stdout).
+
+    Returns:
+        int: Total number of games processed (whether or not a match was found).
+
+    Side effects:
+        Calls ``resolve_opening_id`` for each candidate game.
+        Updates ``Game.opening_id`` in place via Django ORM ``save()``.
+        Errors for individual games are written to ``stdout`` and skipped.
+    """
+    processed = 0
+    candidates = Game.objects.filter(pgn__gt="")
+    if since is not None:
+        candidates = candidates.filter(created_at__gte=since)
+
+    for game in candidates.iterator():
+        try:
+            opening_id = resolve_opening_id(game.pgn)
+        except Exception as exc:  # noqa: BLE001 — resolver failure is non-fatal
+            stdout.write(f"opening-id resolve failed for {game.id}: {exc}\n")
+            continue
+        game.opening_id = opening_id
+        game.save(update_fields=["opening_id"])
+        processed += 1
+    return processed
 
 
 class Command(BaseCommand):
@@ -270,6 +308,9 @@ class Command(BaseCommand):
         # idempotent); the backfill command handles bulk historic loads.
         self._run_move_time_post_step()
 
+        # Issue #162: resolve opening_id FK for newly ingested games.
+        self._run_opening_id_post_step()
+
         SystemEvent.objects.create(
             event_type="game_sync",
             status="completed",
@@ -305,3 +346,24 @@ class Command(BaseCommand):
             self.stdout.write(f"move-time rows written: {written}\n")
         except Exception as exc:  # noqa: BLE001
             self.stdout.write(f"move-time post-step failed: {exc}\n")
+
+    def _run_opening_id_post_step(self) -> None:
+        """Resolve and persist Game.opening_id for all games with PGN post-sync.
+
+        Issue #162: walks the opening book ply-by-ply via resolve_opening_id
+        and stamps each Game row with the deepest matching OpeningBook id.
+        Failures for individual games are logged and skipped so the sync
+        pipeline (advisory-lock release, SystemEvent close) is never blocked.
+
+        Returns:
+            None
+
+        Side effects:
+            Updates Game.opening_id via Django ORM save(). May write error or
+            success message to self.stdout.
+        """
+        try:
+            processed = _populate_opening_ids_for_recent_games(since=None, stdout=self.stdout)
+            self.stdout.write(f"opening-id rows resolved: {processed}\n")
+        except Exception as exc:  # noqa: BLE001
+            self.stdout.write(f"opening-id post-step failed: {exc}\n")
