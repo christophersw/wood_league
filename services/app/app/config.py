@@ -10,6 +10,8 @@ Changelog:
     2026-05-14: Added RUNPOD_API_KEY / RUNPOD_WORKER_POD_ID / RUNPOD_ENABLED
         fields for the admin start-pod endpoint (issue #83).
     2026-05-18: Added VAST_* settings (issue #155 Sub-project A).
+    2026-05-20: Added VAST_VERIFIED_ONLY — restrict offer search to
+        vast.ai verified hosts (datacenter tier).
 """
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -46,6 +48,7 @@ class Settings(BaseSettings):
     vast_campaign_id: str = ""
     vast_offer_gpu_name: str = "L40S"
     vast_offer_max_dph: float = 1.50
+    vast_verified_only: bool = False
     vast_max_jobs: int = 100
     vast_hard_deadline_hours: float = 6.0
     vast_worker_stale_minutes: int = 15

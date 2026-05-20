@@ -277,6 +277,11 @@ VAST_TEMPLATE_HASH = os.environ.get("VAST_TEMPLATE_HASH", "")
 VAST_CAMPAIGN_ID = os.environ.get("VAST_CAMPAIGN_ID", "")
 VAST_OFFER_GPU_NAME = os.environ.get("VAST_OFFER_GPU_NAME", "L40S")
 VAST_OFFER_MAX_DPH = float(os.environ.get("VAST_OFFER_MAX_DPH", "1.50"))
+# Restrict offer search to vast.ai *verified* hosts (the datacenter-
+# tier reliability filter in the vast console). Default off to preserve
+# existing behaviour; flip to ``true`` on the reconcile cron service
+# to refuse community / hobbyist machines.
+VAST_VERIFIED_ONLY = os.environ.get("VAST_VERIFIED_ONLY", "").lower() in {"1", "true", "yes", "on"}
 VAST_MAX_JOBS = int(os.environ.get("VAST_MAX_JOBS", "100"))
 VAST_HARD_DEADLINE_HOURS = float(os.environ.get("VAST_HARD_DEADLINE_HOURS", "6.0"))
 VAST_WORKER_STALE_MINUTES = int(os.environ.get("VAST_WORKER_STALE_MINUTES", "15"))

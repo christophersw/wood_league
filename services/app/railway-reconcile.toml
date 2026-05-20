@@ -17,6 +17,7 @@
 #        VAST_CAMPAIGN_ID=…             # passed through as WL_CAMPAIGN_ID
 #        VAST_OFFER_GPU_NAME=L40S       # GPU filter (default)
 #        VAST_OFFER_MAX_DPH=1.50        # $/hr ceiling (default)
+#        VAST_VERIFIED_ONLY=false       # true → datacenter-tier hosts only
 #        VAST_MAX_JOBS=100              # default per-run job cap
 #        VAST_HARD_DEADLINE_HOURS=6     # absolute kill time
 #        VAST_WORKER_STALE_MINUTES=15   # heartbeat-silence destroy window
