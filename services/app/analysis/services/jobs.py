@@ -387,6 +387,8 @@ def complete_lc0_job(
                 draw_rate_reference=derived["draw_rate_reference"],
                 wdl_calibration_elo=derived["wdl_calibration_elo"],
                 contempt=derived["contempt"],
+                white_accuracy=derived["white_accuracy"],
+                black_accuracy=derived["black_accuracy"],
                 analyzed_at=timezone.now(),
             ),
         )

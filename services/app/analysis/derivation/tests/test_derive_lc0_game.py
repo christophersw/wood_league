@@ -63,6 +63,7 @@ def test_returns_full_game_level_shape() -> None:
         "black_win_prob", "black_draw_prob", "black_loss_prob",
         "white_blunders", "white_mistakes", "white_inaccuracies",
         "black_blunders", "black_mistakes", "black_inaccuracies",
+        "white_accuracy", "black_accuracy",  # #164
         "moves",
     }
     assert set(out) == expected_keys

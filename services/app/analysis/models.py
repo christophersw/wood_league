@@ -147,6 +147,11 @@ class Lc0GameAnalysis(models.Model):
         null=True, blank=True,
         help_text="Lc0 contempt setting at time of analysis (signed integer; 0 = neutral).",
     )
+    # Per-side game accuracy (#164). Lichess curve applied to mover-frame
+    # ``wdl_mu`` series in derivation.lc0; ``None`` when the side contributed
+    # no plies to the series (e.g. a 1-ply or 2-ply game).
+    white_accuracy = models.FloatField(null=True, blank=True)
+    black_accuracy = models.FloatField(null=True, blank=True)
 
     class Meta:
         db_table = "lc0_game_analysis"
@@ -156,6 +161,17 @@ class Lc0GameAnalysis(models.Model):
     def __str__(self):
         """Return a human-readable identifier for this Lc0 analysis."""
         return f"Lc0 analysis for {self.game_id}"
+
+    @property
+    def avg_accuracy(self):
+        """Mean of white/black accuracy, or whichever single side has data.
+
+        Mirrors ``GameAnalysis.avg_accuracy`` so templates can render an
+        engine-agnostic "average game accuracy" without branching.
+        """
+        if self.white_accuracy is not None and self.black_accuracy is not None:
+            return (self.white_accuracy + self.black_accuracy) / 2
+        return self.white_accuracy or self.black_accuracy
 
 
 class Lc0MoveAnalysis(models.Model):
