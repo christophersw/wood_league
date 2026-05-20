@@ -7,8 +7,7 @@
 
 <div class="page-hero">
   <div>
-    <h1>Game Search</h1>
-    <p class="page-hero-sub">Search games and preview openings.</p>
+    <h1>Find club games</h1>
   </div>
 </div>
 
@@ -38,7 +37,7 @@
         class="flex gap-2" style="margin-bottom:.75rem;">
     {% csrf_token %}
     <input type="text" name="query"
-           placeholder="e.g. last 30 days losses as black in sicilian openings"
+           placeholder="Show me the games I've won playing a King's Pawn opening against players with an ELO higher than mine."
            class="wc-input" style="flex:1;"
            {% if not ai_available %}disabled{% endif %}>
     <button type="submit" class="wc-btn wc-btn-solid"
@@ -46,9 +45,6 @@
       Search
     </button>
   </form>
-  <p style="font-family:var(--font-mono);font-size:.65rem;color:var(--color-slate);">
-    Describe games in plain English — the app generates validated SQL and runs it.
-  </p>
 </div>
 
 {# ── Keyword Search form ───────────────────────────────────────────────── #}

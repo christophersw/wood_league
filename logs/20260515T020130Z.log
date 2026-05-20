@@ -1,0 +1,221 @@
+2026-05-14 20:47:52.675 | INFO     | local_worker.logging_setup:log_session_banner:195 - === wood-league-worker 0.9.4 — session 2026-05-15T01:47:52Z ===
+2026-05-14 20:47:52.676 | INFO     | local_worker.logging_setup:log_session_banner:195 - host: Windows AMD64 11 / Python 3.12.2
+2026-05-14 20:47:52.676 | INFO     | local_worker.logging_setup:log_session_banner:195 - torch: 2.12.0+cu132  cuda=True  mps=False
+2026-05-14 20:47:52.676 | INFO     | local_worker.logging_setup:log_session_banner:195 - gpus: ['NVIDIA GeForce RTX 4070 Ti']  (no gpu)
+2026-05-14 20:47:52.676 | INFO     | local_worker.logging_setup:log_session_banner:195 - engines: stockfish Stockfish 17.1 @ D:\0CHESSPROJECT\stockfish\stockfish-windows-x86-64-avx2.exe; lc0 _ @ D:\lc0\lc0.exe backend=cuda-auto
+2026-05-14 20:47:52.676 | INFO     | local_worker.logging_setup:log_session_banner:195 - syzygy: wdl=35 dtz=35 files at C:\Users\zirco\AppData\Local\WoodLeague\wood-league-worker\syzygy
+2026-05-14 20:48:19.364 | INFO     | httpx._client:_send_single_request:1025 - HTTP Request: POST https://woodleague.up.railway.app/api/v1/heartbeat/ "HTTP/1.1 200 OK"
+2026-05-14 20:48:19.458 | INFO     | httpx._client:_send_single_request:1025 - HTTP Request: POST https://woodleague.up.railway.app/api/v1/jobs/checkout/ "HTTP/1.1 200 OK"
+2026-05-14 20:48:19.458 | INFO     | local_worker.loop:_drain_engine_queue:371 - Claimed 1 lc0 job(s): 7849
+2026-05-14 20:48:19.458 | INFO     | local_worker.loop:run_one_job:187 - Starting job 7849 — engine=lc0 game=476480ea-b812-11ef-a709-cf909a01000b depth=25000 nodes=None
+2026-05-14 20:48:19.467 | INFO     | local_worker.analysis.lc0:analyze_pgn:665 - lc0: launching engine at D:\lc0\lc0.exe
+2026-05-14 20:48:19.609 | INFO     | chess.engine:error_line_received:973 - <UciProtocol (pid=8052)>: stderr >>        _
+2026-05-14 20:48:19.609 | INFO     | chess.engine:error_line_received:973 - <UciProtocol (pid=8052)>: stderr >> |   _ | |
+2026-05-14 20:48:19.609 | INFO     | chess.engine:error_line_received:973 - <UciProtocol (pid=8052)>: stderr >> |_ |_ |_| v0.32.1 built Nov 23 2025
+2026-05-14 20:48:19.609 | INFO     | chess.engine:error_line_received:973 - <UciProtocol (pid=8052)>: stderr >> Search algorithm: classic
+2026-05-14 20:48:19.609 | INFO     | local_worker.analysis.lc0:analyze_pgn:667 - lc0: engine launched; configuring backend=cuda-auto weights=C:\Users\zirco\AppData\Local\WoodLeague\wood-league-worker\networks\BT4-1024x15x32h-swa-6147500-policytune-332.pb.gz syzygy=C:\Users\zirco\AppData\Local\WoodLeague\wood-league-worker\syzygy
+2026-05-14 20:48:19.610 | INFO     | local_worker.analysis.lc0_tuning:get_tuned_opts:459 - lc0_tuning: calibrating MinibatchSize for backend=cuda-auto …
+2026-05-14 20:52:40.522 | INFO     | local_worker.analysis.lc0_tuning:_measure_one_batch_size:306 - lc0_tuning: mb=128 -> 18648 nps
+2026-05-14 20:57:34.580 | INFO     | local_worker.analysis.lc0_tuning:_measure_one_batch_size:306 - lc0_tuning: mb=256 -> 12654 nps
+2026-05-14 20:57:34.580 | INFO     | local_worker.analysis.lc0_tuning:_log_nps_regression:314 - lc0_tuning: nps regressed at mb=256 (18648 -> 12654); ending sweep early
+2026-05-14 20:57:34.582 | INFO     | local_worker.analysis.lc0:_configure_engine:476 - lc0: configure complete (opts=['Backend', 'MaxPrefetch', 'MinibatchSize', 'NNCacheSize', 'RamLimitMb', 'SmartPruningFactor', 'SyzygyPath', 'Threads', 'WeightsFile'])
+2026-05-14 20:57:34.583 | INFO     | local_worker.analysis.lc0:analyze_pgn:692 - lc0: entering move loop — 92 plies, 25000 nodes/move
+2026-05-14 20:57:34.583 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 1/92
+2026-05-14 20:57:34.583 | INFO     | chess.engine:error_line_received:973 - <UciProtocol (pid=8052)>: stderr >> Loading weights file from: C:\Users\zirco\AppData\Local\WoodLeague\wood-league-worker\networks\BT4-1024x15x32h-swa-6147500-policytune-332.pb.gz
+2026-05-14 20:57:35.247 | INFO     | chess.engine:error_line_received:973 - <UciProtocol (pid=8052)>: stderr >> Weights file has multihead format, updating format flag
+2026-05-14 20:57:35.296 | INFO     | chess.engine:error_line_received:973 - <UciProtocol (pid=8052)>: stderr >> Switching to [cuda-fp16]...
+2026-05-14 20:57:35.471 | INFO     | chess.engine:error_line_received:973 - <UciProtocol (pid=8052)>: stderr >> CUDA Runtime version: 12.9.0
+2026-05-14 20:57:35.471 | INFO     | chess.engine:error_line_received:973 - <UciProtocol (pid=8052)>: stderr >> Latest version of CUDA supported by the driver: 13.2.0
+2026-05-14 20:57:35.471 | INFO     | chess.engine:error_line_received:973 - <UciProtocol (pid=8052)>: stderr >> GPU: NVIDIA GeForce RTX 4070 Ti
+2026-05-14 20:57:35.471 | INFO     | chess.engine:error_line_received:973 - <UciProtocol (pid=8052)>: stderr >> GPU memory: 11.9937 Gb
+2026-05-14 20:57:35.471 | INFO     | chess.engine:error_line_received:973 - <UciProtocol (pid=8052)>: stderr >> GPU clock frequency: 2610 MHz
+2026-05-14 20:57:35.471 | INFO     | chess.engine:error_line_received:973 - <UciProtocol (pid=8052)>: stderr >> GPU compute capability: 8.9
+2026-05-14 20:57:35.471 | INFO     | chess.engine:error_line_received:973 - <UciProtocol (pid=8052)>: stderr >> L2 cache capacity: 50331648
+2026-05-14 20:57:35.852 | INFO     | chess.engine:error_line_received:973 - <UciProtocol (pid=8052)>: stderr >> Loading Syzygy tablebases from C:\Users\zirco\AppData\Local\WoodLeague\wood-league-worker\syzygy
+2026-05-14 20:57:36.128 | INFO     | chess.engine:error_line_received:973 - <UciProtocol (pid=8052)>: stderr >> Found 35 WDL, 0 DTM and 35 DTZ tablebase files.
+2026-05-14 20:57:45.157 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 1/92 e4
+2026-05-14 20:57:45.157 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 2/92
+2026-05-14 20:57:45.240 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 2/92 e5
+2026-05-14 20:57:45.240 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 3/92
+2026-05-14 20:57:45.391 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 3/92 Nf3
+2026-05-14 20:57:45.391 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 4/92
+2026-05-14 20:57:46.636 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 4/92 Nc6
+2026-05-14 20:57:46.637 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 5/92
+2026-05-14 20:57:52.195 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 5/92 Nc3
+2026-05-14 20:57:52.195 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 6/92
+2026-05-14 20:57:52.269 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 6/92 Bc5
+2026-05-14 20:57:52.269 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 7/92
+2026-05-14 20:58:02.367 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 7/92 d3
+2026-05-14 20:58:02.367 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 8/92
+2026-05-14 20:58:02.441 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 8/92 Nf6
+2026-05-14 20:58:02.441 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 9/92
+2026-05-14 20:58:07.118 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 9/92 Be2
+2026-05-14 20:58:07.118 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 10/92
+2026-05-14 20:58:12.352 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 10/92 d5
+2026-05-14 20:58:12.353 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 11/92
+2026-05-14 20:58:19.869 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 11/92 exd5
+2026-05-14 20:58:19.869 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 12/92
+2026-05-14 20:58:19.949 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 12/92 Nxd5
+2026-05-14 20:58:19.949 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 13/92
+2026-05-14 20:58:25.164 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 13/92 Bg5
+2026-05-14 20:58:25.164 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 14/92
+2026-05-14 20:58:30.318 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 14/92 Be7
+2026-05-14 20:58:30.318 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 15/92
+2026-05-14 20:58:30.392 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 15/92 Bxe7
+2026-05-14 20:58:30.392 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 16/92
+2026-05-14 20:58:32.714 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 16/92 Ndxe7
+2026-05-14 20:58:32.715 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 17/92
+2026-05-14 20:58:37.741 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 17/92 Ne4
+2026-05-14 20:58:37.741 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 18/92
+2026-05-14 20:58:43.938 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 18/92 Nd4
+2026-05-14 20:58:43.938 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 19/92
+2026-05-14 20:58:44.013 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 19/92 Nxe5
+2026-05-14 20:58:44.013 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 20/92
+2026-05-14 20:58:50.366 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 20/92 f6
+2026-05-14 20:58:50.366 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 21/92
+2026-05-14 20:58:50.412 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 21/92 Nf3
+2026-05-14 20:58:50.412 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 22/92
+2026-05-14 20:58:56.231 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 22/92 O-O
+2026-05-14 20:58:56.231 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 23/92
+2026-05-14 20:59:02.038 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 23/92 Nxd4
+2026-05-14 20:59:02.039 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 24/92
+2026-05-14 20:59:02.166 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 24/92 Qxd4
+2026-05-14 20:59:02.167 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 25/92
+2026-05-14 20:59:02.258 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 25/92 c3
+2026-05-14 20:59:02.258 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 26/92
+2026-05-14 20:59:02.341 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 26/92 Qb6
+2026-05-14 20:59:02.342 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 27/92
+2026-05-14 20:59:07.919 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 27/92 O-O
+2026-05-14 20:59:07.919 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 28/92
+2026-05-14 20:59:07.993 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 28/92 Qxb2
+2026-05-14 20:59:07.993 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 29/92
+2026-05-14 20:59:13.247 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 29/92 d4
+2026-05-14 20:59:13.248 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 30/92
+2026-05-14 20:59:18.265 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 30/92 Bf5
+2026-05-14 20:59:18.266 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 31/92
+2026-05-14 20:59:29.608 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 31/92 f3
+2026-05-14 20:59:29.608 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 32/92
+2026-05-14 20:59:29.682 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 32/92 Bxe4
+2026-05-14 20:59:29.682 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 33/92
+2026-05-14 20:59:29.784 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 33/92 fxe4
+2026-05-14 20:59:29.784 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 34/92
+2026-05-14 20:59:29.859 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 34/92 Qxc3
+2026-05-14 20:59:29.859 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 35/92
+2026-05-14 20:59:35.300 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 35/92 Qb3+
+2026-05-14 20:59:35.300 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 36/92
+2026-05-14 20:59:35.373 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 36/92 Qxb3
+2026-05-14 20:59:35.373 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 37/92
+2026-05-14 20:59:35.375 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 37/92 axb3
+2026-05-14 20:59:35.376 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 38/92
+2026-05-14 20:59:35.378 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 38/92 c6
+2026-05-14 20:59:35.378 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 39/92
+2026-05-14 20:59:37.239 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 39/92 Bc4+
+2026-05-14 20:59:37.239 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 40/92
+2026-05-14 20:59:38.833 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 40/92 Kh8
+2026-05-14 20:59:38.833 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 41/92
+2026-05-14 20:59:38.908 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 41/92 e5
+2026-05-14 20:59:38.908 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 42/92
+2026-05-14 20:59:44.570 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 42/92 b5
+2026-05-14 20:59:44.570 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 43/92
+2026-05-14 20:59:46.155 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 43/92 Be6
+2026-05-14 20:59:46.155 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 44/92
+2026-05-14 20:59:57.994 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 44/92 Rad8
+2026-05-14 20:59:57.995 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 45/92
+2026-05-14 20:59:58.009 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 45/92 Rxa7
+2026-05-14 20:59:58.009 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 46/92
+2026-05-14 20:59:59.147 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 46/92 Ng6
+2026-05-14 20:59:59.148 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 47/92
+2026-05-14 20:59:59.278 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 47/92 exf6
+2026-05-14 20:59:59.278 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 48/92
+2026-05-14 20:59:59.482 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 48/92 Rxf6
+2026-05-14 20:59:59.482 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 49/92
+2026-05-14 21:00:04.393 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 49/92 Rxf6
+2026-05-14 21:00:04.393 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 50/92
+2026-05-14 21:00:04.498 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 50/92 gxf6
+2026-05-14 21:00:04.498 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 51/92
+2026-05-14 21:00:04.553 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 51/92 Bd7
+2026-05-14 21:00:04.553 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 52/92
+2026-05-14 21:00:09.999 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 52/92 Nf4
+2026-05-14 21:00:09.999 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 53/92
+2026-05-14 21:00:16.151 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 53/92 Rc7
+2026-05-14 21:00:16.151 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 54/92
+2026-05-14 21:00:16.242 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 54/92 Ne2+
+2026-05-14 21:00:16.243 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 55/92
+2026-05-14 21:00:16.246 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 55/92 Kf2
+2026-05-14 21:00:16.246 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 56/92
+2026-05-14 21:00:19.528 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 56/92 Nxd4
+2026-05-14 21:00:19.528 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 57/92
+2026-05-14 21:00:19.618 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 57/92 b4
+2026-05-14 21:00:19.618 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 58/92
+2026-05-14 21:00:28.752 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 58/92 Kg8
+2026-05-14 21:00:28.753 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 59/92
+2026-05-14 21:00:32.893 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 59/92 Rc8
+2026-05-14 21:00:32.893 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 60/92
+2026-05-14 21:00:32.978 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 60/92 Rxc8
+2026-05-14 21:00:32.979 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 61/92
+2026-05-14 21:00:32.981 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 61/92 Bxc8
+2026-05-14 21:00:32.981 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 62/92
+2026-05-14 21:00:32.983 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 62/92 Nc2
+2026-05-14 21:00:32.984 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 63/92
+2026-05-14 21:00:33.562 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 63/92 Bd7
+2026-05-14 21:00:33.562 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 64/92
+2026-05-14 21:00:33.690 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 64/92 Nxb4
+2026-05-14 21:00:33.690 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 65/92
+2026-05-14 21:00:37.110 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 65/92 g4
+2026-05-14 21:00:37.110 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 66/92
+2026-05-14 21:00:37.172 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 66/92 Kf7
+2026-05-14 21:00:37.172 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 67/92
+2026-05-14 21:00:38.666 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 67/92 h4
+2026-05-14 21:00:38.666 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 68/92
+2026-05-14 21:00:45.478 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 68/92 Kg6
+2026-05-14 21:00:45.478 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 69/92
+2026-05-14 21:00:48.924 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 69/92 Kg3
+2026-05-14 21:00:48.924 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 70/92
+2026-05-14 21:00:53.824 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 70/92 f5
+2026-05-14 21:00:53.824 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 71/92
+2026-05-14 21:00:53.957 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 71/92 g5
+2026-05-14 21:00:53.957 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 72/92
+2026-05-14 21:00:58.965 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 72/92 Nd3
+2026-05-14 21:00:58.966 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 73/92
+2026-05-14 21:01:01.684 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 73/92 Bxc6
+2026-05-14 21:01:01.684 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 74/92
+2026-05-14 21:01:01.887 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 74/92 b4
+2026-05-14 21:01:01.887 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 75/92
+2026-05-14 21:01:02.385 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 75/92 Be8+
+2026-05-14 21:01:02.385 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 76/92
+2026-05-14 21:01:03.242 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 76/92 Kg7
+2026-05-14 21:01:03.242 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 77/92
+2026-05-14 21:01:07.100 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 77/92 Bh5
+2026-05-14 21:01:07.101 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 78/92
+2026-05-14 21:01:07.184 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 78/92 b3
+2026-05-14 21:01:07.184 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 79/92
+2026-05-14 21:01:07.952 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 79/92 Bd1
+2026-05-14 21:01:07.952 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 80/92
+2026-05-14 21:01:08.040 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 80/92 b2
+2026-05-14 21:01:08.040 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 81/92
+2026-05-14 21:01:09.121 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 81/92 Bc2
+2026-05-14 21:01:09.121 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 82/92
+2026-05-14 21:01:12.381 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 82/92 Nb4
+2026-05-14 21:01:12.381 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 83/92
+2026-05-14 21:01:12.476 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 83/92 Bxf5
+2026-05-14 21:01:12.476 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 84/92
+2026-05-14 21:01:12.479 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 84/92 Nd5
+2026-05-14 21:01:12.479 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 85/92
+2026-05-14 21:01:13.631 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 85/92 h5
+2026-05-14 21:01:13.631 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 86/92
+2026-05-14 21:01:19.130 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 86/92 h6
+2026-05-14 21:01:19.130 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 87/92
+2026-05-14 21:01:19.267 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 87/92 gxh6+
+2026-05-14 21:01:19.267 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 88/92
+2026-05-14 21:01:20.187 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 88/92 Kxh6
+2026-05-14 21:01:20.188 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 89/92
+2026-05-14 21:01:22.466 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 89/92 Kf2
+2026-05-14 21:01:22.466 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 90/92
+2026-05-14 21:01:25.065 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 90/92 Kxh5
+2026-05-14 21:01:25.065 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 91/92
+2026-05-14 21:01:27.191 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 91/92 Ke1
+2026-05-14 21:01:27.191 | INFO     | local_worker.analysis.lc0:analyze_pgn:695 - lc0: analysing ply 92/92
+2026-05-14 21:01:28.721 | INFO     | local_worker.loop:_logging_progress:198 -   job 7849 — move 92/92 Kg5
+2026-05-14 21:01:28.722 | INFO     | local_worker.analysis.lc0:analyze_pgn:722 - lc0: eval_cache hits=0 misses=92 (0.0% hit rate)
+2026-05-14 21:01:29.680 | INFO     | httpx._client:_send_single_request:1025 - HTTP Request: POST https://woodleague.up.railway.app/api/v1/jobs/7849/complete/ "HTTP/1.1 200 OK"
+2026-05-14 21:01:29.680 | INFO     | local_worker.loop:run_one_job:259 - Job 7849 complete (lc0) in 790.2s

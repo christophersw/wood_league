@@ -13,6 +13,7 @@ Changelog:
     2026-05-11: Widen GameMoveTime.time_spent_ms / clock_after_ms to BigInteger.
                 Daily games with vacation can produce per-move delays > 24
                 days, exceeding the int4 ceiling (issue #24 hotfix).
+    2026-05-20: Add Game.opening nullable FK to openings.OpeningBook (#162).
 """
 
 from django.db import models
@@ -33,6 +34,17 @@ class Game(models.Model):
     eco_code = models.CharField(max_length=8, default="")
     opening_name = models.CharField(max_length=120, default="")
     lichess_opening = models.CharField(max_length=200, null=True, blank=True)
+    opening = models.ForeignKey(
+        "openings.OpeningBook",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="games",
+        help_text=(
+            "Resolved OpeningBook entry — denormalised at ingest by "
+            "games.opening_resolver.resolve_opening_id."
+        ),
+    )
     pgn = models.TextField(default="")
     created_at = models.DateTimeField(auto_now_add=True, null=True, db_index=True)
 
