@@ -1,0 +1,38 @@
+{#
+  Title:       wc-modal — reusable modal shell
+  Description: A shell-only modal partial. Content is injected at runtime via
+               HTMX swap into .wc-modal__panel-body. Rendered hidden by default.
+               Open/close is managed by wc_modal.js.
+  Changelog:
+    2026-05-20  Initial implementation. Task 9 of #162 search-page rework.
+
+  Usage:
+    {% include "components/_modal.html" with modal_id="search-modal" %}
+
+  HTMX target pattern (from any page):
+    hx-target="#search-modal .wc-modal__panel-body"
+
+  JS trigger pattern (on any element):
+    data-wc-modal-open="search-modal"
+#}
+{% load static %}
+
+<div class="wc-modal" id="{{ modal_id }}" role="dialog" aria-modal="true" aria-labelledby="{{ modal_id }}-title">
+
+  {# ── Backdrop — click closes the modal ──────────────────────────────────── #}
+  <div class="wc-modal__backdrop" aria-hidden="true"></div>
+
+  {# ── Panel ──────────────────────────────────────────────────────────────── #}
+  <div class="wc-modal__panel">
+
+    {# Close button #}
+    <button class="wc-modal__close" type="button" aria-label="Close">&#x2715;</button>
+
+    {# Swap target — Tasks 13/14 inject content here via HTMX #}
+    <div class="wc-modal__panel-body" id="{{ modal_id }}-body">
+      {# empty until HTMX swaps content in #}
+    </div>
+
+  </div>{# /.wc-modal__panel #}
+
+</div>{# /.wc-modal #}

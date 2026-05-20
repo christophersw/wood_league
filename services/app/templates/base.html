@@ -112,6 +112,7 @@
 
   <script src="{% static 'js/htmx.min.js' %}"></script>
   <script src="{% static 'js/plotly.min.js' %}"></script>
+  <script src="{% static 'js/wc_modal.js' %}" defer></script>
 
   {# Configure HTMX to use CSRF token from meta tag #}
   <script>
@@ -133,5 +134,9 @@
   </script>
 
   {% block extra_js %}{% endblock %}
+
+  {# ── Global modal shell — HTMX targets #search-modal .wc-modal__panel-body ── #}
+  {% include "components/_modal.html" with modal_id="search-modal" %}
+
 </body>
 </html>
