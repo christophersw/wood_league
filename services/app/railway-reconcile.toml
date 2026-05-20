@@ -1,0 +1,48 @@
+# Railway cron service config — vast.ai reconcile loop.
+#
+# This file describes a SEPARATE Railway service (not the web app, not the
+# Chess.com ingest cron). To wire it up:
+#   1. In the Railway dashboard, create a new service pointed at this same repo.
+#   2. Set its config path to `services/app/railway-reconcile.toml`.
+#   3. Set the cron schedule on the service (Railway UI: Settings → Cron Schedule)
+#      to `*/45 * * * *` (every 45 minutes — matches the documented cadence in
+#      wood_league.wiki/Vast.ai-Deployment.md).
+#   4. Share the web service's DB vars (DATABASE_URL etc.) so the cron sees
+#      the same `AnalysisSchedule` rows the scheduling UI writes.
+#   5. Set the vast-specific env vars on THIS service only — they must not
+#      reach the rented box:
+#        VAST_ENABLED=true              # master switch; false → cron no-ops
+#        VAST_API_KEY=…                 # vast.ai API key (secret)
+#        VAST_TEMPLATE_HASH=…           # the worker Template hash
+#        VAST_CAMPAIGN_ID=…             # passed through as WL_CAMPAIGN_ID
+#        VAST_OFFER_GPU_NAME=L40S       # GPU filter (default)
+#        VAST_OFFER_MAX_DPH=1.50        # $/hr ceiling (default)
+#        VAST_MAX_JOBS=100              # default per-run job cap
+#        VAST_HARD_DEADLINE_HOURS=6     # absolute kill time
+#        VAST_WORKER_STALE_MINUTES=15   # heartbeat-silence destroy window
+#
+# The cron service runs `reconcile_vast_analysis`, which is a stateless
+# loop — every tick it re-derives "what should be true right now" from
+# the database and makes it true:
+#   - Materializes any due RecurringAnalysisSchedule into a pending
+#     AnalysisSchedule row (one-off catch-up, never a backlog).
+#   - Picks up pending AnalysisSchedule rows (this is what the scheduling
+#     UI's "Run once now" button creates) and rents a vast.ai box.
+#   - Watches running instances and destroys them once the worker
+#     reports done, the heartbeat goes stale, or the hard deadline hits.
+#
+# Crash-safe by design: a missed tick or redeploy is harmless — the next
+# tick reconciles again. A down cron never strands a billing box for
+# longer than the next tick + hard_deadline.
+
+[build]
+builder = "RAILPACK"
+
+[deploy]
+# One-shot command — exits when the reconcile pass is done.
+startCommand = "python manage.py reconcile_vast_analysis"
+# One-shot semantics: do NOT auto-restart if the run fails. The cron
+# scheduler will fire the next invocation on its normal cadence; an
+# in-process retry would mask transient failures and could relaunch a
+# vast box before the operator has seen the error.
+restartPolicyType = "NEVER"
