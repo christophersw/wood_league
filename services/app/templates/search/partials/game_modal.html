@@ -33,11 +33,12 @@
     {{ game|time_control_human }}
   </p>
 
-  {# 4. Club-member accuracy chips.
-       sf.white_accuracy / lc.white_accuracy resolve to "" (not None) in Django
-       templates when sf or lc is None — club_accuracy_chips normalises "" → None
-       internally, so passing these through directly is safe.
-  #}
+  {% comment %}
+    4. Club-member accuracy chips.
+    sf.white_accuracy / lc.white_accuracy resolve to "" (not None) in Django
+    templates when sf or lc is None — club_accuracy_chips normalises "" → None
+    internally, so passing these through directly is safe.
+  {% endcomment %}
   {% club_accuracy_chips
        white_username=game.white_username
        black_username=game.black_username

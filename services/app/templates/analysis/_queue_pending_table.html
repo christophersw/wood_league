@@ -70,11 +70,11 @@
     </div>
 
     {# Row 2: Tab strip #}
-    {#
+    {% comment %}
       TODO: wire HTMX tab swaps for Active and Recent in a follow-up task.
       The view does not honour ?tab= yet; Active and Recent are rendered as
       full-page anchor links below the pending region for now.
-    #}
+    {% endcomment %}
     <div class="tab-bar" style="margin-bottom: 0; border-bottom: 2px solid var(--color-ebony);">
       <span class="tab-btn tab-btn--active">
         Pending ({{ pending_count }})
