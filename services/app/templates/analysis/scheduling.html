@@ -1,120 +1,238 @@
 {% extends "base.html" %}
 {% comment %}
   Title: scheduling.html — analysis scheduling admin page (#155 B)
-  Description: Recurring-rule CRUD + run-once, plus "future planned runs"
-      and "recent runs" tables. Data-dense admin tables use
-      .wc-table .wc-table--zebra (no .pg-table). Failed rows use the
-      existing text-crimson utility.
+  Description: Recurring-rule CRUD + run-once, plus future/recent run
+      tables. Restyled to match the rest of the admin: page-hero header,
+      .filter-panel cards for forms, .wc-table .wc-table--zebra for data
+      grids, .wc-btn-row for grouped actions, and inline edit collapsed
+      behind <details class="wc-row-edit"> so the rule list scans cleanly.
+      Adds a "Max jobs" input next to "Run once now" so an operator can
+      trigger a single one-off run of N jobs (≈ N/2 games — runbook says
+      one game ≈ 2 jobs: 1 lc0 + 1 Stockfish).
   Changelog:
       2026-05-18: Initial — issue #155 Sub-project B.
+      2026-05-20: Restyled with site design tokens; added max_jobs
+                  input on Run-once form.
 {% endcomment %}
 {% block title %}Analysis Scheduling{% endblock %}
 {% block content %}
-<section class="pg-section">
-  <h1>Analysis Scheduling</h1>
 
-  <h2>Recurring rules</h2>
+<div class="page-hero">
+  <div>
+    <h1>Analysis Scheduling</h1>
+    <p class="page-hero-sub">Recurring rules · one-off runs · history</p>
+  </div>
+  <div class="page-hero-meta">
+    {{ rules|length }} rule{{ rules|length|pluralize }} · {{ future_rows|length }} planned
+  </div>
+</div>
+
+{# ── Primary actions: Run-once + New rule, side-by-side on desktop ────── #}
+<div class="panel-grid panel-grid--2">
+
+  {# Run-once card — primary one-off trigger #}
+  <section class="filter-panel" aria-labelledby="run-once-title">
+    <h2 class="filter-panel__title" id="run-once-title">Run once now</h2>
+    <p class="filter-panel__caption">Launches a single vast.ai instance on the next reconcile tick.</p>
+
+    <form method="post" action="{% url 'analysis:run_once' %}">
+      {% csrf_token %}
+      <div class="wc-form-grid wc-form-grid--2">
+        <div>
+          <label for="run-once-max-jobs" class="wc-label">Max jobs</label>
+          <input type="number"
+                 id="run-once-max-jobs"
+                 name="max_jobs"
+                 min="1"
+                 step="1"
+                 placeholder="default"
+                 class="wc-input">
+        </div>
+        <div style="align-self:end;">
+          <button type="submit" class="wc-btn wc-btn-solid" style="width:100%;text-align:center;">
+            Trigger run
+          </button>
+        </div>
+      </div>
+      <p style="font-family:var(--font-mono);font-size:.58rem;letter-spacing:.08em;color:var(--color-slate);margin:.35rem 0 0;">
+        ≈ 2 jobs per game (1 lc0 + 1 Stockfish). Leave blank to use the deploy default.
+      </p>
+    </form>
+  </section>
+
+  {# New recurring rule card #}
+  <section class="filter-panel" aria-labelledby="new-rule-title">
+    <h2 class="filter-panel__title" id="new-rule-title">New recurring rule</h2>
+    <p class="filter-panel__caption">Cron expression — preview updates as you type.</p>
+
+    <form method="post" action="{% url 'analysis:rule_create' %}">
+      {% csrf_token %}
+      {{ form.as_p }}
+      <div id="cron-preview"
+           hx-get="{% url 'analysis:schedule_preview' %}"
+           hx-trigger="load, change from:#id_crontab, change from:#id_timezone"
+           hx-include="#id_crontab,#id_timezone"
+           style="font-family:var(--font-mono);font-size:.7rem;color:var(--color-peat);margin:.5rem 0 1rem;">
+      </div>
+      <button type="submit" class="wc-btn wc-btn-solid">Create rule</button>
+    </form>
+  </section>
+
+</div>
+
+{# ── Recurring rules ──────────────────────────────────────────────────── #}
+<section class="pg-section">
+  <div class="pg-head">
+    <span class="pg-title">Recurring rules</span>
+    <span class="pg-caption">{{ rules|length }} total</span>
+  </div>
+
   <table class="wc-table wc-table--zebra">
-    <thead><tr><th>Name</th><th>Crontab</th><th>TZ</th>
-      <th>Max jobs</th><th>Enabled</th><th>Actions</th></tr></thead>
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Crontab</th>
+        <th>TZ</th>
+        <th>Max jobs</th>
+        <th>Enabled</th>
+        <th style="width:1%;">Actions</th>
+      </tr>
+    </thead>
     <tbody>
     {% for r in rules %}
       <tr>
-        <td>{{ r.name }}</td><td><code>{{ r.crontab }}</code></td>
-        <td>{{ r.timezone }}</td><td>{{ r.max_jobs|default:"—" }}</td>
-        <td>{{ r.enabled|yesno:"yes,no" }}</td>
+        <td>{{ r.name }}</td>
+        <td><code>{{ r.crontab }}</code></td>
+        <td>{{ r.timezone }}</td>
+        <td>{{ r.max_jobs|default:"—" }}</td>
         <td>
-          <form method="post"
-                action="{% url 'analysis:rule_toggle' r.pk %}"
-                style="display:inline">{% csrf_token %}
-            <button type="submit">{{ r.enabled|yesno:"Disable,Enable" }}</button>
-          </form>
-          <form method="post"
-                action="{% url 'analysis:rule_delete' r.pk %}"
-                style="display:inline">{% csrf_token %}
-            <button type="submit">Delete</button>
-          </form>
-          <form method="post"
-                action="{% url 'analysis:rule_edit' r.pk %}"
-                style="display:inline">{% csrf_token %}
-            <input type="text" name="name" value="{{ r.name }}"
-                   aria-label="name">
-            <input type="text" name="crontab" value="{{ r.crontab }}"
-                   aria-label="crontab">
-            <input type="text" name="timezone" value="{{ r.timezone }}"
-                   aria-label="timezone">
-            <input type="number" name="max_jobs"
-                   value="{{ r.max_jobs|default_if_none:'' }}"
-                   aria-label="max_jobs">
-            {% if r.enabled %}
-              <input type="hidden" name="enabled" value="on">
-            {% endif %}
-            <button type="submit">Save</button>
-          </form>
+          {% if r.enabled %}
+            <span class="wc-badge" style="color:var(--color-forest);">On</span>
+          {% else %}
+            <span class="wc-badge" style="color:var(--color-slate);">Off</span>
+          {% endif %}
+        </td>
+        <td>
+          <div class="wc-btn-row">
+            <form method="post" action="{% url 'analysis:rule_toggle' r.pk %}" style="margin:0;">
+              {% csrf_token %}
+              <button type="submit" class="wc-btn wc-btn--sm">
+                {{ r.enabled|yesno:"Disable,Enable" }}
+              </button>
+            </form>
+            <form method="post" action="{% url 'analysis:rule_delete' r.pk %}" style="margin:0;"
+                  onsubmit="return confirm('Delete rule “{{ r.name|escapejs }}”?');">
+              {% csrf_token %}
+              <button type="submit" class="wc-btn wc-btn--sm wc-btn-ghost">Delete</button>
+            </form>
+          </div>
+
+          <details class="wc-row-edit">
+            <summary class="wc-row-edit__summary">Edit</summary>
+            <form method="post" action="{% url 'analysis:rule_edit' r.pk %}" style="margin:.5rem 0 0;">
+              {% csrf_token %}
+              <div class="wc-form-grid wc-form-grid--3">
+                <div>
+                  <label class="wc-label" for="edit-name-{{ r.pk }}">Name</label>
+                  <input type="text" id="edit-name-{{ r.pk }}" name="name" value="{{ r.name }}" class="wc-input wc-input--sm">
+                </div>
+                <div>
+                  <label class="wc-label" for="edit-cron-{{ r.pk }}">Crontab</label>
+                  <input type="text" id="edit-cron-{{ r.pk }}" name="crontab" value="{{ r.crontab }}" class="wc-input wc-input--sm">
+                </div>
+                <div>
+                  <label class="wc-label" for="edit-tz-{{ r.pk }}">Timezone</label>
+                  <input type="text" id="edit-tz-{{ r.pk }}" name="timezone" value="{{ r.timezone }}" class="wc-input wc-input--sm">
+                </div>
+                <div>
+                  <label class="wc-label" for="edit-mj-{{ r.pk }}">Max jobs</label>
+                  <input type="number" id="edit-mj-{{ r.pk }}" name="max_jobs" value="{{ r.max_jobs|default_if_none:'' }}" class="wc-input wc-input--sm">
+                </div>
+              </div>
+              {% if r.enabled %}
+                <input type="hidden" name="enabled" value="on">
+              {% endif %}
+              <button type="submit" class="wc-btn wc-btn--sm wc-btn-solid">Save</button>
+            </form>
+          </details>
         </td>
       </tr>
     {% empty %}
-      <tr><td colspan="6">No rules yet.</td></tr>
-    {% endfor %}
-    </tbody>
-  </table>
-
-  <h2>New rule</h2>
-  <form method="post" action="{% url 'analysis:rule_create' %}">
-    {% csrf_token %}
-    {{ form.as_p }}
-    <div id="cron-preview"
-         hx-get="{% url 'analysis:schedule_preview' %}"
-         hx-trigger="load, change from:#id_crontab,
-                     change from:#id_timezone"
-         hx-include="#id_crontab,#id_timezone">
-    </div>
-    <button type="submit">Create rule</button>
-  </form>
-
-  <form method="post" action="{% url 'analysis:run_once' %}">
-    {% csrf_token %}
-    <button type="submit">Run once now</button>
-  </form>
-
-  <h2>Future planned runs</h2>
-  <table class="wc-table wc-table--zebra">
-    <thead><tr><th>When</th><th>Source</th><th>Max jobs</th>
-      <th>Status</th></tr></thead>
-    <tbody>
-    {% for row in future_rows %}
-      <tr><td>{{ row.when }}</td><td>{{ row.source }}</td>
-        <td>{{ row.max_jobs|default:"—" }}</td>
-        <td>{{ row.status }}</td></tr>
-    {% empty %}
-      <tr><td colspan="4">Nothing scheduled.</td></tr>
-    {% endfor %}
-    </tbody>
-  </table>
-
-  <h2>Recent runs</h2>
-  <table class="wc-table wc-table--zebra">
-    <thead><tr><th>When</th><th>Source</th><th>Status</th>
-      <th>Instance</th><th>$/hr</th><th></th></tr></thead>
-    <tbody>
-    {% for row in recent_rows %}
-      <tr{% if row.failed %} class="text-crimson"{% endif %}>
-        <td>{{ row.when }}</td><td>{{ row.source }}</td>
-        <td>{{ row.status }}</td>
-        <td>{{ row.instance_id|default:"—" }}</td>
-        <td>{{ row.offer_dph|default:"—" }}</td>
-        <td>
-          <form method="post"
-                action="{% url 'analysis:rerun' row.id %}"
-                style="display:inline">{% csrf_token %}
-            <button type="submit">Re-run</button>
-          </form>
-        </td>
-      </tr>
-    {% empty %}
-      <tr><td colspan="6">No runs yet.</td></tr>
+      <tr><td colspan="6" style="color:var(--color-slate);font-style:italic;">No rules yet.</td></tr>
     {% endfor %}
     </tbody>
   </table>
 </section>
+
+{# ── Future planned runs ──────────────────────────────────────────────── #}
+<section class="pg-section">
+  <div class="pg-head">
+    <span class="pg-title">Future planned runs</span>
+    <span class="pg-caption">{{ future_rows|length }} upcoming</span>
+  </div>
+
+  <table class="wc-table wc-table--zebra">
+    <thead>
+      <tr>
+        <th>When</th>
+        <th>Source</th>
+        <th>Max jobs</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for row in future_rows %}
+      <tr>
+        <td>{{ row.when }}</td>
+        <td>{{ row.source }}</td>
+        <td>{{ row.max_jobs|default:"—" }}</td>
+        <td>{{ row.status }}</td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="4" style="color:var(--color-slate);font-style:italic;">Nothing scheduled.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+{# ── Recent runs ──────────────────────────────────────────────────────── #}
+<section class="pg-section">
+  <div class="pg-head">
+    <span class="pg-title">Recent runs</span>
+    <span class="pg-caption">{{ recent_rows|length }} shown</span>
+  </div>
+
+  <table class="wc-table wc-table--zebra">
+    <thead>
+      <tr>
+        <th>When</th>
+        <th>Source</th>
+        <th>Status</th>
+        <th>Instance</th>
+        <th>$/hr</th>
+        <th style="width:1%;"></th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for row in recent_rows %}
+      <tr{% if row.failed %} class="text-crimson"{% endif %}>
+        <td>{{ row.when }}</td>
+        <td>{{ row.source }}</td>
+        <td>{{ row.status }}</td>
+        <td>{{ row.instance_id|default:"—" }}</td>
+        <td>{{ row.offer_dph|default:"—" }}</td>
+        <td>
+          <form method="post" action="{% url 'analysis:rerun' row.id %}" style="margin:0;">
+            {% csrf_token %}
+            <button type="submit" class="wc-btn wc-btn--sm">Re-run</button>
+          </form>
+        </td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="6" style="color:var(--color-slate);font-style:italic;">No runs yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+
 {% endblock %}
