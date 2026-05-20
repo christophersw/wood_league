@@ -48,8 +48,38 @@ def _headers(api_key: str) -> dict:
     }
 
 
+def _build_offer_search_body(gpu_name: str, verified_only: bool) -> dict:
+    """Build the JSON filter body for the vast offer-search endpoint.
+
+    Extracted so :func:`search_cheapest_offer` stays a thin caller — the
+    quality gate flagged the inline ``if verified_only`` branch as a
+    cyclomatic-complexity bump.
+
+    Args:
+        gpu_name: vast GPU model name, e.g. ``"L40S"``.
+        verified_only: when True, add ``verified={"eq": True}`` so vast
+            only returns hosts in its *verified* (datacenter) tier.
+
+    Returns:
+        dict: the JSON body to POST to ``/api/v0/bundles/``. Spec at
+        docs.vast.ai/api-reference/search/search-offers — endpoint is
+        POST with a JSON body, NOT a GET with query params.
+    """
+    body: dict = {
+        "limit": 64,
+        "type": "ondemand",
+        "rentable": {"eq": True},
+        "gpu_name": {"eq": gpu_name},
+        "order": [["dph_total", "asc"]],
+    }
+    if verified_only:
+        body["verified"] = {"eq": True}
+    return body
+
+
 def search_cheapest_offer(
-    *, api_key: str, gpu_name: str, max_dph: float, timeout: float = 20.0,
+    *, api_key: str, gpu_name: str, max_dph: float,
+    verified_only: bool = False, timeout: float = 20.0,
 ) -> dict:
     """Return the cheapest on-demand offer for ``gpu_name`` at/under ``max_dph``.
 
@@ -57,6 +87,9 @@ def search_cheapest_offer(
         api_key: vast API key (Bearer). Never logged.
         gpu_name: vast GPU model name, e.g. ``"L40S"``.
         max_dph: maximum acceptable $/hr (``dph_total``) ceiling.
+        verified_only: when True, send ``verified={"eq": True}`` so vast
+            only returns hosts in its *verified* tier (datacenter-grade
+            reliability). Default False to preserve prior behaviour.
         timeout: HTTP timeout in seconds.
 
     Returns:
@@ -66,16 +99,7 @@ def search_cheapest_offer(
         NoVastOfferError: on a non-2xx response, a network error, an empty
             result, or when every offer exceeds ``max_dph``.
     """
-    # vast.ai's search-offers endpoint is POST /api/v0/bundles/ with a
-    # JSON filter body (NOT a GET with query params) — verified against
-    # docs.vast.ai/api-reference/search/search-offers.
-    body = {
-        "limit": 64,
-        "type": "ondemand",
-        "rentable": {"eq": True},
-        "gpu_name": {"eq": gpu_name},
-        "order": [["dph_total", "asc"]],
-    }
+    body = _build_offer_search_body(gpu_name, verified_only)
     try:
         resp = httpx.post(_BUNDLES_URL, headers=_headers(api_key),
                           json=body, timeout=timeout)
@@ -94,10 +118,12 @@ def search_cheapest_offer(
         key=lambda o: float(o["dph_total"]),
     )
     if not affordable:
-        _LOGGER.warning("vast search no offer gpu=%s max_dph=%s offers=%d",
-                        gpu_name, max_dph, len(offers))
+        _LOGGER.warning(
+            "vast search no offer gpu=%s max_dph=%s verified_only=%s offers=%d",
+            gpu_name, max_dph, verified_only, len(offers))
+        verified_hint = " verified-only" if verified_only else ""
         raise NoVastOfferError(
-            f"no {gpu_name} offer at/under {max_dph} $/hr")
+            f"no{verified_hint} {gpu_name} offer at/under {max_dph} $/hr")
     return affordable[0]
 
 

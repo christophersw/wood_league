@@ -335,6 +335,7 @@ def _launch(api_key: str) -> int:
             api_key=api_key,
             gpu_name=settings.VAST_OFFER_GPU_NAME,
             max_dph=settings.VAST_OFFER_MAX_DPH,
+            verified_only=settings.VAST_VERIFIED_ONLY,
         )
     except vast_dispatch.NoVastOfferError:
         # No capacity under the ceiling right now. Nothing was created on

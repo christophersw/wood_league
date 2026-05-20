@@ -54,6 +54,26 @@ class SearchOffersTests(TestCase):
                 vast_dispatch.search_cheapest_offer(
                     api_key="k", gpu_name="L40S", max_dph=1.50)
 
+    def test_default_search_omits_verified_filter(self):
+        """Without ``verified_only`` the body has no ``verified`` key."""
+        payload = {"offers": [{"id": 1, "gpu_name": "L40S", "dph_total": 1.0}]}
+        with patch("analysis.services.vast_dispatch.httpx.post",
+                   return_value=self._resp(payload)) as post:
+            vast_dispatch.search_cheapest_offer(
+                api_key="k", gpu_name="L40S", max_dph=1.50)
+        self.assertNotIn("verified", post.call_args.kwargs["json"])
+
+    def test_verified_only_adds_verified_filter(self):
+        """``verified_only=True`` sends ``verified={"eq": True}``."""
+        payload = {"offers": [{"id": 1, "gpu_name": "L40S", "dph_total": 1.0}]}
+        with patch("analysis.services.vast_dispatch.httpx.post",
+                   return_value=self._resp(payload)) as post:
+            vast_dispatch.search_cheapest_offer(
+                api_key="k", gpu_name="L40S", max_dph=1.50,
+                verified_only=True)
+        self.assertEqual(
+            post.call_args.kwargs["json"]["verified"], {"eq": True})
+
 
 class CreateInstanceTests(TestCase):
     """create_instance sends template_hash_id, label and merged env."""

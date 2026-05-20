@@ -29,6 +29,9 @@ class VastSettingsDefaultsTests(TestCase):
         self.assertEqual(settings.VAST_WORKER_STALE_MINUTES, 15)
         self.assertEqual(settings.VAST_OFFER_GPU_NAME, "L40S")
         self.assertEqual(settings.VAST_OFFER_MAX_DPH, 1.50)
+        # New verified-only knob defaults to off so existing deploys
+        # keep finding community offers; flip per-deploy via env.
+        self.assertFalse(settings.VAST_VERIFIED_ONLY)
 
 
 class ReconcileGatingTests(TestCase):
