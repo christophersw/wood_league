@@ -955,6 +955,30 @@
   }
   .dash-details[open] > summary::after { transform: rotate(90deg); }
 
+  /* ── Accuracy chips (#162) ───────────────────────────────────────────── */
+
+  .wc-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.25rem 0.625rem;
+    border-radius: 0.25rem;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    white-space: nowrap;
+  }
+  /* Palette substitutions: honey→gold, rust→peat (project palette has no honey/rust) */
+  .wc-chip--band-strong  { background: var(--color-forest);  color: var(--color-parchment); }
+  .wc-chip--band-good    { background: var(--color-moss);    color: var(--color-parchment); }
+  .wc-chip--band-fair    { background: var(--color-gold);    color: var(--color-ebony);     }
+  .wc-chip--band-weak    { background: var(--color-peat);    color: var(--color-parchment); }
+  .wc-chip--band-poor    { background: var(--color-crimson); color: var(--color-parchment); }
+  .wc-chip--band-unknown {
+    background: var(--color-parchment);
+    color: var(--color-slate);
+    border: 1px solid color-mix(in srgb, var(--color-peat) 30%, transparent);
+  }
+
   /* ── Legacy compat ───────────────────────────────────────────────────── */
 
   .analysis-stat-card {
