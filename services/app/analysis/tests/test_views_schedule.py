@@ -85,19 +85,48 @@ class SchedulingActionsTests(TestCase):
 
     def test_run_once_creates_pending(self):
         """Run-once creates a one-off pending schedule (no rule)."""
-        self.client.post(reverse("analysis:run_once"))
+        resp = self.client.post(reverse("analysis:run_once"), follow=True)
         s = AnalysisSchedule.objects.get()
         self.assertEqual(s.status, AnalysisSchedule.STATUS_PENDING)
         self.assertIsNone(s.recurring_rule)
+        self.assertIsNone(s.max_jobs)
+        msgs = [str(m) for m in resp.context["messages"]]
+        self.assertTrue(
+            any(f"Run #{s.pk} queued" in m for m in msgs),
+            f"expected success flash, got {msgs!r}")
+
+    def test_run_once_accepts_max_jobs(self):
+        """A positive ``max_jobs`` POST value is stored on the row."""
+        resp = self.client.post(
+            reverse("analysis:run_once"),
+            data={"max_jobs": "42"}, follow=True)
+        s = AnalysisSchedule.objects.get()
+        self.assertEqual(s.max_jobs, 42)
+        msgs = [str(m) for m in resp.context["messages"]]
+        self.assertTrue(any("max_jobs=42" in m for m in msgs))
+
+    def test_run_once_ignores_blank_and_bad_max_jobs(self):
+        """Blank, zero, negative, or non-integer ``max_jobs`` → None."""
+        for raw in ("", "0", "-3", "abc"):
+            AnalysisSchedule.objects.all().delete()
+            self.client.post(
+                reverse("analysis:run_once"), data={"max_jobs": raw})
+            self.assertIsNone(
+                AnalysisSchedule.objects.get().max_jobs,
+                f"raw={raw!r} should fall through to None")
 
     def test_rerun_creates_new_pending(self):
         """Re-run creates a fresh pending one-off copying max_jobs."""
         src = AnalysisSchedule.objects.create(
             status=AnalysisSchedule.STATUS_FAILED, max_jobs=55)
-        self.client.post(reverse("analysis:rerun", args=[src.pk]))
+        resp = self.client.post(
+            reverse("analysis:rerun", args=[src.pk]), follow=True)
         new = AnalysisSchedule.objects.exclude(pk=src.pk).get()
         self.assertEqual(new.status, AnalysisSchedule.STATUS_PENDING)
         self.assertEqual(new.max_jobs, 55)
+        msgs = [str(m) for m in resp.context["messages"]]
+        self.assertTrue(any(
+            f"Re-run #{new.pk} queued from #{src.pk}" in m for m in msgs))
 
     def test_recent_and_future_tables_render(self):
         """A terminal run shows in recent; an enabled rule in future."""
