@@ -263,6 +263,9 @@ class Lc0GameAnalysis(Base):
     draw_rate_reference: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     wdl_calibration_elo: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     contempt: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # Per-side game accuracy (#164)
+    white_accuracy: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    black_accuracy: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
     game: Mapped[Game] = relationship(back_populates="lc0_analysis")
     moves: Mapped[list[Lc0MoveAnalysis]] = relationship(

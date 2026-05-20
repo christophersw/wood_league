@@ -36,7 +36,14 @@ from analysis.derivation._calibration import (
     rescale_wdl,
 )
 from analysis.derivation._frame import is_white_ply
+from analysis.derivation.accuracy import game_accuracy, move_accuracy
 from analysis.derivation.counters import count_severities
+
+# Mover-frame Win% used as the synthetic "before" anchor for windowing's
+# initial entry (matches Stockfish's ``win_pct(0) = 50``). Note: this is NOT
+# used as a "before" for ply 1's per-move accuracy — that ply is skipped from
+# the per-side series per the owner-locked spec in GH #164.
+_INITIAL_WIN_PCT_WHITE = 50.0
 
 __all__ = [
     "DrawAwareClass",
@@ -151,11 +158,15 @@ def _derive_one_move(
     delta_d: Optional[float]
     base: str
     modifier: Optional[str]
+    move_acc: Optional[float]
     if prev_mu_white is None or prev_d_white is None:
         delta_mu = None
         delta_d = None
         base = "Best"
         modifier = None
+        # Ply 1: no prior position → per-move accuracy is undefined. Skip from
+        # the per-side series; ``derive_lc0_game`` checks for None and drops it.
+        move_acc = None
     else:
         # mover-frame Δμ: mover's winning-chance loss.
         if mover_is_white:
@@ -165,6 +176,12 @@ def _derive_one_move(
         delta_d = d_white - prev_d_white
         classified = classify_draw_aware(delta_mu, delta_d)
         base, modifier = classified.base, classified.modifier
+        # Mover-frame Win% before/after, then Lichess curve.
+        if mover_is_white:
+            mu_before_mover, mu_after_mover = prev_mu_white, mu_white
+        else:
+            mu_before_mover, mu_after_mover = 1.0 - prev_mu_white, 1.0 - mu_white
+        move_acc = move_accuracy(100.0 * mu_before_mover, 100.0 * mu_after_mover)
     return {
         # Raw fields (passed through unchanged).
         "ply": ply,
@@ -201,6 +218,9 @@ def _derive_one_move(
         # by ``derive_lc0_game`` and stripped before return.
         "_mu_white_after": mu_white,
         "_d_white_after": d_white,
+        # Accuracy bookkeeping consumed by ``derive_lc0_game``; both stripped.
+        "_move_acc": move_acc,
+        "_win_pct_after_white": 100.0 * mu_white,
     }
 
 
@@ -244,6 +264,57 @@ def _aggregate_side_probs(
     }
 
 
+def _per_side_accuracy(
+    derived_moves: list[dict],
+) -> tuple[Optional[float], Optional[float]]:
+    """Compute per-side game accuracy from per-move accuracy bookkeeping.
+
+    Builds a White-frame Win% sequence ``[50.0, mu_white(1)*100, mu_white(2)*100, …]``
+    of length ``num_plies + 1`` so windowing covers the full game, then routes
+    each side's non-None per-move accuracies (with their 1-based ply indices)
+    through ``accuracy.game_accuracy``. A side with zero contributing plies
+    returns ``None`` so downstream UI can distinguish "no data" from "had
+    moves and they were terrible".
+
+    Args:
+        derived_moves: Output of ``_derive_one_move`` for every move, with
+            the private ``_move_acc`` and ``_win_pct_after_white`` keys still
+            attached (this function pops them before returning).
+
+    Returns:
+        ``(white_accuracy, black_accuracy)`` floats in [0, 100], or ``None``
+        when the corresponding side has no contributing plies.
+    """
+    all_win_pcts_white = [_INITIAL_WIN_PCT_WHITE]
+    white_accs: list[float] = []
+    white_idx: list[int] = []
+    black_accs: list[float] = []
+    black_idx: list[int] = []
+    for move in derived_moves:
+        all_win_pcts_white.append(move.pop("_win_pct_after_white"))
+        move_acc = move.pop("_move_acc")
+        if move_acc is None:
+            continue
+        ply = move["ply"]
+        if is_white_ply(ply):
+            white_accs.append(move_acc)
+            white_idx.append(ply)
+        else:
+            black_accs.append(move_acc)
+            black_idx.append(ply)
+    white_acc = (
+        game_accuracy(white_accs, all_win_pcts=all_win_pcts_white,
+                      mover_ply_indices=white_idx)
+        if white_accs else None
+    )
+    black_acc = (
+        game_accuracy(black_accs, all_win_pcts=all_win_pcts_white,
+                      mover_ply_indices=black_idx)
+        if black_accs else None
+    )
+    return white_acc, black_acc
+
+
 def derive_lc0_game(raw_payload: dict, game: Any) -> dict:
     """Derive every Lc0Analysis field from a validated raw lc0 payload.
 
@@ -277,6 +348,10 @@ def derive_lc0_game(raw_payload: dict, game: Any) -> dict:
         (m["ply"], m["base_severity"]) for m in derived_moves
     )
     probs = _aggregate_side_probs(derived_moves)
+    # Must run AFTER _aggregate_side_probs (which reads no private keys) but
+    # BEFORE returning, since it pops _move_acc / _win_pct_after_white off the
+    # move dicts that are about to be serialised.
+    white_acc, black_acc = _per_side_accuracy(derived_moves)
     return {
         "engine_nodes": int(raw_payload["engine_nodes"]),
         "network_name": raw_payload["network_name"],
@@ -290,5 +365,7 @@ def derive_lc0_game(raw_payload: dict, game: Any) -> dict:
         "black_blunders": counters.black_blunders,
         "black_mistakes": counters.black_mistakes,
         "black_inaccuracies": counters.black_inaccuracies,
+        "white_accuracy": white_acc,
+        "black_accuracy": black_acc,
         "moves": derived_moves,
     }
