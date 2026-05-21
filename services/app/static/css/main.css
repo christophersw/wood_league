@@ -75,6 +75,42 @@
   --color-gold:       #D4A843;
   --color-sky:        #4A6E8A;
 
+  /* Chart + analysis palette — ONE token per unique color, reused by name
+     across charts, cards, chips, and bars. To change a hue everywhere it
+     appears, edit it here.
+
+     JS reads these same tokens through static/games/charts/chartTheme.js,
+     so the Plotly charts stay in sync automatically. */
+  --color-emerald:    #5DA12A;  /* "best" move + simplification + win (WDL) */
+  --color-leaf:       #96BC4B;  /* great / excellent / good */
+  --color-saffron:    #F0C040;  /* inaccuracy + risky */
+  --color-ember:      #E08020;  /* mistake + losing-blunder */
+  --color-vermilion-bright: #D63030;  /* blunder + missed-win + card WDL loss */
+  --color-teal:       #1BACA6;  /* brilliant */
+  --color-rust:       #8B3A2A;  /* chart WDL-loss line, also see --color-tint-draw */
+  --color-tan:        #B0A070;  /* card WDL draw band */
+  --color-tobacco:    #A8781B;  /* Stockfish trace + arrow color */
+  --color-denim:      #35586F;  /* LC0 trace + arrow color */
+  --color-amber-burnt:#C17F24;  /* chart highlight (selected ply marker) */
+  --color-band:       #C9B998;  /* default bar color */
+  --color-band-grid:  #EDE0C4;  /* chart grid + axis lines */
+  --color-band-empty: #E8E0D0;  /* empty-bar placeholder */
+  --color-near-white: #F7F7F7;  /* WDL White-frame top band line */
+  --color-coal:       #1A1A1A;  /* axis bold, hover border, label stroke */
+  --color-coal-text:  #1C1C1C;  /* chart text */
+  --color-bone:       #FFFFFF;  /* card background, hover bg */
+  --color-tooltip-bg: #FFFDF5;
+  --color-card-border-soft: #D4C9A8;
+  --color-card-title:    #2C2416;
+  --color-card-subtitle: #5A4A2A;
+  --color-card-muted:    #7A6A4A;
+
+  /* Tints (rgba — alpha is part of the design, not a separate axis). */
+  --color-tint-white: rgba(255, 255, 255, 0.98);  /* white-advantage band */
+  --color-tint-dark:  rgba(26, 26, 26, 0.85);     /* black-advantage band */
+  --color-tint-plot:  rgba(237, 224, 196, 0.20);  /* chart plot background */
+  --color-tint-draw:  rgba(139, 58, 42, 0.50);    /* chart WDL-draw fill */
+
   --font-serif:   "EB Garamond",         "Cormorant Garamond", Georgia,  serif;
   --font-display: "Playfair Display SC", "Playfair Display",   Georgia,  serif;
   --font-mono:    "DM Mono",             "Courier New",        monospace;

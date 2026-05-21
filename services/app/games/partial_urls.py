@@ -16,4 +16,11 @@ urlpatterns = [
     path("games/<slug:slug>/board/", views.board_partial, name="games_board_partial"),
     path("games/<slug:slug>/engine-line/", views.engine_line_partial, name="games_engine_line_partial"),
     path("games/<slug:slug>/queue/", views.queue_analysis, name="games_queue_analysis"),
+    path("games/<slug:slug>/cards/sf/", views.card_sf_partial, name="games_card_sf_partial"),
+    path("games/<slug:slug>/cards/lc0/", views.card_lc0_partial, name="games_card_lc0_partial"),
+    path("games/<slug:slug>/chips/", views.chips_partial, name="games_chips_partial"),
+    path("games/<slug:slug>/charts/winpct/", views.chart_winpct_partial, name="games_chart_winpct_partial"),
+    path("games/<slug:slug>/charts/sf-cp/", views.chart_sf_cp_partial, name="games_chart_sf_cp_partial"),
+    path("games/<slug:slug>/charts/lc0-wdl/", views.chart_lc0_wdl_partial, name="games_chart_lc0_wdl_partial"),
+    path("games/<slug:slug>/pgn/", views.pgn_partial, name="games_pgn_partial"),
 ]

@@ -14,6 +14,15 @@ Changelog:
                       and removed brittle continuation reconstruction logic
     2026-05-04 (#16): Full rewrite for ply-sync architecture; added board_partial
                       and queue_analysis views; removed build_board_viewer_html usage
+    2026-05-21 (#186): Wire card_sf_partial to build_sf_card_context; import cards module.
+    2026-05-21 (#186): Wire card_lc0_partial to build_lc0_card_context with side_labels.
+    2026-05-21 (#186): Wire chart_winpct_partial to winpct_payload from chart_data.
+    2026-05-21 (#186): Wire chart_sf_cp_partial to sf_cp_payload from chart_data.
+    2026-05-21 (#186): Wire chips_partial to chips_for_ply from chip_data.
+    2026-05-21 (#186): Task 14 — wire pgn_partial to walk PGN mainline and attach SF classifications.
+    2026-05-21 (#186): Task 15 — drop dead helpers (_humanize_time_control, _details_string,
+                      _opening_label, _queue_status, _build_eval_json, _build_wdl_json,
+                      _build_pgn_moves_json) and OpeningBook import; stat_cards.py deleted.
 """
 
 import io as _io
@@ -23,198 +32,22 @@ import re
 import chess
 import chess.pgn as _pgn
 from django.conf import settings
-from django.http import HttpRequest, HttpResponse
+from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, render
 
 from analysis.models import AnalysisJob
 from games.board_builder import board_colors_for_move_classification, build_board_frames
 from games.models import Game
 from games.services import MoveRow, get_game_analysis
-from games.stat_cards import _DUB_CSS, build_lc0_card, build_sf_card
-from openings.models import OpeningBook
-
+from games.cards import build_lc0_card_context, build_sf_card_context
+from games.chart_data import lc0_wdl_payload, sf_cp_payload, winpct_payload
+from games.chip_data import chips_for_ply
+from games.services_v2 import get_game_analysis_v2
 _ACTIVE_STATUSES = [
     AnalysisJob.STATUS_PENDING,
     AnalysisJob.STATUS_SUBMITTED,
     AnalysisJob.STATUS_RUNNING,
 ]
-
-
-def _humanize_time_control(time_control: str) -> str:
-    """
-    Convert time control to human-readable format.
-
-    Handles two formats:
-    - "x/y" (PGN format where y is total seconds): e.g., "1/259200" → "3 days"
-    - "x+y" (clock format in minutes): e.g., "600+0" → "600+0" (unchanged)
-
-    Params:
-        time_control (str): Time control string.
-
-    Returns:
-        Human-readable time control string.
-    """
-    if not time_control:
-        return ""
-    
-    # Handle PGN format "x/y" where y is seconds
-    if "/" in time_control:
-        try:
-            parts = time_control.split("/")
-            if len(parts) == 2:
-                seconds = int(parts[1])
-                # Convert to human-readable format
-                if seconds >= 86400:  # 1 day = 86400 seconds
-                    days = seconds // 86400
-                    return f"{days}d"
-                elif seconds >= 3600:  # 1 hour
-                    hours = seconds // 3600
-                    return f"{hours}h"
-                elif seconds >= 60:  # 1 minute
-                    minutes = seconds // 60
-                    return f"{minutes}m"
-                else:
-                    return f"{seconds}s"
-        except (ValueError, IndexError):
-            pass
-    
-    # Return as-is if we can't parse it
-    return time_control
-
-
-def _details_string(data) -> str:
-    """
-    Build the date · time-control details string for the page header.
-
-    Params:
-        data (GameAnalysisData): Assembled game analysis data.
-
-    Returns:
-        String like "2024-03-15 14:30 · 600+0" or "2024-03-15 · 3d", or empty string.
-    """
-    parts = []
-    if data.date:
-        parts.append(data.date)
-    if data.time_control:
-        parts.append(_humanize_time_control(data.time_control))
-    return " · ".join(parts)
-
-
-def _opening_label(data) -> str:
-    """
-    Build a human-readable opening label from the game's ECO and name fields.
-
-    Params:
-        data (GameAnalysisData): Assembled game analysis data.
-
-    Returns:
-        Opening label string, preferring lichess_opening name when available,
-        then looking up from OpeningBook by ECO code, skipping move notation.
-    """
-    def is_move_notation(name: str) -> bool:
-        """Check if a string looks like chess move notation rather than an opening name."""
-        if not name:
-            return False
-        # Move notation contains only chess-related chars: files (a-h), ranks (1-8),
-        # pieces (KQRBN), capture (x), checks/mates (+#), spaces, etc.
-        only_move_chars = bool(re.match(r"^[a-hKQRBNx\d\-\+#!? ]+$", name))
-        # And must start with a move pattern (e.g., e4, Nf3, exd4)
-        starts_with_move = bool(re.match(r"^([a-h][x]?[a-h]?\d|[KQRBN])", name))
-        return only_move_chars and starts_with_move
-    
-    # Prefer lichess_opening if available
-    if data.lichess_opening:
-        if data.eco_code:
-            return f"{data.eco_code} · {data.lichess_opening}"
-        return data.lichess_opening
-    
-    # Use opening_name if it's not move notation
-    if data.eco_code and data.opening_name and not is_move_notation(data.opening_name):
-        return f"{data.eco_code} · {data.opening_name}"
-    
-    # Fall back to looking up the opening by ECO code from OpeningBook
-    if data.eco_code:
-        try:
-            opening = OpeningBook.objects.filter(eco=data.eco_code).values_list("name", flat=True).first()
-            if opening:
-                return f"{data.eco_code} · {opening}"
-        except Exception:
-            pass
-    
-    return data.eco_code or ""
-
-
-def _queue_status(slug: str) -> tuple[bool, bool]:
-    """
-    Check whether Stockfish or Lc0 analysis is currently queued for this game.
-
-    Params:
-        slug (str): Game URL slug.
-
-    Returns:
-        Tuple of (sf_queued, lc0_queued) booleans.
-    """
-    active = AnalysisJob.objects.filter(
-        game__slug=slug,
-        status__in=_ACTIVE_STATUSES,
-    ).values_list("engine", flat=True)
-    engines = set(active)
-    return ("stockfish" in engines), ("lc0" in engines)
-
-
-def _build_eval_json(data) -> str:
-    """
-    Serialize Stockfish per-move evaluation data as a JSON string.
-
-    Params:
-        data (GameAnalysisData): Assembled game analysis data.
-
-    Returns:
-        JSON string of [{ply, cp_eval, san, classification}] or "null".
-    """
-    if not (data.has_sf and data.moves):
-        return "null"
-    rows = [
-        {
-            "ply": r.ply,
-            "cp_eval": r.cp_eval,
-            "san": r.san,
-            "classification": r.classification or "",
-        }
-        for r in data.moves
-        if r.cp_eval is not None
-    ]
-    return json.dumps(rows)
-
-
-def _build_wdl_json(data) -> str:
-    """
-    Serialize Lc0 per-move WDL data as a JSON string.
-
-    Params:
-        data (GameAnalysisData): Assembled game analysis data.
-
-    Returns:
-        JSON string of [{ply, wdl_win, wdl_draw, wdl_loss, san, classification}] or "null".
-        WDL values are in White's frame (sourced from ``wdl_*_adj`` columns) so
-        the chart curve stays consistent across plies. Raw mover-frame triples
-        flip perspective every ply and would produce a sawtooth.
-    """
-    if not data.lc0_moves:
-        return "null"
-    rows = [
-        {
-            "ply": r.ply,
-            "wdl_win": r.wdl_win or 0,
-            "wdl_draw": r.wdl_draw or 0,
-            "wdl_loss": r.wdl_loss or 0,
-            "san": r.san,
-            "classification": r.classification or "",
-        }
-        for r in data.lc0_moves
-        if r.wdl_win is not None
-    ]
-    return json.dumps(rows)
 
 
 def _parse_pv_san_moves(raw_pv_san: str | None) -> list[str]:
@@ -317,85 +150,40 @@ def _fallback_game_continuation_sans(
     return list(moves_list[request_ply + 1:])
 
 
-def _build_pgn_moves_json(data) -> str:
-    """
-    Serialize the move list for the client-side PGN table as a JSON string.
-
-    Params:
-        data (GameAnalysisData): Assembled game analysis data.
-
-    Returns:
-        JSON string of [{ply, move_number, color, san, classification}].
-    """
-    rows = [
-        {
-            "ply": r.ply,
-            "move_number": (r.ply + 1) // 2,
-            "color": "white" if r.ply % 2 == 1 else "black",
-            "san": r.san,
-            "classification": r.classification or "",
-        }
-        for r in (data.moves or [])
-    ]
-    return json.dumps(rows)
-
-
 def game_analysis(request: HttpRequest, slug: str) -> HttpResponse:
-    """
-    Render the main game analysis page.
+    """Render the thin shell for the analysis page.
 
-    Loads game and analysis data, builds engine stat cards and serialized
-    chart/PGN data for client-side rendering. The board itself is loaded
-    via HTMX (board_partial view) so orientation changes don't reload the page.
+    Each visual unit is loaded by HTMX from its own partial URL.
+    Uses get_game_analysis_v2 which returns None for legacy (pre-new-schema)
+    games, triggering a re-analyze banner instead of the analysis shell.
 
     Params:
         request (HttpRequest): The HTTP request.
         slug (str): Game URL slug.
 
     Returns:
-        Rendered analysis.html with full context, or analysis.html with
-        no_data=True if the game has no parseable PGN or analysis.
+        Rendered analysis.html thin shell with HTMX partial slots, or
+        analysis.html with no_data=True and reanalyze=True for legacy games.
     """
-    game = get_object_or_404(Game, slug=slug)
-    data = get_game_analysis(slug)
-
-    if data is None or not data.moves:
-        return render(request, "games/analysis.html", {
-            "game": game,
-            "no_data": True,
-        })
-
-    initial_ply = 0
     try:
-        initial_ply = max(0, int(request.GET.get("ply", 0)))
-    except (ValueError, TypeError):
-        pass
-
-    initial_perspective = request.GET.get("orientation", "white")
-    if initial_perspective not in ("white", "black"):
+        game = Game.objects.get(slug=slug)
+    except Game.DoesNotExist:
+        raise Http404
+    data = get_game_analysis_v2(slug)
+    if data is None:
+        return render(request, "games/analysis.html", {
+            "game": game, "no_data": True, "reanalyze": True,
+        })
+    initial_ply = int(request.GET.get("ply", 0) or 0)
+    initial_perspective = request.GET.get("perspective", "white")
+    if initial_perspective not in {"white", "black"}:
         initial_perspective = "white"
-
-    sf_queued, lc0_queued = _queue_status(slug)
-    engine_cards_html = _DUB_CSS + build_sf_card(data, queued=sf_queued) + build_lc0_card(data, queued=lc0_queued)
-
     return render(request, "games/analysis.html", {
         "game": game,
         "data": data,
         "no_data": False,
-        "details": _details_string(data),
-        "opening_label": _opening_label(data),
-        "opening_id": data.opening_id,
-        "chesscom_url": data.url,
-        "engine_cards_html": engine_cards_html,
-        "sf_eval_json": _build_eval_json(data),
-        "lc0_wdl_json": _build_wdl_json(data),
-        "pgn_moves_json": _build_pgn_moves_json(data),
         "initial_ply": initial_ply,
         "initial_perspective": initial_perspective,
-        "has_sf": data.has_sf,
-        "has_lc0": data.has_lc0,
-        "white": data.white,
-        "black": data.black,
     })
 
 
@@ -647,3 +435,173 @@ def queue_analysis(request: HttpRequest, slug: str) -> HttpResponse:
         depth=depth,
     )
     return render(request, "games/_queue_success.html", {"engine": engine})
+
+
+def _load_or_404(slug: str):
+    """Load game analysis data or raise Http404 if not available.
+
+    Returns GameAnalysisDataV2 when the game has new-schema analysis.
+    Raises Http404 if the game doesn't exist or has no new-schema analysis.
+    """
+    data = get_game_analysis_v2(slug)
+    if data is None:
+        raise Http404
+    return data
+
+
+def card_sf_partial(request: HttpRequest, slug: str) -> HttpResponse:
+    """Render the Stockfish card partial.
+
+    Builds the SF card context via build_sf_card_context and passes
+    per-side labels so the template can loop over White and Black.
+
+    Params:
+        request (HttpRequest): The HTTP request.
+        slug (str): Game URL slug.
+
+    Returns:
+        Rendered _card_sf.html partial with SF stats context.
+    """
+    data = _load_or_404(slug)
+    ctx = build_sf_card_context(data)
+    ctx["side_labels"] = [("white", data.white), ("black", data.black)]
+    ctx["data"] = data
+    return render(request, "games/partials/_card_sf.html", ctx)
+
+
+def card_lc0_partial(request: HttpRequest, slug: str) -> HttpResponse:
+    """Render the LC0 stat card partial.
+
+    Builds the LC0 card context via build_lc0_card_context and passes the
+    flattened keys plus side_labels to _card_lc0.html.
+
+    Params:
+        request (HttpRequest): The incoming HTTP request.
+        slug (str): Game slug identifying which game to render.
+
+    Returns:
+        HttpResponse: Rendered _card_lc0.html partial with LC0 stats context.
+    """
+    data = _load_or_404(slug)
+    ctx = build_lc0_card_context(data)
+    ctx["side_labels"] = [("white", data.white), ("black", data.black)]
+    ctx["data"] = data
+    return render(request, "games/partials/_card_lc0.html", ctx)
+
+
+def chips_partial(request: HttpRequest, slug: str) -> HttpResponse:
+    """Render the move-category chip row partial for a given ply.
+
+    Assembles up to three chips via chip_data.chips_for_ply: SF classification,
+    LC0 base severity, and (when populated) LC0 draw character.  The partial is
+    swapped in by HTMX on ``ply-change`` events and on initial page load.
+
+    Params:
+        request (HttpRequest): GET request; reads ``?ply=<int>`` (default 0).
+        slug (str): Game URL slug.
+
+    Returns:
+        Rendered _move_chips.html with ``chips`` context list.
+    """
+    data = _load_or_404(slug)
+    ply = int(request.GET.get("ply", 0) or 0)
+    return render(request, "games/partials/_move_chips.html", {
+        "chips": chips_for_ply(data, ply),
+    })
+
+
+def chart_winpct_partial(request: HttpRequest, slug: str) -> HttpResponse:
+    """Render the Win% headline chart partial.
+
+    Builds the winpct payload (SF Lichess logistic + LC0 wdl_mu*100) and passes
+    it as ``payload`` to the template for embedding via json_script.
+
+    Params:
+        request (HttpRequest): The HTTP request.
+        slug (str): Game URL slug.
+
+    Returns:
+        Rendered _chart_winpct.html partial with serialized winpct data.
+    """
+    data = _load_or_404(slug)
+    return render(request, "games/partials/_chart_winpct.html", {
+        "payload": winpct_payload(data),
+    })
+
+
+def chart_sf_cp_partial(request: HttpRequest, slug: str) -> HttpResponse:
+    """Render the Stockfish cp-bar chart partial.
+
+    Builds the sf_cp payload (per-move cp_eval + mate_in + classification) and
+    passes it as ``payload`` to the template for embedding via json_script.
+
+    Params:
+        request (HttpRequest): The HTTP request.
+        slug (str): Game URL slug.
+
+    Returns:
+        Rendered _chart_sf_cp.html partial with serialized sf_cp data.
+    """
+    data = _load_or_404(slug)
+    return render(request, "games/partials/_chart_sf_cp.html", {
+        "payload": sf_cp_payload(data),
+    })
+
+
+def chart_lc0_wdl_partial(request: HttpRequest, slug: str) -> HttpResponse:
+    """Render the LC0 WDL chart partial.
+
+    Builds the lc0_wdl payload (per-move wdl_win_adj/wdl_draw_adj/wdl_loss_adj
+    exposed as wdl_win/wdl_draw/wdl_loss) and passes it as ``payload`` to the
+    template for embedding via json_script. Also passes network name, draw rate
+    reference, and player names for the subtitle and trace labels.
+
+    Params:
+        request (HttpRequest): The HTTP request.
+        slug (str): Game URL slug.
+
+    Returns:
+        Rendered _chart_lc0_wdl.html partial with serialized WDL data.
+    """
+    data = _load_or_404(slug)
+    return render(request, "games/partials/_chart_lc0_wdl.html", {
+        "payload": lc0_wdl_payload(data),
+        "network_name": data.lc0_network_name,
+        "draw_rate_reference": data.lc0_draw_rate_reference,
+        "white": data.white,
+        "black": data.black,
+    })
+
+
+def pgn_partial(request: HttpRequest, slug: str) -> HttpResponse:
+    """Render the PGN table partial.
+
+    Walks the PGN mainline to produce a per-ply move list, attaching SF
+    classification from the new-schema MoveAnalysis rows keyed by ply.
+
+    Params:
+        request: The incoming HTTP request.
+        slug: The game slug identifying which game to render.
+
+    Returns:
+        HttpResponse: Rendered _pgn_table.html with ``pgn_moves`` context — a list
+        of dicts with keys: ply, san, color ("white"/"black"), move_number, classification.
+    """
+    data = _load_or_404(slug)
+    by_ply_class = {m.ply: m.classification for m in data.sf_moves}
+    moves: list[dict] = []
+    pgn_game = _pgn.read_game(_io.StringIO(data.pgn))
+    board = pgn_game.board()
+    start = board.ply()
+    for i, mv in enumerate(pgn_game.mainline_moves(), start=1):
+        san = board.san(mv)
+        board.push(mv)
+        ply = i + start
+        moves.append({
+            "ply": ply,
+            "san": san,
+            "color": "white" if ply % 2 == 1 else "black",
+            "move_number": (ply + 1) // 2,
+            "classification": by_ply_class.get(ply),
+        })
+    return render(request, "games/partials/_pgn_table.html", {"pgn_moves": moves})

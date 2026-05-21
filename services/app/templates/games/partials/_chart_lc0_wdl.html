@@ -1,0 +1,27 @@
+{% load static %}
+<section class="wc-chart" data-chart="lc0-wdl">
+  <header class="wc-chart__head">
+    <h3>LC0 Win / Draw / Loss</h3>
+    <p class="wc-chart__sub">
+      {% if network_name %}{{ network_name }} &mdash; {% endif %}Calibrated to {{ draw_rate_reference|floatformat:2|default:"?" }} draw rate (<a href="https://github.com/christophersw/wood_league/issues/159" target="_blank" rel="noopener noreferrer">#159</a>).
+    </p>
+    <details class="chart-info-tooltip">
+      <summary aria-label="How this chart is computed">ⓘ</summary>
+      <div>
+        <p><strong>What you&rsquo;re seeing:</strong></p>
+        <p>
+          LC0&rsquo;s neural-network probability distribution rescaled to a calibration draw rate (#159).
+          Bottom band = White wins, middle = draw, top = Black wins.
+          Always read in White-frame.
+        </p>
+        <p>
+          The three bands always sum to 100%. Click any ply to jump to that position on the board.
+          Use the perspective toggle to flip the board; the band colours swap to match.
+        </p>
+      </div>
+    </details>
+  </header>
+  <div id="lc0-wdl-chart"></div>
+  {{ payload|json_script:"lc0-wdl-data" }}
+  <script src="{% static 'games/charts/lc0Wdl.js' %}"></script>
+</section>

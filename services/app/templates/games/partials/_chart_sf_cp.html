@@ -1,0 +1,27 @@
+{% load static %}
+<section class="wc-chart" data-chart="sf-cp">
+  <header class="wc-chart__head">
+    <h3>Stockfish centipawn evaluation</h3>
+    <p class="wc-chart__sub">Raw score, White-frame, capped at &plusmn;12 pawns.</p>
+    <details class="chart-info-tooltip">
+      <summary aria-label="How this chart is computed">ⓘ</summary>
+      <div>
+        <p><strong>What you&rsquo;re seeing:</strong></p>
+        <p>
+          This is the underlying engine signal — Stockfish&rsquo;s raw centipawn score
+          for each move, expressed in pawn units from White&rsquo;s perspective.
+          Bars above zero favour White; bars below zero favour Black.
+          Scores beyond &plusmn;12 pawns (typically forced-mate sequences) are capped
+          so the chart remains readable.
+        </p>
+        <p>
+          For a probability-based view that is easier to interpret across the whole game,
+          see the <strong>Win-for-White</strong> chart above.
+        </p>
+      </div>
+    </details>
+  </header>
+  <div id="sf-cp-chart" style="height:280px"></div>
+  {{ payload|json_script:"sf-cp-data" }}
+  <script src="{% static 'games/charts/sfCp.js' %}"></script>
+</section>

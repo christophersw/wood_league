@@ -1,0 +1,30 @@
+{% load static %}
+{# Title: _pgn_table.html — PGN move-list partial #}
+{# Description: #}
+{#     HTMX partial rendering the collapsible PGN move table.  The JS payload #}
+{#     (pgn-moves-data) is read by pgnTable.js which builds rows and subscribes #}
+{#     to WoodLeagueAnalysis for active-ply highlighting and click-to-set-ply. #}
+{# Changelog: #}
+{#     2026-05-21 (#186): Task 14 — lift from inline analysis.html into partial. #}
+
+{{ pgn_moves|json_script:"pgn-moves-data" }}
+
+<details id="pgn-panel" class="move-list-panel">
+  <summary class="move-list-summary">Moves</summary>
+  <div class="move-list-body">
+    <div id="pgn-table-wrap" class="move-list-wrap">
+      <table id="pgn-table" class="move-list-table">
+        <thead>
+          <tr>
+            <th class="move-list-number-header"></th>
+            <th>White</th>
+            <th>Black</th>
+          </tr>
+        </thead>
+        <tbody id="pgn-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</details>
+
+<script src="{% static 'games/pgnTable.js' %}"></script>
