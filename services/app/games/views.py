@@ -35,7 +35,7 @@ from games.board_builder import board_colors_for_move_classification, build_boar
 from games.models import Game
 from games.services import MoveRow, get_game_analysis
 from games.cards import build_lc0_card_context, build_sf_card_context
-from games.chart_data import sf_cp_payload, winpct_payload
+from games.chart_data import lc0_wdl_payload, sf_cp_payload, winpct_payload
 from games.services_v2 import get_game_analysis_v2
 from openings.models import OpeningBook
 
@@ -731,9 +731,28 @@ def chart_sf_cp_partial(request: HttpRequest, slug: str) -> HttpResponse:
 
 
 def chart_lc0_wdl_partial(request: HttpRequest, slug: str) -> HttpResponse:
-    """Render the LC0 WDL chart partial."""
+    """Render the LC0 WDL chart partial.
+
+    Builds the lc0_wdl payload (per-move wdl_win_adj/wdl_draw_adj/wdl_loss_adj
+    exposed as wdl_win/wdl_draw/wdl_loss) and passes it as ``payload`` to the
+    template for embedding via json_script. Also passes network name, draw rate
+    reference, and player names for the subtitle and trace labels.
+
+    Params:
+        request (HttpRequest): The HTTP request.
+        slug (str): Game URL slug.
+
+    Returns:
+        Rendered _chart_lc0_wdl.html partial with serialized WDL data.
+    """
     data = _load_or_404(slug)
-    return render(request, "games/partials/_chart_lc0_wdl.html", {"data": data})
+    return render(request, "games/partials/_chart_lc0_wdl.html", {
+        "payload": lc0_wdl_payload(data),
+        "network_name": data.lc0_network_name,
+        "draw_rate_reference": data.lc0_draw_rate_reference,
+        "white": data.white,
+        "black": data.black,
+    })
 
 
 def pgn_partial(request: HttpRequest, slug: str) -> HttpResponse:

@@ -3,11 +3,14 @@ Title: test_partial_routes.py — Route resolution for HTMX partials
 Description:
     Parametrized tests verify that all seven new analysis partial routes
     resolve and return 200 for new-schema games. Legacy games return 404.
-    Also contains content-level assertions for the Win% chart partial.
+    Also contains content-level assertions for the Win%, SF cp, and LC0 WDL
+    chart partials.
 
 Changelog:
     2026-05-21 (#186): Initial — stub routes scaffolding.
     2026-05-21 (#186): Task 9 — add Win% partial content assertions.
+    2026-05-21 (#186): Task 10 — add SF cp partial content assertions.
+    2026-05-21 (#186): Task 11 — add LC0 WDL partial content assertions.
 """
 import pytest
 from django.urls import reverse
@@ -65,3 +68,20 @@ def test_sf_cp_partial_contains_payload_and_tooltip(client, new_schema_game_fact
     assert "Stockfish centipawn evaluation" in body      # section title
     assert "underlying engine signal" in body            # tooltip body text
     assert "sfCp.js" in body                             # static JS reference
+
+
+def test_lc0_wdl_partial_contains_payload_and_tooltip(client, new_schema_game_factory):
+    """LC0 WDL partial must embed JSON payload, chart title, calibration draw-rate text, and JS reference.
+
+    Params:
+        client: Django test client fixture.
+        new_schema_game_factory: Factory fixture producing a new-schema game.
+    """
+    game = new_schema_game_factory()
+    resp = client.get(f"/_partials/games/{game.slug}/charts/lc0-wdl/")
+    body = resp.content.decode()
+    assert resp.status_code == 200
+    assert "lc0-wdl-data" in body                         # json_script tag id
+    assert "LC0 Win / Draw / Loss" in body                # chart section title
+    assert "draw rate" in body                            # calibration draw-rate subtitle text
+    assert "lc0Wdl.js" in body                            # static JS reference
