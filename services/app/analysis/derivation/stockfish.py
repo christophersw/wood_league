@@ -403,6 +403,12 @@ def _derive_one_move(
         and move.get("wdl_loss") is not None
     )
 
+    # Declared once so both branches assign without re-annotating (mypy).
+    wdl_win_adj: Optional[int]
+    wdl_draw_adj: Optional[int]
+    wdl_loss_adj: Optional[int]
+    wdl_mu_white: Optional[float]
+    gap: Optional[float]
     if have_wdl:
         (
             wdl_win_adj, wdl_draw_adj, wdl_loss_adj,
@@ -420,8 +426,8 @@ def _derive_one_move(
         win_pct_before_mover = win_pct(mover_cp_before)
         win_pct_after_mover = win_pct(mover_cp_after)
         wdl_win_adj = wdl_draw_adj = wdl_loss_adj = None
-        wdl_mu_white: Optional[float] = None
-        gap: Optional[float] = _gap_from_arrow_scores(
+        wdl_mu_white = None
+        gap = _gap_from_arrow_scores(
             move.get("arrow_score_1"), move.get("arrow_score_2"),
         )
         mu_for_walk = win_pct(cp_after_white) / 100.0
