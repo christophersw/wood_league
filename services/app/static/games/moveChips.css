@@ -1,0 +1,63 @@
+/*
+ * Title: moveChips.css — Move-category chip row styles
+ * Description:
+ *   Styles for the .move-chips strip and individual .move-chip elements
+ *   rendered in the _move_chips.html partial. Each chip's colour comes from
+ *   the shared .move-annotation-* palette; the chip container handles layout
+ *   and font. The --lc0_draw variant is visually muted so the draw-character
+ *   chip subordinates to the base-severity chip.
+ *
+ * Changelog:
+ *   2026-05-21 (#186): Initial.
+ */
+
+/* ── Container ────────────────────────────────────────────────────────────── */
+.move-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  align-items: center;
+  min-height: 2rem;
+  padding: 0.25rem 0;
+}
+
+.move-chips__empty {
+  font-family: 'DM Mono', 'Fira Mono', monospace;
+  font-size: 0.75rem;
+  color: var(--color-peat, #6b5e4c);
+  opacity: 0.6;
+}
+
+/* ── Base chip ────────────────────────────────────────────────────────────── */
+.move-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-family: 'DM Mono', 'Fira Mono', monospace;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  cursor: default;
+  /* Colour is overridden by .move-annotation-* classes from the global palette */
+  background-color: var(--chip-bg, #e8e0d4);
+  color: var(--chip-fg, #3d2e1a);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+/* ── Engine-source variants ───────────────────────────────────────────────── */
+.move-chip--sf {
+  /* Stockfish chips: primary, full weight — no extra modifier */
+}
+
+.move-chip--lc0_base {
+  /* LC0 base-severity chips: primary, full weight — no extra modifier */
+}
+
+.move-chip--lc0_draw {
+  /* LC0 draw-character chips: muted, subordinate to the severity chip */
+  opacity: 0.55;
+  font-weight: 500;
+  font-size: 0.68rem;
+}

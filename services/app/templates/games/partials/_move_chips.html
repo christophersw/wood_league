@@ -1,1 +1,8 @@
-<div data-partial="move-chips"></div>
+{% load static %}<link rel="stylesheet" href="{% static 'games/moveChips.css' %}">
+<div class="move-chips">
+{% for c in chips %}
+  <span class="move-chip move-chip--{{ c.kind }} move-annotation-{{ c.css_label }}" title="{{ c.title }}: {{ c.label }}">{{ c.label }}</span>
+{% empty %}
+  <span class="move-chips__empty">No engine tags for this ply.</span>
+{% endfor %}
+</div>

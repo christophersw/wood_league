@@ -18,6 +18,7 @@ Changelog:
     2026-05-21 (#186): Wire card_lc0_partial to build_lc0_card_context with side_labels.
     2026-05-21 (#186): Wire chart_winpct_partial to winpct_payload from chart_data.
     2026-05-21 (#186): Wire chart_sf_cp_partial to sf_cp_payload from chart_data.
+    2026-05-21 (#186): Wire chips_partial to chips_for_ply from chip_data.
 """
 
 import io as _io
@@ -36,6 +37,7 @@ from games.models import Game
 from games.services import MoveRow, get_game_analysis
 from games.cards import build_lc0_card_context, build_sf_card_context
 from games.chart_data import lc0_wdl_payload, sf_cp_payload, winpct_payload
+from games.chip_data import chips_for_ply
 from games.services_v2 import get_game_analysis_v2
 from openings.models import OpeningBook
 
@@ -686,10 +688,24 @@ def card_lc0_partial(request: HttpRequest, slug: str) -> HttpResponse:
 
 
 def chips_partial(request: HttpRequest, slug: str) -> HttpResponse:
-    """Render the move chips partial."""
+    """Render the move-category chip row partial for a given ply.
+
+    Assembles up to three chips via chip_data.chips_for_ply: SF classification,
+    LC0 base severity, and (when populated) LC0 draw character.  The partial is
+    swapped in by HTMX on ``ply-change`` events and on initial page load.
+
+    Params:
+        request (HttpRequest): GET request; reads ``?ply=<int>`` (default 0).
+        slug (str): Game URL slug.
+
+    Returns:
+        Rendered _move_chips.html with ``chips`` context list.
+    """
     data = _load_or_404(slug)
     ply = int(request.GET.get("ply", 0) or 0)
-    return render(request, "games/partials/_move_chips.html", {"data": data, "ply": ply})
+    return render(request, "games/partials/_move_chips.html", {
+        "chips": chips_for_ply(data, ply),
+    })
 
 
 def chart_winpct_partial(request: HttpRequest, slug: str) -> HttpResponse:
