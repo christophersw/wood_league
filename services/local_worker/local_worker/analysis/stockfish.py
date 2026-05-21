@@ -99,11 +99,17 @@ def _extract_arrows_and_pvs(
     info_list: list,
     board: chess.Board,
     mover: chess.Color,
-) -> tuple[list[str], list[Optional[float]], list[Optional[str]]]:
-    """Extract MultiPV arrow UCIs, mover-frame Win% scores, and PV SAN lines.
+) -> tuple[
+    list[str],
+    list[Optional[float]],
+    list[Optional[str]],
+    list[tuple[Optional[int], Optional[int], Optional[int]]],
+]:
+    """Extract MultiPV arrow UCIs, mover-frame Win% scores, PV SAN lines, and WDL.
 
     Mirrors lc0._extract_arrows_and_pvs but converts each PV's cp evaluation
     (White's frame) into mover Win% via white_cp -> mover_cp -> win_pct.
+    Also extracts the per-PV WDL triple when UCI_ShowWDL is enabled (#188 Phase A).
 
     Args:
         info_list: MultiPV result list from engine.analyse(..., multipv=N).
@@ -111,12 +117,14 @@ def _extract_arrows_and_pvs(
         mover: Side to move.
 
     Returns:
-        Tuple of (arrows, arrow_scores, pv_sans), each up to 3 entries. Missing
-        slots are "", None, None respectively.
+        Tuple of (arrows, arrow_scores, pv_sans, wdl_triples), each up to 3
+        entries. Missing slots are "", None, None, (None, None, None)
+        respectively.
     """
     arrows: list[str] = []
     arrow_scores: list[Optional[float]] = []
     pv_sans: list[Optional[str]] = []
+    wdl_triples: list[tuple[Optional[int], Optional[int], Optional[int]]] = []
 
     for pv_info in info_list[:3]:
         pv = pv_info.get("pv") or []
@@ -124,11 +132,13 @@ def _extract_arrows_and_pvs(
             arrows.append("")
             arrow_scores.append(None)
             pv_sans.append(None)
+            wdl_triples.append((None, None, None))
             continue
 
         arrows.append(pv[0].uci())
         pv_cp_white = white_cp(pv_info["score"])
         arrow_scores.append(win_pct(mover_cp(pv_cp_white, mover)))
+        wdl_triples.append(_wdl_triple_mover(pv_info, mover))
 
         pv_board = board.copy()
         pv_san_list: list[str] = []
@@ -140,7 +150,7 @@ def _extract_arrows_and_pvs(
                 break
         pv_sans.append(json.dumps(pv_san_list) if pv_san_list else None)
 
-    return arrows, arrow_scores, pv_sans
+    return arrows, arrow_scores, pv_sans, wdl_triples
 
 
 def _mate_in_from_score(score: chess.engine.PovScore) -> Optional[int]:
@@ -310,7 +320,9 @@ def _analyze_one_move(
         board, engine, limit,
         cache=cache, network=network, nodes=depth_key, multipv=3,
     )
-    arrows, arrow_scores, pv_sans = _extract_arrows_and_pvs(info_before, board, mover)
+    arrows, arrow_scores, pv_sans, wdl_candidates = _extract_arrows_and_pvs(
+        info_before, board, mover,
+    )
 
     matched_idx: Optional[int] = None
     for pv_idx, pv_info in enumerate(info_before[:3]):
@@ -321,11 +333,17 @@ def _analyze_one_move(
 
     board.push(move)
 
+    # #188 Phase A: capture the played-move WDL triple.
+    # Matched-PV fast path: the WDL was reported at the pre-push root, which is
+    # the mover's frame — use mover directly. Fallback path: after board.push()
+    # the root is the opponent; info_after["wdl"].pov(mover) recovers mover frame.
     if matched_idx is not None:
         score_after = info_before[matched_idx]["score"]
+        wdl_played = _wdl_triple_mover(info_before[matched_idx], mover)
     else:
         info_after = engine.analyse(board, limit)
         score_after = info_after["score"]
+        wdl_played = _wdl_triple_mover(info_after, mover)
     eval_after_white = white_cp(score_after)
     mate_in_white = _mate_in_from_score(score_after)
 
@@ -337,6 +355,8 @@ def _analyze_one_move(
         arrows=arrows,
         arrow_scores=arrow_scores,
         pv_sans=pv_sans,
+        wdl_played=wdl_played,
+        wdl_candidates=wdl_candidates,
     )
 
 

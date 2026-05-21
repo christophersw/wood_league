@@ -76,3 +76,19 @@ def test_build_move_result_handles_missing_wdl():
     )
     assert move.wdl_win is None and move.wdl_draw is None and move.wdl_loss is None
     assert move.wdl_win_1 is None
+
+
+def test_extract_arrows_and_pvs_returns_wdl_candidates():
+    """Each PV slot contributes a mover-frame WDL triple."""
+    from local_worker.analysis.stockfish import _extract_arrows_and_pvs
+
+    board = chess.Board()
+    # Build a fake info_list with python-chess PovScore + PovWdl objects.
+    score = chess.engine.PovScore(chess.engine.Cp(30), chess.WHITE)
+    wdl_white = chess.engine.PovWdl(chess.engine.Wdl(120, 850, 30), chess.WHITE)
+    info = {"pv": [chess.Move.from_uci("e2e4")], "score": score, "wdl": wdl_white}
+    arrows, scores, sans, wdl_triples = _extract_arrows_and_pvs(
+        [info], board, chess.WHITE,
+    )
+    assert arrows[0] == "e2e4"
+    assert wdl_triples[0] == (120, 850, 30)
