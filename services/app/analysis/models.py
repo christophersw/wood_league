@@ -9,7 +9,7 @@ Changelog:
     2026-05-08: Added file header to meet documentation standards
     2026-05-18: Add AnalysisSchedule + AnalysisInstance models (issue #155).
     2026-05-18: Add RecurringAnalysisSchedule + AnalysisSchedule.recurring_rule (#155 B).
-    2026-05-21: Drop arrow_score_1/2/3 from MoveAnalysis; add WDL columns + normalize_to_pawn_value (fresh-db reset, issue #188).
+    2026-05-21: Add WDL columns + normalize_to_pawn_value (fresh-db reset, issue #188); restore arrow_score_1/2/3 (scope correction — Phase D).
 """
 from django.db import models
 
@@ -64,7 +64,7 @@ class MoveAnalysis(models.Model):
     """Stockfish per-move analysis — raw worker output + app-derived fields (#161 F).
 
     Raw fields (worker → app, untouched): cp_eval, mate_in, arrow_uci_1/2/3,
-    pv_san_1/2/3, wdl_(win|draw|loss)(_1|_2|_3)?, san, fen, ply.
+    arrow_score_1/2/3, pv_san_1/2/3, wdl_(win|draw|loss)(_1|_2|_3)?, san, fen, ply.
     Derived fields (computed by ``derivation.stockfish``): cpl,
     move_win_delta, classification, best_move.
     """
@@ -86,6 +86,9 @@ class MoveAnalysis(models.Model):
     arrow_uci_1 = models.CharField(max_length=8, default="")
     arrow_uci_2 = models.CharField(max_length=8, null=True, blank=True)
     arrow_uci_3 = models.CharField(max_length=8, null=True, blank=True)
+    arrow_score_1 = models.FloatField(null=True, blank=True)
+    arrow_score_2 = models.FloatField(null=True, blank=True)
+    arrow_score_3 = models.FloatField(null=True, blank=True)
     # Derived severity label.
     classification = models.CharField(max_length=16, null=True, blank=True)
     best_move = models.CharField(max_length=32, default="")
