@@ -1,8 +1,9 @@
 """
 Tests for chart_data module.
 """
-import math
 import pytest
+
+from analysis.derivation.accuracy import win_pct
 from games.chart_data import winpct_payload, sf_cp_payload, lc0_wdl_payload
 from games.services_v2 import get_game_analysis_v2
 
@@ -14,9 +15,9 @@ def test_winpct_payload_overlays_sf_and_lc0(new_schema_game_factory):
     payload = winpct_payload(data)
     assert payload["sf"] and payload["lc0"]
     sf0 = payload["sf"][0]
-    # Lichess logistic: 50 + 50*tanh(0.00368208 * cp)
-    expected = 50 + 50 * math.tanh(0.00368208 * data.sf_moves[0].cp_eval)
-    assert sf0["winpct"] == pytest.approx(expected, abs=0.01)
+    # SF Win% uses the canonical derivation.accuracy.win_pct (single source
+    # of truth — see issue #188 for follow-up to remove the sigmoid entirely).
+    assert sf0["winpct"] == pytest.approx(win_pct(data.sf_moves[0].cp_eval), abs=0.01)
     assert payload["lc0"][0]["winpct"] == pytest.approx(data.lc0_moves[0].wdl_mu * 100, abs=0.01)
 
 
