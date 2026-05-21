@@ -2,10 +2,13 @@
 Title: tests.py — Unit tests for the games app
 Description:
     Tests for game analysis data assembly (services), board frame generation
-    (board_builder), stat card HTML generation (stat_cards), and view helper
-    functions (views). Does not test database models.
+    (board_builder), and live view helper functions (views). Does not test
+    database models. Legacy stat_cards tests removed in Task 15 (#186).
 
 Changelog:
+    2026-05-21 (#186): Task 15 — removed ViewHelperTest, AccColorTest, BarRowTest,
+                       QualityRowTest, RerunButtonTest, BuildSfCardTest,
+                       BuildLc0CardTest, BuildStatCardsHtmlTest (stat_cards deleted)
     2026-05-05 (#16): Added engine-line continuation tests for stored PV SAN usage
     2026-05-04 (#16): Initial test suite for the game analysis page rewrite
 """
@@ -18,14 +21,8 @@ from django.test import RequestFactory, TestCase
 
 from games.board_builder import _build_tier_map, build_board_frames
 from games.services import GameAnalysisData, MoveRow
-from games.stat_cards import (
-    _acc_color, _bar_row, _quality_row, _rerun_button,
-    build_lc0_card, build_sf_card, build_stat_cards_html,
-)
 from games.views import (
-    _build_eval_json, _build_pgn_moves_json, _build_wdl_json,
     _continuation_san_moves_from_row,
-    _details_string, _opening_label,
     _parse_pv_san_moves,
     engine_line_partial,
 )
@@ -116,73 +113,6 @@ class GameAnalysisDataPropertiesTest(TestCase):
         """black_label returns plain name when no rating."""
         data = _minimal_data()
         self.assertEqual(data.black_label, "Black")
-
-
-# ---------------------------------------------------------------------------
-# View helper functions
-# ---------------------------------------------------------------------------
-
-class ViewHelperTest(TestCase):
-    """Tests for the private view helper functions."""
-
-    def test_details_string_both(self):
-        """_details_string joins date and time_control with ·."""
-        data = _minimal_data(date="2024-01-15", time_control="600+0")
-        self.assertEqual(_details_string(data), "2024-01-15 · 600+0")
-
-    def test_details_string_date_only(self):
-        """_details_string returns just date when no time control."""
-        data = _minimal_data(date="2024-01-15")
-        self.assertEqual(_details_string(data), "2024-01-15")
-
-    def test_details_string_empty(self):
-        """_details_string returns empty string when no date or time control."""
-        data = _minimal_data()
-        self.assertEqual(_details_string(data), "")
-
-    def test_opening_label_lichess_with_eco(self):
-        """_opening_label prefers lichess_opening and prepends ECO."""
-        data = _minimal_data(eco_code="C60", lichess_opening="Ruy Lopez")
-        self.assertEqual(_opening_label(data), "C60 · Ruy Lopez")
-
-    def test_opening_label_eco_and_name_fallback(self):
-        """_opening_label falls back to ECO + opening_name."""
-        data = _minimal_data(eco_code="C60", opening_name="Ruy Lopez")
-        self.assertEqual(_opening_label(data), "C60 · Ruy Lopez")
-
-    def test_opening_label_empty(self):
-        """_opening_label returns empty string when no opening data."""
-        data = _minimal_data()
-        self.assertEqual(_opening_label(data), "")
-
-    def test_build_eval_json_returns_null_without_sf(self):
-        """_build_eval_json returns 'null' when has_sf is False."""
-        data = _minimal_data()
-        self.assertEqual(_build_eval_json(data), "null")
-
-    def test_build_wdl_json_returns_null_without_lc0(self):
-        """_build_wdl_json returns 'null' when lc0_moves is None."""
-        data = _minimal_data()
-        self.assertEqual(_build_wdl_json(data), "null")
-
-    def test_build_pgn_moves_json_structure(self):
-        """_build_pgn_moves_json produces correct ply, move_number, color fields."""
-        import json
-        data = _minimal_data()
-        result = json.loads(_build_pgn_moves_json(data))
-        self.assertEqual(len(result), 4)
-        self.assertEqual(result[0]["ply"], 1)
-        self.assertEqual(result[0]["color"], "white")
-        self.assertEqual(result[1]["color"], "black")
-
-    def test_build_eval_json_with_sf(self):
-        """_build_eval_json includes rows for moves with cp_eval when has_sf is True."""
-        import json
-        data = _minimal_data(white_accuracy=85.0)
-        result = json.loads(_build_eval_json(data))
-        self.assertGreater(len(result), 0)
-        self.assertIn("ply", result[0])
-        self.assertIn("cp_eval", result[0])
 
 
 # ---------------------------------------------------------------------------
@@ -430,195 +360,3 @@ class EngineLinePartialTest(TestCase):
         self.assertEqual(payload["context_label"], "Best SF (ply 1) +30")
 
 
-# ---------------------------------------------------------------------------
-# _acc_color
-# ---------------------------------------------------------------------------
-
-class AccColorTest(TestCase):
-    """Tests for _acc_color accuracy percentage color mapping."""
-
-    def test_high_accuracy_dark_green(self):
-        """_acc_color returns dark green for accuracy >= 90."""
-        self.assertEqual(_acc_color(95.0), "#1A3A2A")
-
-    def test_good_accuracy_medium_green(self):
-        """_acc_color returns medium green for accuracy 80–89."""
-        self.assertEqual(_acc_color(85.0), "#4A6554")
-
-    def test_moderate_accuracy_gold(self):
-        """_acc_color returns gold for accuracy 70–79."""
-        self.assertEqual(_acc_color(75.0), "#D4A843")
-
-    def test_low_accuracy_red(self):
-        """_acc_color returns red for accuracy < 70."""
-        self.assertEqual(_acc_color(60.0), "#B53541")
-
-
-# ---------------------------------------------------------------------------
-# _bar_row
-# ---------------------------------------------------------------------------
-
-class BarRowTest(TestCase):
-    """Tests for the _bar_row HTML generator."""
-
-    def test_contains_player_name(self):
-        """_bar_row includes the player name."""
-        html = _bar_row("♙", "Magnus", 85.0, "85.0%")
-        self.assertIn("Magnus", html)
-
-    def test_contains_val_str(self):
-        """_bar_row includes the value string in the right column."""
-        html = _bar_row("♙", "Magnus", 85.0, "85.0%")
-        self.assertIn("85.0%", html)
-
-    def test_wide_bar_embeds_label(self):
-        """_bar_row embeds the label inside the bar fill when pct > 15."""
-        html = _bar_row("♙", "P", 80.0, "80.0%")
-        self.assertIn("dub-bar-lbl", html)
-
-
-# ---------------------------------------------------------------------------
-# _quality_row
-# ---------------------------------------------------------------------------
-
-class QualityRowTest(TestCase):
-    """Tests for the _quality_row move quality segment generator."""
-
-    def test_contains_player_name(self):
-        """_quality_row includes the player name."""
-        html = _quality_row("♙", "Magnus", 2, 10, 5, 1, 0, 0, 18)
-        self.assertIn("Magnus", html)
-
-    def test_shows_segment_count_when_wide_enough(self):
-        """_quality_row shows count labels in segments that are wide enough."""
-        html = _quality_row("♙", "P", 0, 15, 0, 0, 0, 0, 20)
-        self.assertIn("! 15", html)
-
-    def test_total_in_val_column(self):
-        """_quality_row shows total move count in the value column."""
-        html = _quality_row("♙", "P", 0, 5, 0, 0, 0, 0, 10)
-        self.assertIn("10", html)
-
-
-# ---------------------------------------------------------------------------
-# _rerun_button
-# ---------------------------------------------------------------------------
-
-class RerunButtonTest(TestCase):
-    """Tests for the _rerun_button HTML generator."""
-
-    def test_not_queued_shows_rerun(self):
-        """_rerun_button shows Re-run label when not queued."""
-        html = _rerun_button("stockfish", queued=False)
-        self.assertIn("Re-run Stockfish", html)
-
-    def test_queued_shows_disabled(self):
-        """_rerun_button shows disabled state when queued."""
-        html = _rerun_button("stockfish", queued=True)
-        self.assertIn("disabled", html)
-        self.assertIn("Already Queued", html)
-
-    def test_lc0_button_label(self):
-        """_rerun_button shows correct label for lc0 engine."""
-        html = _rerun_button("lc0", queued=False)
-        self.assertIn("Re-run Lc0", html)
-
-
-# ---------------------------------------------------------------------------
-# build_sf_card
-# ---------------------------------------------------------------------------
-
-class BuildSfCardTest(TestCase):
-    """Tests for the build_sf_card function."""
-
-    def test_returns_empty_string_without_sf(self):
-        """build_sf_card returns empty string when no SF analysis present."""
-        data = _minimal_data()
-        self.assertEqual(build_sf_card(data), "")
-
-    def test_contains_accuracy_when_present(self):
-        """build_sf_card includes accuracy bars when data is available."""
-        data = _minimal_data(white_accuracy=85.0, black_accuracy=78.0)
-        html = build_sf_card(data)
-        self.assertIn("85.0%", html)
-        self.assertIn("78.0%", html)
-
-    def test_includes_rerun_button(self):
-        """build_sf_card always includes a rerun button."""
-        data = _minimal_data(white_accuracy=85.0)
-        html = build_sf_card(data)
-        self.assertIn("queue-btn-stockfish", html)
-
-    def test_queued_button_is_disabled(self):
-        """build_sf_card renders a disabled button when queued=True."""
-        data = _minimal_data(white_accuracy=85.0)
-        html = build_sf_card(data, queued=True)
-        self.assertIn("disabled", html)
-
-
-# ---------------------------------------------------------------------------
-# build_lc0_card
-# ---------------------------------------------------------------------------
-
-class BuildLc0CardTest(TestCase):
-    """Tests for the build_lc0_card function."""
-
-    def _lc0_data(self) -> GameAnalysisData:
-        """Return a GameAnalysisData with minimal Lc0 analysis present."""
-        lc0_move = MoveRow(ply=1, san="e4", fen="", wdl_win=600, wdl_draw=300, wdl_loss=100)
-        return _minimal_data(
-            lc0_moves=[lc0_move],
-            lc0_white_win_prob=58.0,
-            lc0_white_draw_prob=30.0,
-            lc0_white_loss_prob=12.0,
-            lc0_black_win_prob=40.0,
-            lc0_black_draw_prob=35.0,
-            lc0_black_loss_prob=25.0,
-        )
-
-    def test_returns_empty_string_without_lc0(self):
-        """build_lc0_card returns empty string when no Lc0 data."""
-        data = _minimal_data()
-        self.assertEqual(build_lc0_card(data), "")
-
-    def test_contains_wdl_section(self):
-        """build_lc0_card includes WDL probability section."""
-        html = build_lc0_card(self._lc0_data())
-        self.assertIn("Win / Draw / Loss", html)
-
-    def test_includes_rerun_button(self):
-        """build_lc0_card includes a rerun button for lc0."""
-        html = build_lc0_card(self._lc0_data())
-        self.assertIn("queue-btn-lc0", html)
-
-
-# ---------------------------------------------------------------------------
-# build_stat_cards_html
-# ---------------------------------------------------------------------------
-
-class BuildStatCardsHtmlTest(TestCase):
-    """Tests for build_stat_cards_html combined output."""
-
-    def test_returns_no_analysis_message_when_empty(self):
-        """build_stat_cards_html returns a message string when no analysis is available."""
-        data = _minimal_data()
-        html = build_stat_cards_html(data)
-        self.assertIn("No engine analysis", html)
-
-    def test_includes_css_when_cards_present(self):
-        """build_stat_cards_html prepends the CSS block when engine cards are generated."""
-        lc0_move = MoveRow(ply=1, san="e4", fen="", wdl_win=600, wdl_draw=300, wdl_loss=100)
-        data = _minimal_data(
-            lc0_moves=[lc0_move],
-            lc0_white_win_prob=58.0,
-            lc0_white_draw_prob=30.0,
-            lc0_white_loss_prob=12.0,
-        )
-        html = build_stat_cards_html(data)
-        self.assertIn("<style>", html)
-
-    def test_passes_queued_flags(self):
-        """build_stat_cards_html forwards sf_queued and lc0_queued flags to card builders."""
-        data = _minimal_data(white_accuracy=85.0)
-        html = build_stat_cards_html(data, sf_queued=True)
-        self.assertIn("Already Queued", html)

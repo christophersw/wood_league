@@ -20,6 +20,9 @@ Changelog:
     2026-05-21 (#186): Wire chart_sf_cp_partial to sf_cp_payload from chart_data.
     2026-05-21 (#186): Wire chips_partial to chips_for_ply from chip_data.
     2026-05-21 (#186): Task 14 — wire pgn_partial to walk PGN mainline and attach SF classifications.
+    2026-05-21 (#186): Task 15 — drop dead helpers (_humanize_time_control, _details_string,
+                      _opening_label, _queue_status, _build_eval_json, _build_wdl_json,
+                      _build_pgn_moves_json) and OpeningBook import; stat_cards.py deleted.
 """
 
 import io as _io
@@ -40,190 +43,11 @@ from games.cards import build_lc0_card_context, build_sf_card_context
 from games.chart_data import lc0_wdl_payload, sf_cp_payload, winpct_payload
 from games.chip_data import chips_for_ply
 from games.services_v2 import get_game_analysis_v2
-from openings.models import OpeningBook
-
 _ACTIVE_STATUSES = [
     AnalysisJob.STATUS_PENDING,
     AnalysisJob.STATUS_SUBMITTED,
     AnalysisJob.STATUS_RUNNING,
 ]
-
-
-def _humanize_time_control(time_control: str) -> str:
-    """
-    Convert time control to human-readable format.
-
-    Handles two formats:
-    - "x/y" (PGN format where y is total seconds): e.g., "1/259200" → "3 days"
-    - "x+y" (clock format in minutes): e.g., "600+0" → "600+0" (unchanged)
-
-    Params:
-        time_control (str): Time control string.
-
-    Returns:
-        Human-readable time control string.
-    """
-    if not time_control:
-        return ""
-    
-    # Handle PGN format "x/y" where y is seconds
-    if "/" in time_control:
-        try:
-            parts = time_control.split("/")
-            if len(parts) == 2:
-                seconds = int(parts[1])
-                # Convert to human-readable format
-                if seconds >= 86400:  # 1 day = 86400 seconds
-                    days = seconds // 86400
-                    return f"{days}d"
-                elif seconds >= 3600:  # 1 hour
-                    hours = seconds // 3600
-                    return f"{hours}h"
-                elif seconds >= 60:  # 1 minute
-                    minutes = seconds // 60
-                    return f"{minutes}m"
-                else:
-                    return f"{seconds}s"
-        except (ValueError, IndexError):
-            pass
-    
-    # Return as-is if we can't parse it
-    return time_control
-
-
-def _details_string(data) -> str:
-    """
-    Build the date · time-control details string for the page header.
-
-    Params:
-        data (GameAnalysisData): Assembled game analysis data.
-
-    Returns:
-        String like "2024-03-15 14:30 · 600+0" or "2024-03-15 · 3d", or empty string.
-    """
-    parts = []
-    if data.date:
-        parts.append(data.date)
-    if data.time_control:
-        parts.append(_humanize_time_control(data.time_control))
-    return " · ".join(parts)
-
-
-def _opening_label(data) -> str:
-    """
-    Build a human-readable opening label from the game's ECO and name fields.
-
-    Params:
-        data (GameAnalysisData): Assembled game analysis data.
-
-    Returns:
-        Opening label string, preferring lichess_opening name when available,
-        then looking up from OpeningBook by ECO code, skipping move notation.
-    """
-    def is_move_notation(name: str) -> bool:
-        """Check if a string looks like chess move notation rather than an opening name."""
-        if not name:
-            return False
-        # Move notation contains only chess-related chars: files (a-h), ranks (1-8),
-        # pieces (KQRBN), capture (x), checks/mates (+#), spaces, etc.
-        only_move_chars = bool(re.match(r"^[a-hKQRBNx\d\-\+#!? ]+$", name))
-        # And must start with a move pattern (e.g., e4, Nf3, exd4)
-        starts_with_move = bool(re.match(r"^([a-h][x]?[a-h]?\d|[KQRBN])", name))
-        return only_move_chars and starts_with_move
-    
-    # Prefer lichess_opening if available
-    if data.lichess_opening:
-        if data.eco_code:
-            return f"{data.eco_code} · {data.lichess_opening}"
-        return data.lichess_opening
-    
-    # Use opening_name if it's not move notation
-    if data.eco_code and data.opening_name and not is_move_notation(data.opening_name):
-        return f"{data.eco_code} · {data.opening_name}"
-    
-    # Fall back to looking up the opening by ECO code from OpeningBook
-    if data.eco_code:
-        try:
-            opening = OpeningBook.objects.filter(eco=data.eco_code).values_list("name", flat=True).first()
-            if opening:
-                return f"{data.eco_code} · {opening}"
-        except Exception:
-            pass
-    
-    return data.eco_code or ""
-
-
-def _queue_status(slug: str) -> tuple[bool, bool]:
-    """
-    Check whether Stockfish or Lc0 analysis is currently queued for this game.
-
-    Params:
-        slug (str): Game URL slug.
-
-    Returns:
-        Tuple of (sf_queued, lc0_queued) booleans.
-    """
-    active = AnalysisJob.objects.filter(
-        game__slug=slug,
-        status__in=_ACTIVE_STATUSES,
-    ).values_list("engine", flat=True)
-    engines = set(active)
-    return ("stockfish" in engines), ("lc0" in engines)
-
-
-def _build_eval_json(data) -> str:
-    """
-    Serialize Stockfish per-move evaluation data as a JSON string.
-
-    Params:
-        data (GameAnalysisData): Assembled game analysis data.
-
-    Returns:
-        JSON string of [{ply, cp_eval, san, classification}] or "null".
-    """
-    if not (data.has_sf and data.moves):
-        return "null"
-    rows = [
-        {
-            "ply": r.ply,
-            "cp_eval": r.cp_eval,
-            "san": r.san,
-            "classification": r.classification or "",
-        }
-        for r in data.moves
-        if r.cp_eval is not None
-    ]
-    return json.dumps(rows)
-
-
-def _build_wdl_json(data) -> str:
-    """
-    Serialize Lc0 per-move WDL data as a JSON string.
-
-    Params:
-        data (GameAnalysisData): Assembled game analysis data.
-
-    Returns:
-        JSON string of [{ply, wdl_win, wdl_draw, wdl_loss, san, classification}] or "null".
-        WDL values are in White's frame (sourced from ``wdl_*_adj`` columns) so
-        the chart curve stays consistent across plies. Raw mover-frame triples
-        flip perspective every ply and would produce a sawtooth.
-    """
-    if not data.lc0_moves:
-        return "null"
-    rows = [
-        {
-            "ply": r.ply,
-            "wdl_win": r.wdl_win or 0,
-            "wdl_draw": r.wdl_draw or 0,
-            "wdl_loss": r.wdl_loss or 0,
-            "san": r.san,
-            "classification": r.classification or "",
-        }
-        for r in data.lc0_moves
-        if r.wdl_win is not None
-    ]
-    return json.dumps(rows)
 
 
 def _parse_pv_san_moves(raw_pv_san: str | None) -> list[str]:
@@ -324,29 +148,6 @@ def _fallback_game_continuation_sans(
         Remaining game moves after the selected move.
     """
     return list(moves_list[request_ply + 1:])
-
-
-def _build_pgn_moves_json(data) -> str:
-    """
-    Serialize the move list for the client-side PGN table as a JSON string.
-
-    Params:
-        data (GameAnalysisData): Assembled game analysis data.
-
-    Returns:
-        JSON string of [{ply, move_number, color, san, classification}].
-    """
-    rows = [
-        {
-            "ply": r.ply,
-            "move_number": (r.ply + 1) // 2,
-            "color": "white" if r.ply % 2 == 1 else "black",
-            "san": r.san,
-            "classification": r.classification or "",
-        }
-        for r in (data.moves or [])
-    ]
-    return json.dumps(rows)
 
 
 def game_analysis(request: HttpRequest, slug: str) -> HttpResponse:
