@@ -2,13 +2,22 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-> **Prerequisite:** Phase A (worker emits SF WDL + NPV via `StockfishCompleteSerializer`) is merged.
+> ## 🟢 2026-05-21 refresh — migration step is NO-OP, skip Task B1
 >
-> **Plan refinement note:** This plan was drafted ahead of Phase A landing. Before executing, re-read the merged Phase A diff and reconcile any drift (field names, serializer shape, NPV nullability). The migration column list and persistence wiring assume the field names declared in Phase A's plan; if they shifted, update the migration + the bulk_create kwargs accordingly.
+> The fresh-start DB reset (PR #192, squash commit `f8d78d1`) folded Phase B's schema additions into the new `0001_initial` per app:
+>
+> - `MoveAnalysis.wdl_(win|draw|loss)` played-move triple ✅ already in init
+> - `MoveAnalysis.wdl_(win|draw|loss)_(1|2|3)` per-candidate triples ✅ already in init
+> - `MoveAnalysis.wdl_(win|draw|loss)_adj` derived White-frame triple ✅ already in init (populated by Phase C; null until then)
+> - `GameAnalysis.normalize_to_pawn_value` ✅ already in init
+>
+> Prod and test DBs both carry these columns now. **Skip Task B1 entirely** (model edits + makemigrations + migrate). Tasks B2 (raw passthrough in `derive_sf_game`) and B3 (writes in `complete_stockfish_job`) remain the actual work; both also need updating to match the field names the post-reset model uses — re-skim `services/app/analysis/models.py::MoveAnalysis` and `GameAnalysis` before executing to confirm the names below still match.
+>
+> **Prerequisite:** Phase A (worker emits SF WDL + NPV via `StockfishCompleteSerializer`) is merged at `e7ff7bc` (PR #190).
 
-**Goal:** Persist Phase A's raw WDL + NPV payload fields onto `MoveAnalysis` / `GameAnalysis` and pass them through `derive_sf_game` unchanged. No derivation math changes yet — Phase C does that.
+**Goal:** Wire `derive_sf_game` to pass Phase A's raw WDL + NPV payload fields through to the (already-present) `MoveAnalysis` / `GameAnalysis` columns. No derivation math changes yet — Phase C does that.
 
-**Architecture:** Django migration adds 12 nullable WDL columns to `MoveAnalysis` (played + 3 candidates × win/draw/loss), 3 nullable `wdl_*_adj` columns (populated as identity in Phase C; kept null here for now), and 1 nullable `normalize_to_pawn_value` column to `GameAnalysis`. `derive_sf_game._derive_one_move` adds raw passthrough of the new fields with no math change. `complete_stockfish_job` extends its `MoveAnalysis(...)` bulk-create + `GameAnalysis` `update_or_create` defaults.
+**Architecture (post-refresh):** Schema is in place. Phase B is pure code wiring: `derive_sf_game._derive_one_move` adds raw passthrough of the new fields with no math change. `complete_stockfish_job` extends its `MoveAnalysis(...)` bulk-create + `GameAnalysis` `update_or_create` defaults to write the new columns. The `wdl_*_adj` columns stay null on the Phase B path — Phase C populates them.
 
 **Tech Stack:** Django 5, DRF, PostgreSQL, pytest, pytest-django.
 
@@ -29,10 +38,12 @@
 ## File Structure
 
 **Modified:**
-- `services/app/analysis/models.py` — add 15 nullable fields to `MoveAnalysis`, 1 to `GameAnalysis`.
-- `services/app/analysis/migrations/00XX_sf_wdl_columns.py` — generated, edited only for header.
 - `services/app/analysis/derivation/stockfish.py::_derive_one_move` + `derive_sf_game` — raw passthrough of the new fields (no math change).
 - `services/app/analysis/services/jobs.py::complete_stockfish_job` — extend `MoveAnalysis(...)` kwargs + `GameAnalysis.update_or_create` defaults.
+
+**Not modified (post-2026-05-21 refresh — schema already in place):**
+- ~~`services/app/analysis/models.py`~~ — columns are already declared on `MoveAnalysis`/`GameAnalysis` in the post-reset model.
+- ~~`services/app/analysis/migrations/00XX_sf_wdl_columns.py`~~ — folded into `analysis/migrations/0001_initial.py`. No new migration is required.
 
 **Created:**
 - `services/app/analysis/tests/test_sf_wdl_persistence.py` — round-trip: payload → derive_sf_game → bulk_create → DB read; asserts every new field is preserved verbatim.
@@ -42,7 +53,11 @@
 
 ---
 
-## Task B1: Migration + model fields
+## ~~Task B1: Migration + model fields~~  ✅ done by PR #192 (fresh-start reset)
+
+> **Skip this task.** The 2026-05-21 fresh-start reset folded these model fields and migration into `analysis/migrations/0001_initial.py` directly. Confirm by running `python manage.py makemigrations --dry-run` — expected output: `No changes detected`. If you see drift, stop and reconcile before continuing.
+>
+> The original task body is preserved below for historical reference only.
 
 **Files:**
 - Modify: `services/app/analysis/models.py`
