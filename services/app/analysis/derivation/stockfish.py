@@ -339,7 +339,7 @@ def _wdl_path(
     mover_is_white: bool,
     before_white_mu: float,
     normalize_to_pawn_value: Optional[int],
-) -> tuple[int, int, int, float, float, float, Optional[float], float]:
+) -> tuple[int, int, int, float, float, float, Optional[float]]:
     """Compute WDL-path outputs for one move (all values, no branching side-effects).
 
     Args:
@@ -351,7 +351,8 @@ def _wdl_path(
     Returns:
         Tuple of (wdl_win_adj, wdl_draw_adj, wdl_loss_adj,
                   win_pct_before_mover, win_pct_after_mover,
-                  mu_after_white, gap, mu_for_walk).
+                  mu_after_white, gap). ``mu_after_white`` doubles as the
+                  White-frame mu for both the stored value and the game walk.
     """
     wdl_win_w, wdl_draw_w, wdl_loss_w = _sf_wdl_mover_to_white(
         move["wdl_win"], move["wdl_draw"], move["wdl_loss"],
@@ -365,7 +366,7 @@ def _wdl_path(
     gap: Optional[float] = _gap_from_arrow_wdl_mu(
         mu_1=mu_1, mu_2=mu_2, normalize_to_pawn_value=normalize_to_pawn_value,
     )
-    return (wdl_win_w, wdl_draw_w, wdl_loss_w, wp_before, wp_after, mu_after_white, gap, mu_after_white)
+    return (wdl_win_w, wdl_draw_w, wdl_loss_w, wp_before, wp_after, mu_after_white, gap)
 
 
 def _derive_one_move(
@@ -416,13 +417,16 @@ def _derive_one_move(
         (
             wdl_win_adj, wdl_draw_adj, wdl_loss_adj,
             win_pct_before_mover, win_pct_after_mover,
-            wdl_mu_white, gap, mu_for_walk,
+            wdl_mu_white, gap,
         ) = _wdl_path(
             move,
             mover_is_white=mover_is_white,
             before_white_mu=before_white_mu,
             normalize_to_pawn_value=normalize_to_pawn_value,
         )
+        # On the WDL path the White-frame mu drives both the stored value and
+        # the game-accuracy walk.
+        mu_for_walk = wdl_mu_white
     else:
         mover_cp_before = before_white if mover_is_white else -before_white
         mover_cp_after = cp_after_white if mover_is_white else -cp_after_white
