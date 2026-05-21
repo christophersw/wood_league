@@ -77,6 +77,9 @@ class _StubJob:
     engine: str = "lc0"
     depth: int = 0
     nodes: int | None = None
+    # Per-network calibrated draw rate; app attaches at checkout (#161 Phase B).
+    # None exercises the legacy/uncalibrated fallback path in _run_lc0_job.
+    draw_rate_reference: float | None = 0.5
 
 
 class _StubClient:
@@ -189,6 +192,49 @@ def test_lc0_call_site_kwargs_match_real_signature(
     # ``analyze_pgn``'s signature — exactly the production failure.
     inspect.signature(real_analyze_pgn).bind_partial(
         pgn_text="", **{k: v for k, v in captured.items() if k != "pgn_text"})
+
+
+def test_lc0_uses_job_draw_rate_reference(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#182 regression: the value passed to ``lc0_analyze`` (and thence the
+    ``complete_lc0`` payload) is the app-attached ``job.draw_rate_reference``,
+    not a stale warm-engine value or the ``0.0`` sentinel that the server's
+    ``min_value=0.001`` validator rejects.
+    """
+    captured: dict[str, Any] = {}
+    _patch_lc0_analyze(monkeypatch, captured)
+
+    ok = run_one_job(
+        job=_StubJob(depth=0, nodes=10000, draw_rate_reference=0.612),
+        settings=_settings_for_lc0(default_nodes=10000),
+        stats=WorkerStats(),
+        client=cast(WorkerClient, _StubClient()),
+    )
+
+    assert ok is True
+    assert captured["draw_rate_reference"] == 0.612
+
+
+def test_lc0_draw_rate_reference_fallback_when_job_missing_value(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#182 belt-and-suspenders: a ``None`` on the job falls back to 0.5
+    (above the server's 0.001 floor), never to the 0.0 sentinel that
+    triggered the production HTTP 400.
+    """
+    captured: dict[str, Any] = {}
+    _patch_lc0_analyze(monkeypatch, captured)
+
+    ok = run_one_job(
+        job=_StubJob(depth=0, nodes=10000, draw_rate_reference=None),
+        settings=_settings_for_lc0(default_nodes=10000),
+        stats=WorkerStats(),
+        client=cast(WorkerClient, _StubClient()),
+    )
+
+    assert ok is True
+    assert captured["draw_rate_reference"] == 0.5
 
 
 def test_lc0_absurdly_low_nodes_fails_job(
@@ -448,9 +494,12 @@ def test_run_batch_lc0_warm_engine_launched_once(
         def quit(self) -> None:
             pass
 
-    def fake_launch_engine(**kwargs: Any) -> tuple[_FakeEngine, str, float]:
+    def fake_launch_engine(**kwargs: Any) -> tuple[_FakeEngine, str]:
         launch_calls.append(kwargs)
-        return _FakeEngine(), "fake-net", 0.35
+        # Real launch_engine returns (engine, network_name) since #161 —
+        # calibration moved app-side; the third tuple element was removed.
+        # Mirroring the real signature here is the regression guard for #182.
+        return _FakeEngine(), "fake-net"
 
     monkeypatch.setattr(worker_loop, "lc0_launch_engine", fake_launch_engine)
     fake_client = _FakeCheckoutClient(_stub_lc0_jobs(3, engine="lc0"))
