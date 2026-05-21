@@ -1,18 +1,20 @@
 {% load static %}
 <style>
-  /* All colors via :root tokens in static/css/main.css. */
+  /* All colors via :root tokens in static/css/main.css.
+     Same hue = same token: e.g. blunder / missed-win / wdl-loss all share
+     --color-vermilion-bright so a single edit moves all three. */
   .lc0-wdl-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; margin-top: .35rem; }
-  .lc0-wdl-bar__win  { background: var(--color-card-wdl-win); height: 100%; }
-  .lc0-wdl-bar__draw { background: var(--color-card-wdl-draw); height: 100%; }
-  .lc0-wdl-bar__loss { background: var(--color-card-wdl-loss); height: 100%; }
+  .lc0-wdl-bar__win  { background: var(--color-emerald); height: 100%; }
+  .lc0-wdl-bar__draw { background: var(--color-tan); height: 100%; }
+  .lc0-wdl-bar__loss { background: var(--color-vermilion-bright); height: 100%; }
   .lc0-sev-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; margin-top: .35rem; }
   .lc0-sev-bar__seg { height: 100%; }
   .lc0-dc-bar { display: flex; height: 5px; border-radius: 3px; overflow: hidden; margin-top: .2rem; opacity: .6; }
   .lc0-dc-bar__seg { height: 100%; }
-  .lc0-dc-missed-win    { background: var(--color-draw-missed-win); }
-  .lc0-dc-losing-blunder{ background: var(--color-draw-losing-blunder); }
-  .lc0-dc-risky         { background: var(--color-draw-risky); }
-  .lc0-dc-simplification{ background: var(--color-draw-simplification); }
+  .lc0-dc-missed-win    { background: var(--color-vermilion-bright); }
+  .lc0-dc-losing-blunder{ background: var(--color-ember); }
+  .lc0-dc-risky         { background: var(--color-saffron); }
+  .lc0-dc-simplification{ background: var(--color-emerald); }
 </style>
 
 <section class="wc-card wc-card--lc0" aria-label="LC0 analysis">
@@ -45,7 +47,7 @@
         {% if ww.draw %}<div class="lc0-wdl-bar__draw" style="flex:{{ ww.draw }}" title="Draw: {{ ww.draw|floatformat:2 }}"></div>{% endif %}
         {% if ww.loss %}<div class="lc0-wdl-bar__loss" style="flex:{{ ww.loss }}" title="Loss: {{ ww.loss|floatformat:2 }}"></div>{% endif %}
       {% else %}
-        <div style="flex:1;background:var(--color-empty-bar);height:100%;" title="No WDL data"></div>
+        <div style="flex:1;background:var(--color-band-empty);height:100%;" title="No WDL data"></div>
       {% endif %}
     </div>
     {% endwith %}
@@ -62,7 +64,7 @@
         {% if bsw.mistake %}<div class="lc0-sev-bar__seg move-annotation-mistake" style="flex:{{ bsw.mistake }}" title="Mistake: {{ bsw.mistake }}"></div>{% endif %}
         {% if bsw.blunder %}<div class="lc0-sev-bar__seg move-annotation-blunder" style="flex:{{ bsw.blunder }}" title="Blunder: {{ bsw.blunder }}"></div>{% endif %}
       {% else %}
-        <div class="lc0-sev-bar__seg" style="flex:1;background:var(--color-empty-bar);" title="No severity data"></div>
+        <div class="lc0-sev-bar__seg" style="flex:1;background:var(--color-band-empty);" title="No severity data"></div>
       {% endif %}
       {% endwith %}
     </div>
@@ -78,7 +80,7 @@
         {% if dcw.risky %}<div class="lc0-dc-bar__seg lc0-dc-risky" style="flex:{{ dcw.risky }}" title="Risky: {{ dcw.risky }}"></div>{% endif %}
         {% if dcw.simplification %}<div class="lc0-dc-bar__seg lc0-dc-simplification" style="flex:{{ dcw.simplification }}" title="Simplification: {{ dcw.simplification }}"></div>{% endif %}
       {% else %}
-        <div class="lc0-dc-bar__seg" style="flex:1;background:var(--color-empty-bar);" title="No draw-character data"></div>
+        <div class="lc0-dc-bar__seg" style="flex:1;background:var(--color-band-empty);" title="No draw-character data"></div>
       {% endif %}
       {% endwith %}
     </div>
@@ -99,7 +101,7 @@
         {% if wb.draw %}<div class="lc0-wdl-bar__draw" style="flex:{{ wb.draw }}" title="Draw: {{ wb.draw|floatformat:2 }}"></div>{% endif %}
         {% if wb.loss %}<div class="lc0-wdl-bar__loss" style="flex:{{ wb.loss }}" title="Loss: {{ wb.loss|floatformat:2 }}"></div>{% endif %}
       {% else %}
-        <div style="flex:1;background:var(--color-empty-bar);height:100%;" title="No WDL data"></div>
+        <div style="flex:1;background:var(--color-band-empty);height:100%;" title="No WDL data"></div>
       {% endif %}
     </div>
     {% endwith %}
@@ -116,7 +118,7 @@
         {% if bsb.mistake %}<div class="lc0-sev-bar__seg move-annotation-mistake" style="flex:{{ bsb.mistake }}" title="Mistake: {{ bsb.mistake }}"></div>{% endif %}
         {% if bsb.blunder %}<div class="lc0-sev-bar__seg move-annotation-blunder" style="flex:{{ bsb.blunder }}" title="Blunder: {{ bsb.blunder }}"></div>{% endif %}
       {% else %}
-        <div class="lc0-sev-bar__seg" style="flex:1;background:var(--color-empty-bar);" title="No severity data"></div>
+        <div class="lc0-sev-bar__seg" style="flex:1;background:var(--color-band-empty);" title="No severity data"></div>
       {% endif %}
       {% endwith %}
     </div>
@@ -131,7 +133,7 @@
         {% if dcb.risky %}<div class="lc0-dc-bar__seg lc0-dc-risky" style="flex:{{ dcb.risky }}" title="Risky: {{ dcb.risky }}"></div>{% endif %}
         {% if dcb.simplification %}<div class="lc0-dc-bar__seg lc0-dc-simplification" style="flex:{{ dcb.simplification }}" title="Simplification: {{ dcb.simplification }}"></div>{% endif %}
       {% else %}
-        <div class="lc0-dc-bar__seg" style="flex:1;background:var(--color-empty-bar);" title="No draw-character data"></div>
+        <div class="lc0-dc-bar__seg" style="flex:1;background:var(--color-band-empty);" title="No draw-character data"></div>
       {% endif %}
     </div>
     {% endwith %}

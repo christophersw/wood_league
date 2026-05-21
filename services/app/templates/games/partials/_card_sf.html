@@ -1,7 +1,7 @@
 {% load static %}
 <style>
   /* All colors via :root tokens in static/css/main.css. */
-  .wc-card { background: var(--color-card-bg); border: 1px solid var(--color-card-border); border-radius: 8px; padding: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,.07); }
+  .wc-card { background: var(--color-bone); border: 1px solid var(--color-card-border-soft); border-radius: 8px; padding: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,.07); }
   .wc-card__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: .75rem; }
   .wc-card__head h3 { margin: 0; font-size: 1rem; font-weight: 600; color: var(--color-card-title); }
   .wc-card__side { margin-bottom: 1rem; }
@@ -13,19 +13,19 @@
   .card-info-tooltip summary { cursor: pointer; list-style: none; font-size: .8rem; color: var(--color-card-muted); }
   .card-info-tooltip summary::-webkit-details-marker { display: none; }
   .card-info-tooltip[open] { position: relative; }
-  .card-info-tooltip dl { position: absolute; right: 0; top: 1.4rem; z-index: 10; background: var(--color-card-tooltip-bg); border: 1px solid var(--color-card-border); border-radius: 6px; padding: .5rem .75rem; font-size: .78rem; min-width: 180px; display: grid; grid-template-columns: auto 1fr; gap: .1rem .75rem; margin: 0; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
+  .card-info-tooltip dl { position: absolute; right: 0; top: 1.4rem; z-index: 10; background: var(--color-tooltip-bg); border: 1px solid var(--color-card-border-soft); border-radius: 6px; padding: .5rem .75rem; font-size: .78rem; min-width: 180px; display: grid; grid-template-columns: auto 1fr; gap: .1rem .75rem; margin: 0; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
   .card-info-tooltip dt { color: var(--color-card-muted); }
   .card-info-tooltip dd { margin: 0; color: var(--color-card-title); }
   .sf-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; margin-top: .35rem; }
   .sf-bar__seg { height: 100%; }
-  .move-annotation-brilliant { background: var(--color-class-brilliant); }
-  .move-annotation-best      { background: var(--color-class-best); }
-  .move-annotation-great     { background: var(--color-class-great); }
-  .move-annotation-excellent { background: var(--color-class-excellent); }
-  .move-annotation-good      { background: var(--color-class-good); }
-  .move-annotation-inaccuracy{ background: var(--color-class-inaccuracy); }
-  .move-annotation-mistake   { background: var(--color-class-mistake); }
-  .move-annotation-blunder   { background: var(--color-class-blunder); }
+  .move-annotation-brilliant { background: var(--color-teal); }
+  .move-annotation-best      { background: var(--color-emerald); }
+  .move-annotation-great     { background: var(--color-leaf); }
+  .move-annotation-excellent { background: var(--color-leaf); }
+  .move-annotation-good      { background: var(--color-leaf); }
+  .move-annotation-inaccuracy{ background: var(--color-saffron); }
+  .move-annotation-mistake   { background: var(--color-ember); }
+  .move-annotation-blunder   { background: var(--color-vermilion-bright); }
 </style>
 
 <section class="wc-card wc-card--sf" aria-label="Stockfish analysis">
@@ -58,7 +58,7 @@
         {% if wc.mistake %}<div class="sf-bar__seg move-annotation-mistake" style="flex:{{ wc.mistake }}" title="Mistake: {{ wc.mistake }}"></div>{% endif %}
         {% if wc.blunder %}<div class="sf-bar__seg move-annotation-blunder" style="flex:{{ wc.blunder }}" title="Blunder: {{ wc.blunder }}"></div>{% endif %}
       {% else %}
-        <div class="sf-bar__seg" style="flex:1;background:var(--color-empty-bar);" title="No classification data"></div>
+        <div class="sf-bar__seg" style="flex:1;background:var(--color-band-empty);" title="No classification data"></div>
       {% endif %}
       {% endwith %}
     </div>
@@ -82,7 +82,7 @@
         {% if bc.mistake %}<div class="sf-bar__seg move-annotation-mistake" style="flex:{{ bc.mistake }}" title="Mistake: {{ bc.mistake }}"></div>{% endif %}
         {% if bc.blunder %}<div class="sf-bar__seg move-annotation-blunder" style="flex:{{ bc.blunder }}" title="Blunder: {{ bc.blunder }}"></div>{% endif %}
       {% else %}
-        <div class="sf-bar__seg" style="flex:1;background:var(--color-empty-bar);" title="No classification data"></div>
+        <div class="sf-bar__seg" style="flex:1;background:var(--color-band-empty);" title="No classification data"></div>
       {% endif %}
       {% endwith %}
     </div>

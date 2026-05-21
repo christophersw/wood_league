@@ -19,23 +19,26 @@
     return value || fallback;
   }
 
+  // Each JS key below is a semantic ALIAS for one physical CSS color token.
+  // To change a color, edit it in static/css/main.css :root — every chart
+  // that uses that token follows. Keys here are read-only at the call site.
   window.WoodLeagueChartTheme = {
     colors: {
-      sf:               readVar("--color-chart-sf",               "#A8781B"),
-      lc0:              readVar("--color-chart-lc0",              "#35586F"),
-      highlight:        readVar("--color-chart-highlight",        "#C17F24"),
-      grid:             readVar("--color-chart-grid",             "#EDE0C4"),
-      barDefault:       readVar("--color-chart-bar-default",      "#C9B998"),
-      plotBg:           readVar("--color-chart-plot-bg",          "rgba(237,224,196,0.2)"),
-      whiteAdvantage:   readVar("--color-chart-white-advantage",  "rgba(255,255,255,0.98)"),
-      whiteLine:        readVar("--color-chart-white-line",       "#F7F7F7"),
-      blackAdvantage:   readVar("--color-chart-black-advantage",  "rgba(26,26,26,0.85)"),
-      blackLine:        readVar("--color-chart-black-line",       "#1A1A1A"),
-      text:             readVar("--color-chart-text",             "#1C1C1C"),
-      textBold:         readVar("--color-chart-text-bold",        "#1A1A1A"),
-      wdlWin:           readVar("--color-wdl-win",                "#5DA12A"),
-      wdlDraw:          readVar("--color-wdl-draw",               "rgba(139,58,42,0.50)"),
-      wdlLoss:          readVar("--color-wdl-loss",               "#8B3A2A"),
+      sf:               readVar("--color-tobacco",         "#A8781B"),
+      lc0:              readVar("--color-denim",           "#35586F"),
+      highlight:        readVar("--color-amber-burnt",     "#C17F24"),
+      grid:             readVar("--color-band-grid",       "#EDE0C4"),
+      barDefault:       readVar("--color-band",            "#C9B998"),
+      plotBg:           readVar("--color-tint-plot",       "rgba(237,224,196,0.2)"),
+      whiteAdvantage:   readVar("--color-tint-white",      "rgba(255,255,255,0.98)"),
+      whiteLine:        readVar("--color-near-white",      "#F7F7F7"),
+      blackAdvantage:   readVar("--color-tint-dark",       "rgba(26,26,26,0.85)"),
+      blackLine:        readVar("--color-coal",            "#1A1A1A"),
+      text:             readVar("--color-coal-text",       "#1C1C1C"),
+      textBold:         readVar("--color-coal",            "#1A1A1A"),
+      wdlWin:           readVar("--color-emerald",         "#5DA12A"),
+      wdlDraw:          readVar("--color-tint-draw",       "rgba(139,58,42,0.50)"),
+      wdlLoss:          readVar("--color-rust",            "#8B3A2A"),
     },
     fonts: {
       mono:  readVar("--font-mono",  "DM Mono,monospace"),
