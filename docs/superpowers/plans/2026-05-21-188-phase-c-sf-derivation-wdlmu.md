@@ -2,9 +2,15 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-> **Prerequisites:** Phase A (worker emits SF WDL) and Phase B (schema persists raw WDL) are merged.
+> ## 🟢 2026-05-21 refresh
 >
-> **Plan refinement note:** This plan was drafted before Phase A/B landed. Before executing, re-read the merged Phase A + Phase B diffs and reconcile any drift (column names on `MoveAnalysis`, derived dict keys in `_derive_one_move`'s return, golden-vector shape). The code snippets here assume the field names declared in earlier plans.
+> The 2026-05-21 fresh-start DB reset (PR #192, commit `f8d78d1`) folded Phase B's schema additions into `0001_initial`. The columns this plan references (`wdl_*`, `wdl_*_(1|2|3)`, `wdl_*_adj`, `normalize_to_pawn_value`) are already present in prod and test DBs.
+>
+> Phase C's work is unchanged in shape — the same derivation rewrite, the same `_adj` populator, the same golden vectors. Task C5 (persistence check) now confirms columns that the schema has carried since the reset, not columns Phase B added.
+>
+> **Prerequisites:** Phase A is merged at `e7ff7bc` (PR #190). Phase B's code wiring (Task B2 + B3 — passthrough + bulk_create writes) must land first. The Phase B PR is purely code; no migration.
+
+**Plan refinement note (still applies):** Re-read the merged Phase A + Phase B diffs and reconcile any drift in derived-dict keys, model field names, and golden-vector fixture shape before executing. The code snippets here assume the field names declared in earlier plans.
 
 **Goal:** Switch `_derive_one_move` to drive Win% / accuracy / classification-gap math off the SF-native WDL triple (`wdl_mu`) instead of the Lichess `win_pct(cp)` sigmoid. CPL ladder stays cp-based (still the right tool for severity bands). Populate `wdl_*_adj` as the White-frame mirror of `wdl_*` (identity transform — SF needs no population rescale, unlike LC0). Keep `accuracy.win_pct` only as a guarded fallback for missing-WDL builds.
 

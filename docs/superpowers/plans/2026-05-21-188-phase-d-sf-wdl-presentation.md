@@ -2,9 +2,17 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-> **Prerequisites:** Phases A, B, C merged.
+> ## 🟢 2026-05-21 refresh — `arrow_score_*` columns survived the reset
 >
-> **Plan refinement note:** Drafted ahead of A/B/C landing. Re-read merged diffs and reconcile names before executing.
+> The 2026-05-21 fresh-start DB reset (PR #192) attempted to drop `MoveAnalysis.arrow_score_(1|2|3)` and had to restore them mid-PR (`fixup` commit `43d58ad`): 19 active readers still depend on them — `games/services.py`, `games/services_v2.py`, `games/board_builder.py`, the SQLAlchemy service layer (`app/services/stockfish_service.py`, `lc0_service.py`, `analysis_service.py`), plus tests.
+>
+> Phase D's job is now bigger than originally written: **migrate every reader to consume the new per-candidate WDL columns (`wdl_*_(1|2|3)`) before adding the migration that drops `arrow_score_*`.** Tasks D2/D3 in this plan handle the schema-removal half; you also need to add reader-migration tasks (one per service / template / board-builder consumer) ahead of D3.
+>
+> Per-candidate WDL persistence lands in #188 Phase B (Task B3 — `complete_stockfish_job` writes the new columns). Do not start Phase D until Phase B has been live long enough that recent analyses actually have populated `wdl_*_(1|2|3)` rows, otherwise consumers will read all-null and the board arrow rendering goes blank.
+>
+> **Prerequisites:** Phases A, B, C merged. Phase B has run against enough games that `wdl_*_(1|2|3)` is populated on the rows Phase D consumers will read.
+
+**Plan refinement note (still applies):** Re-read merged diffs and reconcile names before executing.
 
 **Goal:** Make the Win% chart payload symmetric between SF and LC0 (both read `wdl_mu * 100`), drop sigmoid arrow scores from the worker, and confirm `accuracy.win_pct` survives only as the documented missing-WDL fallback.
 
