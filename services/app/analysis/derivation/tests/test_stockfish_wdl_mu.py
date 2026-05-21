@@ -127,6 +127,43 @@ def test_derive_one_move_black_mover_swaps_frame():
     assert out["wdl_mu"] == pytest.approx(0.55)
 
 
+def test_candidate_mu_mover_is_mover_frame_no_flip():
+    """Candidate mu is mover-frame for both colours — no ``1 - mu`` flip.
+
+    SF emits candidate triples in the mover's frame, so the expected-score
+    formula on those values is already mover-frame mu. Regression guard for
+    the #156-class flip bug that inverted the candidate gap sign for Black.
+    """
+    from analysis.derivation.stockfish import _candidate_mu_mover
+
+    move = {"wdl_win_1": 220, "wdl_draw_1": 700, "wdl_loss_1": 80}
+    # mover-frame mu = (220 + 700/2) / 1000 = 0.57, independent of side to move.
+    assert _candidate_mu_mover(move, "1") == pytest.approx(0.57)
+
+
+def test_derive_one_move_black_mover_candidate_gap_is_positive():
+    """A Black best move with a real candidate gap is not silently floored.
+
+    Regression for the flip bug: the Black-mover candidate gap used to be
+    sign-inverted and clamped to 0, so Black moves could never reach the
+    Great/Brilliant tier. Candidate 1 (mover-frame mu 0.60) beats candidate 2
+    (0.50), so ``_wdl_path`` must return a strictly positive gap.
+    """
+    from analysis.derivation.stockfish import _wdl_path
+
+    move = _move(
+        ply=2,
+        wdl_win=300, wdl_draw=600, wdl_loss=100,
+        wdl_win_1=300, wdl_draw_1=600, wdl_loss_1=100,   # mover-frame mu = 0.60
+        wdl_win_2=200, wdl_draw_2=600, wdl_loss_2=200,   # mover-frame mu = 0.50
+    )
+    gap = _wdl_path(
+        move, mover_is_white=False, before_white_mu=0.5, normalize_to_pawn_value=328,
+    )[6]
+    # mu gap 0.10 → cp-equiv 0.10 * 328 * 2 = 65.6, strictly positive.
+    assert gap == pytest.approx(0.10 * 328 * 2)
+
+
 def test_derive_one_move_falls_back_to_sigmoid_when_wdl_missing():
     """Fallback path: no WDL → _adj stays null, wdl_mu is None, still classifies."""
     move = _move()

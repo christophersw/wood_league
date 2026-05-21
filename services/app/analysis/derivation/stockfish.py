@@ -308,26 +308,29 @@ def _saturated_cp(cp_eval: Optional[int], mate_in: Optional[int]) -> int:
     return int(cp_eval or 0)
 
 
-def _candidate_mu_mover(move: dict, suffix: str, mover_is_white: bool) -> Optional[float]:
-    """Extract mover-frame WDL_mu for one candidate line (top-1 or top-2).
+def _candidate_mu_mover(move: dict, suffix: str) -> Optional[float]:
+    """Mover-frame WDL_mu for one candidate line (top-1 or top-2).
 
-    Reads ``wdl_win_{suffix}``, ``wdl_draw_{suffix}``, ``wdl_loss_{suffix}``
-    from ``move``, computes the White-frame mu, then rotates to mover-frame.
+    SF emits candidate triples in the *mover's* frame (the worker's
+    ``_extract_arrows_and_pvs`` reads each PV via ``_wdl_triple_mover(pv, mover)``),
+    same as the played-move triple. The expected-score formula ``(w + d/2)/1000``
+    is frame-agnostic, so applying it to the mover-frame triple yields mover-frame
+    mu directly — no rotation, no ``1 - mu`` flip. (An earlier revision flipped for
+    Black movers, which inverted the candidate gap sign and clamped every
+    Black-mover ``second_best_gap`` to 0 — a #156-class frame bug.)
 
     Args:
         move: Raw move dict from the SF payload.
         suffix: ``"1"`` or ``"2"`` (top-1 / top-2 MultiPV line).
-        mover_is_white: True iff the mover is White.
 
     Returns:
         Mover-frame WDL_mu in [0, 1], or None when the candidate is absent.
     """
     if move.get(f"wdl_win_{suffix}") is None:
         return None
-    raw_mu = _sf_wdl_mu_white(
+    return _sf_wdl_mu_white(
         move[f"wdl_win_{suffix}"], move[f"wdl_draw_{suffix}"], move[f"wdl_loss_{suffix}"],
     )
-    return raw_mu if mover_is_white else (1.0 - raw_mu)
 
 
 def _wdl_path(
@@ -357,8 +360,8 @@ def _wdl_path(
     mu_after_white = _sf_wdl_mu_white(wdl_win_w, wdl_draw_w, wdl_loss_w)
     wp_before = (before_white_mu if mover_is_white else (1.0 - before_white_mu)) * 100.0
     wp_after = (mu_after_white if mover_is_white else (1.0 - mu_after_white)) * 100.0
-    mu_1 = _candidate_mu_mover(move, "1", mover_is_white)
-    mu_2 = _candidate_mu_mover(move, "2", mover_is_white)
+    mu_1 = _candidate_mu_mover(move, "1")
+    mu_2 = _candidate_mu_mover(move, "2")
     gap: Optional[float] = _gap_from_arrow_wdl_mu(
         mu_1=mu_1, mu_2=mu_2, normalize_to_pawn_value=normalize_to_pawn_value,
     )
