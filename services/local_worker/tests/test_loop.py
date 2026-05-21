@@ -153,6 +153,44 @@ def test_lc0_ignores_depth_uses_settings_when_nodes_absent(
     assert captured["nodes"] == 10000  # settings, NOT depth (25000)
 
 
+def test_lc0_call_site_kwargs_match_real_signature(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Guard against caller/callee kwarg drift on ``lc0_analyze``.
+
+    Reproduces the 2026-05-20 incident where every lc0 job raised
+    ``TypeError: analyze_pgn() got an unexpected keyword argument
+    'draw_rate_reference_override'``: the call site stayed on the
+    pre-#161 signature while ``analyze_pgn`` was rewritten to take
+    raw observables only. Existing ``_patch_lc0_analyze`` stubs
+    accept ``**kwargs`` so they did not catch the mismatch.
+
+    This test captures the kwargs the loop actually passes, then
+    binds them against the *real* ``analyze_pgn`` signature — any
+    name the real function would reject raises ``TypeError`` here,
+    long before a vast box gets rented.
+    """
+    import inspect
+
+    from local_worker.analysis.lc0 import analyze_pgn as real_analyze_pgn
+
+    captured: dict[str, Any] = {}
+    _patch_lc0_analyze(monkeypatch, captured)
+
+    ok = run_one_job(
+        job=_StubJob(depth=0, nodes=10000),
+        settings=_settings_for_lc0(default_nodes=10000),
+        stats=WorkerStats(),
+        client=cast(WorkerClient, _StubClient()),
+    )
+
+    assert ok is True
+    # Will raise TypeError if a kwarg name the loop passes is not in
+    # ``analyze_pgn``'s signature — exactly the production failure.
+    inspect.signature(real_analyze_pgn).bind_partial(
+        pgn_text="", **{k: v for k, v in captured.items() if k != "pgn_text"})
+
+
 def test_lc0_absurdly_low_nodes_fails_job(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

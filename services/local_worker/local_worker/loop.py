@@ -16,6 +16,12 @@ Changelog:
                 cache hits/lookups across per-job cache lifetimes via the
                 new ``record_cache`` method.
     2026-05-17 (#128): heartbeat carries batch_total/batch_processed/session_started_at.
+    2026-05-20: Fix lc0 call site to match analyze_pgn() signature after
+                #161 moved Elo calibration to the app — drop white_elo /
+                black_elo / fallback_elo kwargs, rename
+                draw_rate_reference_override -> draw_rate_reference.
+                Without this every lc0 job raises TypeError before
+                analysis runs.
 """
 from __future__ import annotations
 
@@ -343,8 +349,10 @@ def _run_lc0_job(
         "lc0 job %s — effective nodes=%d (job.nodes=%s)",
         job.id, nodes, job.nodes,
     )
-    fallback_elo = int(os.environ.get("WL_FALLBACK_ELO", "1100") or "1100")
-    white_elo, black_elo = _resolve_job_elos(job)
+    # Post-#161 the engine emits raw observables and the app does all
+    # Elo-aware calibration / classification, so we no longer forward
+    # Elos or a fallback into analyze_pgn. _resolve_job_elos() is kept
+    # for the app-side rating plumbing tests but is not called here.
     cache = _open_eval_cache(settings)
     try:
         result = lc0_analyze(
@@ -358,10 +366,7 @@ def _run_lc0_job(
             eval_cache=cache,
             engine=lc0_engine,
             network_name_override=lc0_network_name,
-            draw_rate_reference_override=lc0_draw_rate_reference,
-            white_elo=white_elo,
-            black_elo=black_elo,
-            fallback_elo=fallback_elo,
+            draw_rate_reference=lc0_draw_rate_reference,
         )
     finally:
         if cache is not None:
