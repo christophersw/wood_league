@@ -46,6 +46,8 @@ def test_top_level_shape() -> None:
     out = derive_sf_game(_payload([_raw_move(1, cp_eval=30)]), None)
     expected = {
         "engine_depth", "summary_cp",
+        # #188 Phase B: NPV surfaced at the top level (nullable for older SF builds).
+        "normalize_to_pawn_value",
         "white_accuracy", "black_accuracy",
         "white_acpl", "black_acpl",
         "white_blunders", "white_mistakes", "white_inaccuracies",

@@ -30,6 +30,9 @@ Description:
 Changelog:
     2026-05-19 (#161/C): Stub.
     2026-05-19 (#161/E): Math ported; orchestrator + golden vectors landed.
+    2026-05-21 (#188/B): raw SF WDL triples + NPV pass through derive_sf_game
+        unchanged. Phase C will switch the accuracy/classification math to
+        feed off wdl_mu derived from these triples.
 """
 from __future__ import annotations
 
@@ -274,6 +277,23 @@ def _derive_one_move(
         "pv_san_1": move.get("pv_san_1"),
         "pv_san_2": move.get("pv_san_2"),
         "pv_san_3": move.get("pv_san_3"),
+        # #188 Phase B: raw WDL passthrough. Phase C populates _adj from these.
+        "wdl_win": move.get("wdl_win"),
+        "wdl_draw": move.get("wdl_draw"),
+        "wdl_loss": move.get("wdl_loss"),
+        "wdl_win_1": move.get("wdl_win_1"),
+        "wdl_draw_1": move.get("wdl_draw_1"),
+        "wdl_loss_1": move.get("wdl_loss_1"),
+        "wdl_win_2": move.get("wdl_win_2"),
+        "wdl_draw_2": move.get("wdl_draw_2"),
+        "wdl_loss_2": move.get("wdl_loss_2"),
+        "wdl_win_3": move.get("wdl_win_3"),
+        "wdl_draw_3": move.get("wdl_draw_3"),
+        "wdl_loss_3": move.get("wdl_loss_3"),
+        # Phase B leaves _adj null; Phase C populates as frame-mirror identity.
+        "wdl_win_adj": None,
+        "wdl_draw_adj": None,
+        "wdl_loss_adj": None,
         # Derived.
         "cpl": cpl_mover,
         "move_win_delta": move_win_delta_mover,
@@ -376,6 +396,8 @@ def derive_sf_game(raw_payload: dict, game: Any) -> dict:  # noqa: ARG001
     return {
         "engine_depth": int(raw_payload["engine_depth"]),
         "summary_cp": before_white,  # White-frame cp of the terminal position.
+        # #188 Phase B: pass NPV through for persistence; nullable for older SF builds.
+        "normalize_to_pawn_value": raw_payload.get("normalize_to_pawn_value"),
         **aggregates,
         "moves": derived_moves,
     }
