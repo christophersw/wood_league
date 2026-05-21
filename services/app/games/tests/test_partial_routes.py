@@ -48,3 +48,20 @@ def test_winpct_partial_contains_payload_and_tooltip(client, new_schema_game_fac
     assert "Win-for-White" in body        # axis / section title visible
     assert "How this is computed" in body  # tooltip body heading
     assert "winpct.js" in body             # static JS reference
+
+
+def test_sf_cp_partial_contains_payload_and_tooltip(client, new_schema_game_factory):
+    """SF cp partial must embed JSON payload, section title, tooltip text, and JS reference.
+
+    Params:
+        client: Django test client fixture.
+        new_schema_game_factory: Factory fixture producing a new-schema game.
+    """
+    game = new_schema_game_factory()
+    resp = client.get(f"/_partials/games/{game.slug}/charts/sf-cp/")
+    body = resp.content.decode()
+    assert resp.status_code == 200
+    assert "sf-cp-data" in body                          # json_script tag id
+    assert "Stockfish centipawn evaluation" in body      # section title
+    assert "underlying engine signal" in body            # tooltip body text
+    assert "sfCp.js" in body                             # static JS reference
