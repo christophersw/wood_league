@@ -68,15 +68,48 @@ _PV_SAN_DEPTH = 10
 log = logging.getLogger(__name__)
 
 
+def _wdl_triple_mover(
+    info: dict,
+    mover: chess.Color,
+) -> tuple[Optional[int], Optional[int], Optional[int]]:
+    """Extract the mover-frame WDL triple from an engine.analyse info dict.
+
+    SF emits WDL only when UCI_ShowWDL was enabled. The returned triple is in
+    milli-units (sum ≈ 1000); missing-WDL builds yield (None, None, None).
+
+    Args:
+        info: One engine.analyse() result dict.
+        mover: Side to move at the searched root.
+
+    Returns:
+        (wins, draws, losses) in mover frame, or (None, None, None) when the
+        engine did not emit a WDL line.
+    """
+    povwdl = info.get("wdl")
+    if povwdl is None:
+        return (None, None, None)
+    try:
+        wdl = povwdl.pov(mover)
+        return (int(wdl.wins), int(wdl.draws), int(wdl.losses))
+    except Exception:  # noqa: BLE001
+        return (None, None, None)
+
+
 def _extract_arrows_and_pvs(
     info_list: list,
     board: chess.Board,
     mover: chess.Color,
-) -> tuple[list[str], list[Optional[float]], list[Optional[str]]]:
-    """Extract MultiPV arrow UCIs, mover-frame Win% scores, and PV SAN lines.
+) -> tuple[
+    list[str],
+    list[Optional[float]],
+    list[Optional[str]],
+    list[tuple[Optional[int], Optional[int], Optional[int]]],
+]:
+    """Extract MultiPV arrow UCIs, mover-frame Win% scores, PV SAN lines, and WDL.
 
     Mirrors lc0._extract_arrows_and_pvs but converts each PV's cp evaluation
     (White's frame) into mover Win% via white_cp -> mover_cp -> win_pct.
+    Also extracts the per-PV WDL triple when UCI_ShowWDL is enabled (#188 Phase A).
 
     Args:
         info_list: MultiPV result list from engine.analyse(..., multipv=N).
@@ -84,12 +117,14 @@ def _extract_arrows_and_pvs(
         mover: Side to move.
 
     Returns:
-        Tuple of (arrows, arrow_scores, pv_sans), each up to 3 entries. Missing
-        slots are "", None, None respectively.
+        Tuple of (arrows, arrow_scores, pv_sans, wdl_triples), each up to 3
+        entries. Missing slots are "", None, None, (None, None, None)
+        respectively.
     """
     arrows: list[str] = []
     arrow_scores: list[Optional[float]] = []
     pv_sans: list[Optional[str]] = []
+    wdl_triples: list[tuple[Optional[int], Optional[int], Optional[int]]] = []
 
     for pv_info in info_list[:3]:
         pv = pv_info.get("pv") or []
@@ -97,11 +132,13 @@ def _extract_arrows_and_pvs(
             arrows.append("")
             arrow_scores.append(None)
             pv_sans.append(None)
+            wdl_triples.append((None, None, None))
             continue
 
         arrows.append(pv[0].uci())
         pv_cp_white = white_cp(pv_info["score"])
         arrow_scores.append(win_pct(mover_cp(pv_cp_white, mover)))
+        wdl_triples.append(_wdl_triple_mover(pv_info, mover))
 
         pv_board = board.copy()
         pv_san_list: list[str] = []
@@ -113,7 +150,7 @@ def _extract_arrows_and_pvs(
                 break
         pv_sans.append(json.dumps(pv_san_list) if pv_san_list else None)
 
-    return arrows, arrow_scores, pv_sans
+    return arrows, arrow_scores, pv_sans, wdl_triples
 
 
 def _mate_in_from_score(score: chess.engine.PovScore) -> Optional[int]:
@@ -141,8 +178,10 @@ def _build_move_result(
     arrows: list[str],
     arrow_scores: list[Optional[float]],
     pv_sans: list[Optional[str]],
+    wdl_played: tuple[Optional[int], Optional[int], Optional[int]],
+    wdl_candidates: list[tuple[Optional[int], Optional[int], Optional[int]]],
 ) -> StockfishMoveResult:
-    """Assemble a raw StockfishMoveResult (#161 Phase H — no derivation).
+    """Assemble a raw StockfishMoveResult (#161 Phase H + #188 Phase A).
 
     Args:
         san: SAN of the played move.
@@ -152,14 +191,25 @@ def _build_move_result(
             ``mate_in_white``).
         mate_in_white: Signed mate distance (positive = White mates), or None.
         arrows: UCI strings for the top up-to-3 MultiPV candidate moves.
-        arrow_scores: Mover-frame Win% for each PV line (raw observable).
+        arrow_scores: Mover-frame Win% for each PV line (legacy raw observable;
+            removed in Phase D).
         pv_sans: JSON-encoded SAN continuations for each PV line.
+        wdl_played: Mover-frame WDL triple for the played move (any element
+            may be None when UCI_ShowWDL is unavailable).
+        wdl_candidates: Up to 3 mover-frame WDL triples mirroring ``arrows``.
+            Missing slots use (None, None, None).
 
     Returns:
         StockfishMoveResult with ply=0 (caller sets the real ply_index).
     """
     def _get(seq, idx, default=None):
         return seq[idx] if idx < len(seq) else default
+
+    def _cand(idx):
+        triple = _get(wdl_candidates, idx, (None, None, None))
+        return triple if triple is not None else (None, None, None)
+
+    c1, c2, c3 = _cand(0), _cand(1), _cand(2)
 
     return StockfishMoveResult(
         ply=0,
@@ -176,6 +226,12 @@ def _build_move_result(
         pv_san_1=_get(pv_sans, 0),
         pv_san_2=_get(pv_sans, 1),
         pv_san_3=_get(pv_sans, 2),
+        wdl_win=wdl_played[0],
+        wdl_draw=wdl_played[1],
+        wdl_loss=wdl_played[2],
+        wdl_win_1=c1[0], wdl_draw_1=c1[1], wdl_loss_1=c1[2],
+        wdl_win_2=c2[0], wdl_draw_2=c2[1], wdl_loss_2=c2[2],
+        wdl_win_3=c3[0], wdl_draw_3=c3[1], wdl_loss_3=c3[2],
     )
 
 
@@ -264,7 +320,9 @@ def _analyze_one_move(
         board, engine, limit,
         cache=cache, network=network, nodes=depth_key, multipv=3,
     )
-    arrows, arrow_scores, pv_sans = _extract_arrows_and_pvs(info_before, board, mover)
+    arrows, arrow_scores, pv_sans, wdl_candidates = _extract_arrows_and_pvs(
+        info_before, board, mover,
+    )
 
     matched_idx: Optional[int] = None
     for pv_idx, pv_info in enumerate(info_before[:3]):
@@ -275,11 +333,17 @@ def _analyze_one_move(
 
     board.push(move)
 
+    # #188 Phase A: capture the played-move WDL triple.
+    # Matched-PV fast path: the WDL was reported at the pre-push root, which is
+    # the mover's frame — use mover directly. Fallback path: after board.push()
+    # the root is the opponent; info_after["wdl"].pov(mover) recovers mover frame.
     if matched_idx is not None:
         score_after = info_before[matched_idx]["score"]
+        wdl_played = _wdl_triple_mover(info_before[matched_idx], mover)
     else:
         info_after = engine.analyse(board, limit)
         score_after = info_after["score"]
+        wdl_played = _wdl_triple_mover(info_after, mover)
     eval_after_white = white_cp(score_after)
     mate_in_white = _mate_in_from_score(score_after)
 
@@ -291,6 +355,8 @@ def _analyze_one_move(
         arrows=arrows,
         arrow_scores=arrow_scores,
         pv_sans=pv_sans,
+        wdl_played=wdl_played,
+        wdl_candidates=wdl_candidates,
     )
 
 
@@ -330,6 +396,8 @@ def _build_engine_opts(
             opts.setdefault(tuned_key, tuned_value)
     opts.setdefault("Threads", 4)
     opts.setdefault("Hash", 512)
+    # #188 Phase A: ask SF to emit its native WDL triple on every analyse().
+    opts.setdefault("UCI_ShowWDL", True)
     return opts
 
 
@@ -424,6 +492,15 @@ def analyze_pgn(
         engine.configure(opts)
         engine_name = engine.id.get("name", "") if hasattr(engine, "id") else ""
         cache_network = _resolve_sf_cache_network(engine)
+        # #188 Phase A: read NormalizeToPawnValue once per analysis run.
+        # SF 16+ exposes this as a read-only UCI option (default ≈ 328).
+        # Older builds without the option yield None — nullable end-to-end.
+        npv_opt = engine.options.get("NormalizeToPawnValue")
+        normalize_to_pawn_value = (
+            int(npv_opt.default) if npv_opt is not None and npv_opt.default is not None
+            else None
+        )
+        log.info("stockfish: NormalizeToPawnValue=%s", normalize_to_pawn_value)
 
         board = parsed.board()
         move_results: list[StockfishMoveResult] = []
@@ -447,13 +524,14 @@ def analyze_pgn(
         _log_sf_eval_cache_stats(eval_cache)
         return StockfishGameResult(
             engine_depth=depth, engine_name=engine_name, moves=move_results,
+            normalize_to_pawn_value=normalize_to_pawn_value,
         )
     finally:
         engine.quit()
 
 
 def build_stockfish_payload(result: StockfishGameResult, *, worker_id: str) -> dict:
-    """Serialize a StockfishGameResult into the #161 raw API payload.
+    """Serialize a StockfishGameResult into the #161 + #188 raw API payload.
 
     Args:
         result: StockfishGameResult from analyze_pgn().
@@ -468,6 +546,9 @@ def build_stockfish_payload(result: StockfishGameResult, *, worker_id: str) -> d
         "worker_id": worker_id,
         "engine_depth": result.engine_depth,
         "engine_name": result.engine_name,
+        # #188 Phase A: SF build-constant captured at analyse time. Nullable
+        # for older SF builds that don't expose this UCI option.
+        "normalize_to_pawn_value": result.normalize_to_pawn_value,
         "moves": [
             {
                 "ply": m.ply,
@@ -484,6 +565,20 @@ def build_stockfish_payload(result: StockfishGameResult, *, worker_id: str) -> d
                 "pv_san_1": m.pv_san_1,
                 "pv_san_2": m.pv_san_2,
                 "pv_san_3": m.pv_san_3,
+                # #188 Phase A: played-move + per-candidate WDL triples,
+                # mover frame, milli-units. Fully nullable for missing-WDL builds.
+                "wdl_win": m.wdl_win,
+                "wdl_draw": m.wdl_draw,
+                "wdl_loss": m.wdl_loss,
+                "wdl_win_1": m.wdl_win_1,
+                "wdl_draw_1": m.wdl_draw_1,
+                "wdl_loss_1": m.wdl_loss_1,
+                "wdl_win_2": m.wdl_win_2,
+                "wdl_draw_2": m.wdl_draw_2,
+                "wdl_loss_2": m.wdl_loss_2,
+                "wdl_win_3": m.wdl_win_3,
+                "wdl_draw_3": m.wdl_draw_3,
+                "wdl_loss_3": m.wdl_loss_3,
             }
             for m in result.moves
         ],

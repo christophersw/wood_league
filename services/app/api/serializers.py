@@ -14,6 +14,9 @@ Changelog:
     2026-05-19 (#159): JobSerializer exposes white_rating/black_rating for WDL calibration
     2026-05-19 (#159/D2): Lc0MoveSerializer carries rescaled WDL + severity fields;
         Lc0CompleteSerializer carries draw_rate_reference / wdl_calibration_elo / contempt
+    2026-05-21 (#188/A): StockfishMoveSerializer gains nullable WDL triples (played +
+        3 candidates) with per-slot all-or-nothing + sum invariant; StockfishCompleteSerializer
+        gains top-level normalize_to_pawn_value (nullable). Phase A does not persist these.
 """
 from django.conf import settings
 from rest_framework import serializers
@@ -130,11 +133,87 @@ class StockfishMoveSerializer(serializers.Serializer):
     pv_san_1 = serializers.CharField(required=False, allow_null=True, default=None)
     pv_san_2 = serializers.CharField(required=False, allow_null=True, default=None)
     pv_san_3 = serializers.CharField(required=False, allow_null=True, default=None)
+    # #188 Phase A: SF native WDL triple (mover frame, milli-units). Nullable
+    # end-to-end; older SF builds without UCI_ShowWDL yield (None, None, None).
+    wdl_win = serializers.IntegerField(
+        min_value=0, max_value=1000, required=False, allow_null=True, default=None,
+    )
+    wdl_draw = serializers.IntegerField(
+        min_value=0, max_value=1000, required=False, allow_null=True, default=None,
+    )
+    wdl_loss = serializers.IntegerField(
+        min_value=0, max_value=1000, required=False, allow_null=True, default=None,
+    )
+    # Per-candidate triples (top 3 MultiPV); fully nullable per line.
+    wdl_win_1 = serializers.IntegerField(
+        min_value=0, max_value=1000, required=False, allow_null=True, default=None,
+    )
+    wdl_draw_1 = serializers.IntegerField(
+        min_value=0, max_value=1000, required=False, allow_null=True, default=None,
+    )
+    wdl_loss_1 = serializers.IntegerField(
+        min_value=0, max_value=1000, required=False, allow_null=True, default=None,
+    )
+    wdl_win_2 = serializers.IntegerField(
+        min_value=0, max_value=1000, required=False, allow_null=True, default=None,
+    )
+    wdl_draw_2 = serializers.IntegerField(
+        min_value=0, max_value=1000, required=False, allow_null=True, default=None,
+    )
+    wdl_loss_2 = serializers.IntegerField(
+        min_value=0, max_value=1000, required=False, allow_null=True, default=None,
+    )
+    wdl_win_3 = serializers.IntegerField(
+        min_value=0, max_value=1000, required=False, allow_null=True, default=None,
+    )
+    wdl_draw_3 = serializers.IntegerField(
+        min_value=0, max_value=1000, required=False, allow_null=True, default=None,
+    )
+    wdl_loss_3 = serializers.IntegerField(
+        min_value=0, max_value=1000, required=False, allow_null=True, default=None,
+    )
 
     class Meta:
         # DRF doesn't enforce "no extra fields" by default — we layer that on
         # via the parent serializer's ``unknown=raise``-style behaviour below.
         pass
+
+    def validate(self, attrs):
+        """Enforce all-or-nothing WDL triple shape + sum invariant when present.
+
+        Each played/candidate slot must be fully populated or fully None.
+        Populated slots must sum to within [990, 1010] milli (SF rounding).
+
+        Args:
+            attrs: Per-move validated fields.
+
+        Returns:
+            ``attrs`` unchanged when invariants hold.
+
+        Raises:
+            serializers.ValidationError: When a triple is partial or sums out
+                of the SF-rounding tolerance.
+        """
+        for prefix in ("", "_1", "_2", "_3"):
+            win = attrs.get(f"wdl_win{prefix}")
+            draw = attrs.get(f"wdl_draw{prefix}")
+            loss = attrs.get(f"wdl_loss{prefix}")
+            slot = (win, draw, loss)
+            if all(v is None for v in slot):
+                continue
+            if any(v is None for v in slot):
+                raise serializers.ValidationError({
+                    f"wdl_win{prefix}":
+                        f"WDL slot {prefix or 'played'} must be all-or-nothing; "
+                        f"got partial triple {slot}.",
+                })
+            total = win + draw + loss
+            if total < 990 or total > 1010:
+                raise serializers.ValidationError({
+                    f"wdl_win{prefix}":
+                        f"WDL triple sum {total} out of permitted [990, 1010].",
+                })
+        return attrs
 
 
 class StockfishCompleteSerializer(serializers.Serializer):
@@ -149,6 +228,11 @@ class StockfishCompleteSerializer(serializers.Serializer):
     worker_id = serializers.CharField(max_length=64)
     engine_depth = serializers.IntegerField(min_value=1, max_value=40)
     engine_name = serializers.CharField(max_length=64, required=False, default="")
+    # #188 Phase A: SF build constant captured at analyse time, for
+    # reproducibility across SF versions. Nullable for older builds.
+    normalize_to_pawn_value = serializers.IntegerField(
+        min_value=1, max_value=99999, required=False, allow_null=True, default=None,
+    )
     moves = StockfishMoveSerializer(many=True, max_length=500)
 
     # Strict shape: a pre-#161 payload carries derived aggregates we no longer

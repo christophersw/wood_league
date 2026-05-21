@@ -36,3 +36,6 @@ build/
 
 # Superpowers brainstorm visual companion
 .superpowers/
+
+# Superpowers worktrees (local, never committed)
+.worktrees/

@@ -14,6 +14,9 @@ Changelog:
     2026-05-20 (#161/H): Strip every derived field. Workers now produce only
         the raw payload contract; ``analysis.derivation`` (app-side) computes
         accuracy, CPL, classifications, counters, rescale, severity.
+    2026-05-21 (#188/A): Stockfish dataclasses gained mover-frame WDL triples
+        (played move + 3 candidates) plus game-level NormalizeToPawnValue.
+        All nullable for older SF builds without UCI_ShowWDL.
 """
 from __future__ import annotations
 
@@ -45,6 +48,21 @@ class StockfishMoveResult:
     pv_san_1: Optional[str] = None
     pv_san_2: Optional[str] = None
     pv_san_3: Optional[str] = None
+    # Raw SF WDL triple, mover frame, milli-units (#188 Phase A).
+    # Nullable: older SF builds without UCI_ShowWDL or unreachable triples → None.
+    wdl_win: Optional[int] = None
+    wdl_draw: Optional[int] = None
+    wdl_loss: Optional[int] = None
+    # Per-candidate raw WDL triples (top 3 MultiPV); fully nullable per line.
+    wdl_win_1: Optional[int] = None
+    wdl_draw_1: Optional[int] = None
+    wdl_loss_1: Optional[int] = None
+    wdl_win_2: Optional[int] = None
+    wdl_draw_2: Optional[int] = None
+    wdl_loss_2: Optional[int] = None
+    wdl_win_3: Optional[int] = None
+    wdl_draw_3: Optional[int] = None
+    wdl_loss_3: Optional[int] = None
 
 
 @dataclass
@@ -54,6 +72,9 @@ class StockfishGameResult:
     engine_depth: int
     engine_name: str = ""
     moves: list[StockfishMoveResult] = field(default_factory=list)
+    # Engine build constant captured at analyse time (#188 Phase A).
+    # Nullable for older SF builds that don't expose it as a UCI option.
+    normalize_to_pawn_value: Optional[int] = None
 
 
 @dataclass
