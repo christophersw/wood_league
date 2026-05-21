@@ -135,6 +135,11 @@ def test_per_move_payload_carries_raw_and_derived_fields() -> None:
         "arrow_uci_1", "arrow_uci_2", "arrow_uci_3",
         "arrow_score_1", "arrow_score_2", "arrow_score_3",
         "pv_san_1", "pv_san_2", "pv_san_3",
+        "wdl_win", "wdl_draw", "wdl_loss",
+        "wdl_win_1", "wdl_draw_1", "wdl_loss_1",
+        "wdl_win_2", "wdl_draw_2", "wdl_loss_2",
+        "wdl_win_3", "wdl_draw_3", "wdl_loss_3",
+        "wdl_win_adj", "wdl_draw_adj", "wdl_loss_adj",
         "cpl", "move_win_delta", "classification", "best_move",
     ):
         assert field in move, field
