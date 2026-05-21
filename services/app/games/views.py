@@ -14,6 +14,7 @@ Changelog:
                       and removed brittle continuation reconstruction logic
     2026-05-04 (#16): Full rewrite for ply-sync architecture; added board_partial
                       and queue_analysis views; removed build_board_viewer_html usage
+    2026-05-21 (#186): Wire card_sf_partial to build_sf_card_context; import cards module.
 """
 
 import io as _io
@@ -30,6 +31,7 @@ from analysis.models import AnalysisJob
 from games.board_builder import board_colors_for_move_classification, build_board_frames
 from games.models import Game
 from games.services import MoveRow, get_game_analysis
+from games.cards import build_sf_card_context
 from games.services_v2 import get_game_analysis_v2
 from openings.models import OpeningBook
 
@@ -640,9 +642,23 @@ def _load_or_404(slug: str):
 
 
 def card_sf_partial(request: HttpRequest, slug: str) -> HttpResponse:
-    """Render the Stockfish card partial."""
+    """Render the Stockfish card partial.
+
+    Builds the SF card context via build_sf_card_context and passes
+    per-side labels so the template can loop over White and Black.
+
+    Params:
+        request (HttpRequest): The HTTP request.
+        slug (str): Game URL slug.
+
+    Returns:
+        Rendered _card_sf.html partial with SF stats context.
+    """
     data = _load_or_404(slug)
-    return render(request, "games/partials/_card_sf.html", {"data": data})
+    ctx = build_sf_card_context(data)
+    ctx["side_labels"] = [("white", data.white), ("black", data.black)]
+    ctx["data"] = data
+    return render(request, "games/partials/_card_sf.html", ctx)
 
 
 def card_lc0_partial(request: HttpRequest, slug: str) -> HttpResponse:
