@@ -28,57 +28,39 @@ def _css_label(label: str) -> str:
     return label.lower().replace(" ", "_")
 
 
+def _chip(kind: str, label: str | None, title: str) -> dict | None:
+    """Build one chip dict, or None when ``label`` is empty/None."""
+    if not label:
+        return None
+    return {
+        "kind": kind,
+        "label": label,
+        "css_label": _css_label(label),
+        "title": title,
+    }
+
+
 def chips_for_ply(data: GameAnalysisDataV2, ply: int) -> list[dict]:
     """Return up to three move-category chip dicts for the given ply.
 
-    Chips are assembled from:
-    - SF classification (kind="sf")
-    - LC0 base_severity (kind="lc0_base")
-    - LC0 draw_character (kind="lc0_draw", only when the field is populated)
-
-    The ``label`` value preserves original DB casing for display.
-    The ``css_label`` value is the lowercase+underscored variant for CSS classes
-    (e.g. ``Missed Win`` → ``missed_win``).
+    Chips: SF classification, LC0 base_severity, LC0 draw_character (only when
+    populated). ``label`` preserves DB casing; ``css_label`` is the lowercase+
+    underscored variant for CSS class suffixes (e.g. ``Missed Win`` →
+    ``missed_win``).
 
     Params:
         data (GameAnalysisDataV2): Full new-schema analysis data for the game.
-        ply (int): The ply number to query.  Ply 1 = White's first move.
+        ply (int): The ply number to query. Ply 1 = White's first move.
 
     Returns:
-        List of chip dicts, each with keys:
-            kind      (str) — "sf", "lc0_base", or "lc0_draw"
-            label     (str) — original casing as stored in the DB
-            css_label (str) — lowercase+underscore version for CSS class suffix
-            title     (str) — tooltip text shown on hover
-        Returns [] when no engine data exists for the requested ply.
+        List of chip dicts (possibly empty). Each dict has keys ``kind``,
+        ``label``, ``css_label``, ``title``.
     """
-    chips: list[dict] = []
-
     sf_row = next((m for m in data.sf_moves if m.ply == ply), None)
     lc0_row = next((m for m in data.lc0_moves if m.ply == ply), None)
-
-    if sf_row is not None and sf_row.classification:
-        chips.append({
-            "kind": "sf",
-            "label": sf_row.classification,
-            "css_label": _css_label(sf_row.classification),
-            "title": "Stockfish classification",
-        })
-
-    if lc0_row is not None and lc0_row.base_severity:
-        chips.append({
-            "kind": "lc0_base",
-            "label": lc0_row.base_severity,
-            "css_label": _css_label(lc0_row.base_severity),
-            "title": "LC0 severity (level 1)",
-        })
-
-    if lc0_row is not None and lc0_row.draw_character:
-        chips.append({
-            "kind": "lc0_draw",
-            "label": lc0_row.draw_character,
-            "css_label": _css_label(lc0_row.draw_character),
-            "title": "LC0 character (level 2)",
-        })
-
-    return chips
+    candidates = [
+        _chip("sf", sf_row.classification if sf_row else None, "Stockfish classification"),
+        _chip("lc0_base", lc0_row.base_severity if lc0_row else None, "LC0 severity (level 1)"),
+        _chip("lc0_draw", lc0_row.draw_character if lc0_row else None, "LC0 character (level 2)"),
+    ]
+    return [c for c in candidates if c is not None]
