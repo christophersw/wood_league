@@ -11,6 +11,8 @@ Changelog:
     2026-05-10: Removed dispatch_mode from claim_jobs, recover_stale_jobs, and submit_job
     2026-05-15: fail_job() now treats "PGN has no moves" errors as
         permanent failures (no retry) — issue #112.
+    2026-05-21 (#188/B): complete_stockfish_job writes SF WDL triples +
+        normalize_to_pawn_value into the new DB columns.
 """
 from datetime import timedelta
 
@@ -302,6 +304,8 @@ def complete_stockfish_job(
                 engine_depth=derived["engine_depth"],
                 summary_cp=derived["summary_cp"],
                 analyzed_at=timezone.now(),
+                # #188 Phase B: SF build constant for reproducibility.
+                normalize_to_pawn_value=derived.get("normalize_to_pawn_value"),
             ),
         )
 
@@ -327,6 +331,22 @@ def complete_stockfish_job(
                 pv_san_1=m["pv_san_1"],
                 pv_san_2=m["pv_san_2"],
                 pv_san_3=m["pv_san_3"],
+                # #188 Phase B: raw SF WDL triples + null _adj placeholders.
+                wdl_win=m["wdl_win"],
+                wdl_draw=m["wdl_draw"],
+                wdl_loss=m["wdl_loss"],
+                wdl_win_1=m["wdl_win_1"],
+                wdl_draw_1=m["wdl_draw_1"],
+                wdl_loss_1=m["wdl_loss_1"],
+                wdl_win_2=m["wdl_win_2"],
+                wdl_draw_2=m["wdl_draw_2"],
+                wdl_loss_2=m["wdl_loss_2"],
+                wdl_win_3=m["wdl_win_3"],
+                wdl_draw_3=m["wdl_draw_3"],
+                wdl_loss_3=m["wdl_loss_3"],
+                wdl_win_adj=m["wdl_win_adj"],
+                wdl_draw_adj=m["wdl_draw_adj"],
+                wdl_loss_adj=m["wdl_loss_adj"],
             )
             for m in derived_moves
         ])
