@@ -16,6 +16,7 @@ Changelog:
                       and queue_analysis views; removed build_board_viewer_html usage
     2026-05-21 (#186): Wire card_sf_partial to build_sf_card_context; import cards module.
     2026-05-21 (#186): Wire card_lc0_partial to build_lc0_card_context with side_labels.
+    2026-05-21 (#186): Wire chart_winpct_partial to winpct_payload from chart_data.
 """
 
 import io as _io
@@ -33,6 +34,7 @@ from games.board_builder import board_colors_for_move_classification, build_boar
 from games.models import Game
 from games.services import MoveRow, get_game_analysis
 from games.cards import build_lc0_card_context, build_sf_card_context
+from games.chart_data import winpct_payload
 from games.services_v2 import get_game_analysis_v2
 from openings.models import OpeningBook
 
@@ -690,9 +692,22 @@ def chips_partial(request: HttpRequest, slug: str) -> HttpResponse:
 
 
 def chart_winpct_partial(request: HttpRequest, slug: str) -> HttpResponse:
-    """Render the Win% headline chart partial."""
+    """Render the Win% headline chart partial.
+
+    Builds the winpct payload (SF Lichess logistic + LC0 wdl_mu*100) and passes
+    it as ``payload`` to the template for embedding via json_script.
+
+    Params:
+        request (HttpRequest): The HTTP request.
+        slug (str): Game URL slug.
+
+    Returns:
+        Rendered _chart_winpct.html partial with serialized winpct data.
+    """
     data = _load_or_404(slug)
-    return render(request, "games/partials/_chart_winpct.html", {"data": data})
+    return render(request, "games/partials/_chart_winpct.html", {
+        "payload": winpct_payload(data),
+    })
 
 
 def chart_sf_cp_partial(request: HttpRequest, slug: str) -> HttpResponse:
