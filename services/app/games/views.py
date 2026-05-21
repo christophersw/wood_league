@@ -23,14 +23,14 @@ import re
 import chess
 import chess.pgn as _pgn
 from django.conf import settings
-from django.http import HttpRequest, HttpResponse
+from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, render
 
 from analysis.models import AnalysisJob
 from games.board_builder import board_colors_for_move_classification, build_board_frames
 from games.models import Game
 from games.services import MoveRow, get_game_analysis
-from games.stat_cards import _DUB_CSS, build_lc0_card, build_sf_card
+from games.services_v2 import get_game_analysis_v2
 from openings.models import OpeningBook
 
 _ACTIVE_STATUSES = [
@@ -341,61 +341,39 @@ def _build_pgn_moves_json(data) -> str:
 
 
 def game_analysis(request: HttpRequest, slug: str) -> HttpResponse:
-    """
-    Render the main game analysis page.
+    """Render the thin shell for the analysis page.
 
-    Loads game and analysis data, builds engine stat cards and serialized
-    chart/PGN data for client-side rendering. The board itself is loaded
-    via HTMX (board_partial view) so orientation changes don't reload the page.
+    Each visual unit is loaded by HTMX from its own partial URL.
+    Uses get_game_analysis_v2 which returns None for legacy (pre-new-schema)
+    games, triggering a re-analyze banner instead of the analysis shell.
 
     Params:
         request (HttpRequest): The HTTP request.
         slug (str): Game URL slug.
 
     Returns:
-        Rendered analysis.html with full context, or analysis.html with
-        no_data=True if the game has no parseable PGN or analysis.
+        Rendered analysis.html thin shell with HTMX partial slots, or
+        analysis.html with no_data=True and reanalyze=True for legacy games.
     """
-    game = get_object_or_404(Game, slug=slug)
-    data = get_game_analysis(slug)
-
-    if data is None or not data.moves:
-        return render(request, "games/analysis.html", {
-            "game": game,
-            "no_data": True,
-        })
-
-    initial_ply = 0
     try:
-        initial_ply = max(0, int(request.GET.get("ply", 0)))
-    except (ValueError, TypeError):
-        pass
-
-    initial_perspective = request.GET.get("orientation", "white")
-    if initial_perspective not in ("white", "black"):
+        game = Game.objects.get(slug=slug)
+    except Game.DoesNotExist:
+        raise Http404
+    data = get_game_analysis_v2(slug)
+    if data is None:
+        return render(request, "games/analysis.html", {
+            "game": game, "no_data": True, "reanalyze": True,
+        })
+    initial_ply = int(request.GET.get("ply", 0) or 0)
+    initial_perspective = request.GET.get("perspective", "white")
+    if initial_perspective not in {"white", "black"}:
         initial_perspective = "white"
-
-    sf_queued, lc0_queued = _queue_status(slug)
-    engine_cards_html = _DUB_CSS + build_sf_card(data, queued=sf_queued) + build_lc0_card(data, queued=lc0_queued)
-
     return render(request, "games/analysis.html", {
         "game": game,
         "data": data,
         "no_data": False,
-        "details": _details_string(data),
-        "opening_label": _opening_label(data),
-        "opening_id": data.opening_id,
-        "chesscom_url": data.url,
-        "engine_cards_html": engine_cards_html,
-        "sf_eval_json": _build_eval_json(data),
-        "lc0_wdl_json": _build_wdl_json(data),
-        "pgn_moves_json": _build_pgn_moves_json(data),
         "initial_ply": initial_ply,
         "initial_perspective": initial_perspective,
-        "has_sf": data.has_sf,
-        "has_lc0": data.has_lc0,
-        "white": data.white,
-        "black": data.black,
     })
 
 
