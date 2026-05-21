@@ -625,3 +625,58 @@ def queue_analysis(request: HttpRequest, slug: str) -> HttpResponse:
         depth=depth,
     )
     return render(request, "games/_queue_success.html", {"engine": engine})
+
+
+def _load_or_404(slug: str):
+    """Load game analysis data or raise Http404 if not available.
+
+    Returns GameAnalysisDataV2 when the game has new-schema analysis.
+    Raises Http404 if the game doesn't exist or has no new-schema analysis.
+    """
+    data = get_game_analysis_v2(slug)
+    if data is None:
+        raise Http404
+    return data
+
+
+def card_sf_partial(request: HttpRequest, slug: str) -> HttpResponse:
+    """Render the Stockfish card partial."""
+    data = _load_or_404(slug)
+    return render(request, "games/partials/_card_sf.html", {"data": data})
+
+
+def card_lc0_partial(request: HttpRequest, slug: str) -> HttpResponse:
+    """Render the LC0 card partial."""
+    data = _load_or_404(slug)
+    return render(request, "games/partials/_card_lc0.html", {"data": data})
+
+
+def chips_partial(request: HttpRequest, slug: str) -> HttpResponse:
+    """Render the move chips partial."""
+    data = _load_or_404(slug)
+    ply = int(request.GET.get("ply", 0) or 0)
+    return render(request, "games/partials/_move_chips.html", {"data": data, "ply": ply})
+
+
+def chart_winpct_partial(request: HttpRequest, slug: str) -> HttpResponse:
+    """Render the Win% headline chart partial."""
+    data = _load_or_404(slug)
+    return render(request, "games/partials/_chart_winpct.html", {"data": data})
+
+
+def chart_sf_cp_partial(request: HttpRequest, slug: str) -> HttpResponse:
+    """Render the Stockfish cp-bar chart partial."""
+    data = _load_or_404(slug)
+    return render(request, "games/partials/_chart_sf_cp.html", {"data": data})
+
+
+def chart_lc0_wdl_partial(request: HttpRequest, slug: str) -> HttpResponse:
+    """Render the LC0 WDL chart partial."""
+    data = _load_or_404(slug)
+    return render(request, "games/partials/_chart_lc0_wdl.html", {"data": data})
+
+
+def pgn_partial(request: HttpRequest, slug: str) -> HttpResponse:
+    """Render the PGN table partial."""
+    data = _load_or_404(slug)
+    return render(request, "games/partials/_pgn_table.html", {"data": data})
