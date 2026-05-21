@@ -77,6 +77,47 @@ def _make_game(slug=None):
     )
 
 
+def _make_lc0_move_row(lga, ply, san, win_adj, draw_adj, loss_adj, mu, dmu, base_sev, draw_char):
+    """Create a single Lc0MoveAnalysis row with the new-schema derived fields populated.
+
+    Parameters:
+        lga (Lc0GameAnalysis): The parent analysis record.
+        ply (int): Move ply number (1-indexed).
+        san (str): Standard algebraic notation for the move.
+        win_adj (int): Adjusted win count in White-frame WDL.
+        draw_adj (int): Adjusted draw count in White-frame WDL.
+        loss_adj (int): Adjusted loss count in White-frame WDL.
+        mu (float): Estimated Elo difference (mu).
+        dmu (float): Delta mu (change in mu).
+        base_sev (str): Base severity classification (e.g., "best", "inaccuracy").
+        draw_char (str): Draw character classification (e.g., "balanced", "sharp").
+
+    Returns:
+        Lc0MoveAnalysis: The saved analysis row with all derived fields populated.
+    """
+    from analysis.models import Lc0MoveAnalysis  # deferred import
+    return Lc0MoveAnalysis.objects.create(
+        analysis=lga,
+        ply=ply,
+        san=san,
+        fen=_FENS[ply] if ply < len(_FENS) else _FENS[-1],
+        wdl_win=win_adj,
+        wdl_draw=draw_adj,
+        wdl_loss=loss_adj,
+        wdl_win_adj=win_adj,
+        wdl_draw_adj=draw_adj,
+        wdl_loss_adj=loss_adj,
+        wdl_mu=mu,
+        delta_mu=dmu,
+        delta_d=0.005,
+        base_severity=base_sev,
+        draw_character=draw_char,
+        arrow_uci_1="e2e4" if ply == 1 else "e7e5" if ply == 2 else "g1f3" if ply == 3 else "b8c6",
+        best_move="e2e4" if ply == 1 else "e7e5",
+        pv_san_1=san,
+    )
+
+
 def _make_sf_analysis(game, with_derived=True):
     """Create a GameAnalysis with 4 MoveAnalysis rows for the given game.
 
@@ -166,26 +207,29 @@ def _make_lc0_analysis(game, with_derived=True):
         (4, "Nc6", 460, 315, 225,  0.618,  0.065, "inaccuracy", "drawish"),
     ]
     for ply, san, win_adj, draw_adj, loss_adj, mu, dmu, base_sev, draw_char in moves_data:
-        Lc0MoveAnalysis.objects.create(
-            analysis=lga,
-            ply=ply,
-            san=san,
-            fen=_FENS[ply] if ply < len(_FENS) else _FENS[-1],
-            wdl_win=win_adj,
-            wdl_draw=draw_adj,
-            wdl_loss=loss_adj,
-            wdl_win_adj=win_adj if with_derived else None,
-            wdl_draw_adj=draw_adj if with_derived else None,
-            wdl_loss_adj=loss_adj if with_derived else None,
-            wdl_mu=mu if with_derived else None,
-            delta_mu=dmu if with_derived else None,
-            delta_d=0.005 if with_derived else None,
-            base_severity=base_sev if with_derived else None,
-            draw_character=draw_char if with_derived else None,
-            arrow_uci_1="e2e4" if ply == 1 else "e7e5" if ply == 2 else "g1f3" if ply == 3 else "b8c6",
-            best_move="e2e4" if ply == 1 else "e7e5",
-            pv_san_1=san,
-        )
+        if with_derived:
+            _make_lc0_move_row(lga, ply, san, win_adj, draw_adj, loss_adj, mu, dmu, base_sev, draw_char)
+        else:
+            Lc0MoveAnalysis.objects.create(
+                analysis=lga,
+                ply=ply,
+                san=san,
+                fen=_FENS[ply] if ply < len(_FENS) else _FENS[-1],
+                wdl_win=win_adj,
+                wdl_draw=draw_adj,
+                wdl_loss=loss_adj,
+                wdl_win_adj=None,
+                wdl_draw_adj=None,
+                wdl_loss_adj=None,
+                wdl_mu=None,
+                delta_mu=None,
+                delta_d=None,
+                base_severity=None,
+                draw_character=None,
+                arrow_uci_1="e2e4" if ply == 1 else "e7e5" if ply == 2 else "g1f3" if ply == 3 else "b8c6",
+                best_move="e2e4" if ply == 1 else "e7e5",
+                pv_san_1=san,
+            )
     return lga
 
 

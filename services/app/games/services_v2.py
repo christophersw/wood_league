@@ -208,6 +208,172 @@ def _lc0_rows(lga: Lc0GameAnalysis | None) -> list[Lc0MoveRow]:
     ]
 
 
+def _apply_sf_summary(data: GameAnalysisDataV2, ga: GameAnalysis) -> None:
+    """Copy GameAnalysis summary fields onto the dataclass.
+
+    Parameters:
+        data (GameAnalysisDataV2): The target dataclass to populate.
+        ga (GameAnalysis): The source game-level SF analysis record.
+
+    Returns:
+        None: Modifies data in-place.
+    """
+    data.sf_white_accuracy = ga.white_accuracy
+    data.sf_black_accuracy = ga.black_accuracy
+    data.sf_white_acpl = ga.white_acpl
+    data.sf_black_acpl = ga.black_acpl
+    data.sf_white_blunders = ga.white_blunders
+    data.sf_white_mistakes = ga.white_mistakes
+    data.sf_white_inaccuracies = ga.white_inaccuracies
+    data.sf_black_blunders = ga.black_blunders
+    data.sf_black_mistakes = ga.black_mistakes
+    data.sf_black_inaccuracies = ga.black_inaccuracies
+    data.sf_engine_depth = ga.engine_depth
+    data.sf_analyzed_at = ga.analyzed_at.isoformat() if ga.analyzed_at else ""
+
+
+def _apply_lc0_summary(data: GameAnalysisDataV2, lga: Lc0GameAnalysis) -> None:
+    """Copy Lc0GameAnalysis summary fields onto the dataclass.
+
+    Parameters:
+        data (GameAnalysisDataV2): The target dataclass to populate.
+        lga (Lc0GameAnalysis): The source game-level LC0 analysis record.
+
+    Returns:
+        None: Modifies data in-place.
+    """
+    data.lc0_white_accuracy = lga.white_accuracy
+    data.lc0_black_accuracy = lga.black_accuracy
+    data.lc0_white_win_prob = lga.white_win_prob
+    data.lc0_white_draw_prob = lga.white_draw_prob
+    data.lc0_white_loss_prob = lga.white_loss_prob
+    data.lc0_network_name = lga.network_name
+    data.lc0_engine_nodes = lga.engine_nodes
+    data.lc0_contempt = lga.contempt
+    data.lc0_draw_rate_reference = lga.draw_rate_reference
+    data.lc0_calibration_elo = lga.wdl_calibration_elo
+    data.lc0_analyzed_at = lga.analyzed_at.isoformat() if lga.analyzed_at else ""
+
+
+def _load_analyses(db_game: Game) -> tuple[GameAnalysis | None, Lc0GameAnalysis | None]:
+    """Load SF and LC0 analyses from the game, returning None if missing.
+
+    Parameters:
+        db_game (Game): The game database record.
+
+    Returns:
+        tuple[GameAnalysis | None, Lc0GameAnalysis | None]: The analyses
+            or None if they do not exist.
+    """
+    try:
+        ga = db_game.analysis
+    except GameAnalysis.DoesNotExist:
+        ga = None
+    try:
+        lga = db_game.lc0_analysis
+    except Lc0GameAnalysis.DoesNotExist:
+        lga = None
+    return ga, lga
+
+
+def _build_opening_id(db_game: Game) -> int | None:
+    """Look up the opening book ID for the game's ECO code, if present.
+
+    Parameters:
+        db_game (Game): The game database record.
+
+    Returns:
+        int | None: The opening book ID, or None if no ECO code or no match.
+    """
+    if not db_game.eco_code:
+        return None
+    return OpeningBook.objects.filter(eco=db_game.eco_code).values_list("id", flat=True).first()
+
+
+def _get_game_date(db_game: Game, pgn_game: chess.pgn.Game) -> str:
+    """Extract the game date from database or PGN headers.
+
+    Parameters:
+        db_game (Game): The game database record.
+        pgn_game (chess.pgn.Game): The parsed PGN game object.
+
+    Returns:
+        str: Formatted date string or empty string if not available.
+    """
+    if db_game.played_at:
+        return db_game.played_at.strftime("%Y-%m-%d %H:%M")
+    return pgn_game.headers.get("Date", "")
+
+
+def _apply_engine_summaries(
+    data: GameAnalysisDataV2,
+    ga: GameAnalysis | None,
+    lga: Lc0GameAnalysis | None,
+    sf_moves: list[SfMoveRow],
+    lc0_moves: list[Lc0MoveRow],
+) -> None:
+    """Apply SF and LC0 summary fields to the dataclass when analyses present.
+
+    Parameters:
+        data (GameAnalysisDataV2): The target dataclass to populate.
+        ga (GameAnalysis | None): The SF analysis, or None.
+        lga (Lc0GameAnalysis | None): The LC0 analysis, or None.
+        sf_moves (list[SfMoveRow]): List of SF move rows (empty if missing).
+        lc0_moves (list[Lc0MoveRow]): List of LC0 move rows (empty if missing).
+
+    Returns:
+        None: Modifies data in-place.
+    """
+    if ga is not None and sf_moves:
+        _apply_sf_summary(data, ga)
+    if lga is not None and lc0_moves:
+        _apply_lc0_summary(data, lga)
+
+
+def _build_dataclass_kwargs(
+    db_game: Game,
+    pgn_game: chess.pgn.Game,
+    pgn_text: str,
+    opening_id: int | None,
+    date: str,
+    sf_moves: list[SfMoveRow],
+    lc0_moves: list[Lc0MoveRow],
+) -> dict:
+    """Build keyword arguments for GameAnalysisDataV2 construction.
+
+    Parameters:
+        db_game (Game): The game database record.
+        pgn_game (chess.pgn.Game): The parsed PGN game object.
+        pgn_text (str): The raw PGN text.
+        opening_id (int | None): The opening book ID or None.
+        date (str): The formatted game date.
+        sf_moves (list[SfMoveRow]): List of SF move rows.
+        lc0_moves (list[Lc0MoveRow]): List of LC0 move rows.
+
+    Returns:
+        dict: Keyword arguments for GameAnalysisDataV2.
+    """
+    return {
+        "game_id": db_game.id,
+        "slug": db_game.slug,
+        "white": db_game.white_username or pgn_game.headers.get("White", "White"),
+        "black": db_game.black_username or pgn_game.headers.get("Black", "Black"),
+        "white_rating": db_game.white_rating,
+        "black_rating": db_game.black_rating,
+        "result": db_game.result_pgn or pgn_game.headers.get("Result", "*"),
+        "pgn": pgn_text,
+        "date": date,
+        "time_control": db_game.time_control or pgn_game.headers.get("TimeControl", ""),
+        "url": pgn_game.headers.get("Link", ""),
+        "eco_code": db_game.eco_code or "",
+        "opening_name": db_game.opening_name or "",
+        "lichess_opening": db_game.lichess_opening,
+        "opening_id": opening_id,
+        "sf_moves": sf_moves,
+        "lc0_moves": lc0_moves,
+    }
+
+
 def get_game_analysis_v2(slug: str) -> GameAnalysisDataV2 | None:
     """Return new-schema analysis for the given slug, or None.
 
@@ -231,79 +397,20 @@ def get_game_analysis_v2(slug: str) -> GameAnalysisDataV2 | None:
     if pgn_game is None:
         return None
 
-    try:
-        ga = db_game.analysis
-    except GameAnalysis.DoesNotExist:
-        ga = None
-    try:
-        lga = db_game.lc0_analysis
-    except Lc0GameAnalysis.DoesNotExist:
-        lga = None
-
+    ga, lga = _load_analyses(db_game)
     sf_moves = _sf_rows(ga)
     lc0_moves = _lc0_rows(lga)
     if not sf_moves and not lc0_moves:
         return None
 
-    opening_id = None
-    if db_game.eco_code:
-        opening_id = (
-            OpeningBook.objects.filter(eco=db_game.eco_code)
-            .values_list("id", flat=True)
-            .first()
-        )
+    opening_id = _build_opening_id(db_game)
+    date = _get_game_date(db_game, pgn_game)
 
-    date = (
-        db_game.played_at.strftime("%Y-%m-%d %H:%M")
-        if db_game.played_at
-        else pgn_game.headers.get("Date", "")
+    kwargs = _build_dataclass_kwargs(
+        db_game, pgn_game, pgn_text, opening_id, date, sf_moves, lc0_moves
     )
+    data = GameAnalysisDataV2(**kwargs)
 
-    data = GameAnalysisDataV2(
-        game_id=db_game.id,
-        slug=db_game.slug,
-        white=db_game.white_username or pgn_game.headers.get("White", "White"),
-        black=db_game.black_username or pgn_game.headers.get("Black", "Black"),
-        white_rating=db_game.white_rating,
-        black_rating=db_game.black_rating,
-        result=db_game.result_pgn or pgn_game.headers.get("Result", "*"),
-        pgn=pgn_text,
-        date=date,
-        time_control=db_game.time_control or pgn_game.headers.get("TimeControl", ""),
-        url=pgn_game.headers.get("Link", ""),
-        eco_code=db_game.eco_code or "",
-        opening_name=db_game.opening_name or "",
-        lichess_opening=db_game.lichess_opening,
-        opening_id=opening_id,
-        sf_moves=sf_moves,
-        lc0_moves=lc0_moves,
-    )
-
-    if ga is not None and sf_moves:
-        data.sf_white_accuracy = ga.white_accuracy
-        data.sf_black_accuracy = ga.black_accuracy
-        data.sf_white_acpl = ga.white_acpl
-        data.sf_black_acpl = ga.black_acpl
-        data.sf_white_blunders = ga.white_blunders
-        data.sf_white_mistakes = ga.white_mistakes
-        data.sf_white_inaccuracies = ga.white_inaccuracies
-        data.sf_black_blunders = ga.black_blunders
-        data.sf_black_mistakes = ga.black_mistakes
-        data.sf_black_inaccuracies = ga.black_inaccuracies
-        data.sf_engine_depth = ga.engine_depth
-        data.sf_analyzed_at = ga.analyzed_at.isoformat() if ga.analyzed_at else ""
-
-    if lga is not None and lc0_moves:
-        data.lc0_white_accuracy = lga.white_accuracy
-        data.lc0_black_accuracy = lga.black_accuracy
-        data.lc0_white_win_prob = lga.white_win_prob
-        data.lc0_white_draw_prob = lga.white_draw_prob
-        data.lc0_white_loss_prob = lga.white_loss_prob
-        data.lc0_network_name = lga.network_name
-        data.lc0_engine_nodes = lga.engine_nodes
-        data.lc0_contempt = lga.contempt
-        data.lc0_draw_rate_reference = lga.draw_rate_reference
-        data.lc0_calibration_elo = lga.wdl_calibration_elo
-        data.lc0_analyzed_at = lga.analyzed_at.isoformat() if lga.analyzed_at else ""
+    _apply_engine_summaries(data, ga, lga, sf_moves, lc0_moves)
 
     return data
