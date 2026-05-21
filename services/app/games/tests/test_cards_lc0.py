@@ -16,41 +16,43 @@ from games.services_v2 import get_game_analysis_v2
 pytestmark = pytest.mark.django_db
 
 
-def test_lc0_card_surfaces_both_classification_levels(new_schema_game_factory):
-    """build_lc0_card_context returns accuracy, WDL, both classification counts,
-    and tooltip meta with the required keys.
+@pytest.fixture
+def lc0_ctx(new_schema_game_factory):
+    """Build the LC0 card context for a new-schema game."""
+    data = get_game_analysis_v2(new_schema_game_factory().slug)
+    return build_lc0_card_context(data), data
 
-    Asserts:
-        - lc0_white_accuracy matches the dataclass value.
-        - wdl.white.win matches the game-end win probability.
-        - base_severity_counts.white contains a 'blunder' key.
-        - draw_character_counts.white is a dict (even if all zeros for the test data).
-        - tooltip_meta contains 'network_name' and 'draw_rate_reference'.
-    """
-    game = new_schema_game_factory()
-    data = get_game_analysis_v2(game.slug)
-    ctx = build_lc0_card_context(data)
 
+def test_lc0_card_surfaces_accuracy_and_wdl(lc0_ctx):
+    """Accuracy and game-end WDL come straight from the dataclass."""
+    ctx, data = lc0_ctx
     assert ctx["lc0_white_accuracy"] == data.lc0_white_accuracy
     assert ctx["wdl"]["white"]["win"] == data.lc0_white_win_prob
 
-    # Base severity counts (level 1) — must have 'blunder' key regardless of value
+
+def test_lc0_card_has_base_severity_counts(lc0_ctx):
+    """Base-severity counts (level 1) include a 'blunder' bucket."""
+    ctx, _ = lc0_ctx
     assert "blunder" in ctx["base_severity_counts"]["white"]
 
-    # Draw-character counts (level 2) — must be a dict with underscore-normalised keys
-    assert isinstance(ctx["draw_character_counts"]["white"], dict)
-    assert "missed_win" in ctx["draw_character_counts"]["white"]
-    assert "losing_blunder" in ctx["draw_character_counts"]["white"]
-    assert "risky" in ctx["draw_character_counts"]["white"]
-    assert "simplification" in ctx["draw_character_counts"]["white"]
 
-    # Tooltip metadata keys
-    assert "network_name" in ctx["tooltip_meta"]
-    assert "draw_rate_reference" in ctx["tooltip_meta"]
-    assert "engine_nodes" in ctx["tooltip_meta"]
-    assert "contempt" in ctx["tooltip_meta"]
-    assert "calibration_elo" in ctx["tooltip_meta"]
-    assert "analyzed_at" in ctx["tooltip_meta"]
+def test_lc0_card_has_draw_character_counts(lc0_ctx):
+    """Draw-character counts (level 2) expose all four underscore-normalised keys."""
+    ctx, _ = lc0_ctx
+    white = ctx["draw_character_counts"]["white"]
+    assert isinstance(white, dict)
+    for key in ("missed_win", "losing_blunder", "risky", "simplification"):
+        assert key in white
+
+
+def test_lc0_card_tooltip_has_required_keys(lc0_ctx):
+    """Tooltip metadata exposes the LC0 run parameters."""
+    ctx, _ = lc0_ctx
+    for key in (
+        "network_name", "draw_rate_reference", "engine_nodes",
+        "contempt", "calibration_elo", "analyzed_at",
+    ):
+        assert key in ctx["tooltip_meta"]
 
 
 def test_lc0_card_black_side_present(new_schema_game_factory):
