@@ -85,3 +85,19 @@ def test_lc0_wdl_partial_contains_payload_and_tooltip(client, new_schema_game_fa
     assert "LC0 Win / Draw / Loss" in body                # chart section title
     assert "draw rate" in body                            # calibration draw-rate subtitle text
     assert "lc0Wdl.js" in body                            # static JS reference
+
+
+def test_pgn_partial_renders_table_and_js(client, new_schema_game_factory):
+    """PGN partial must embed id="pgn-table" and reference pgnTable.js.
+
+    Params:
+        client: Django test client fixture.
+        new_schema_game_factory: Factory fixture producing a new-schema game with
+            a 4-ply PGN (e4 e5 Nf3 Nc6).
+    """
+    game = new_schema_game_factory()
+    resp = client.get(f"/_partials/games/{game.slug}/pgn/")
+    body = resp.content.decode()
+    assert resp.status_code == 200
+    assert 'id="pgn-table"' in body      # table element present
+    assert "pgnTable.js" in body          # static JS reference

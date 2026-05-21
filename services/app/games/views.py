@@ -19,6 +19,7 @@ Changelog:
     2026-05-21 (#186): Wire chart_winpct_partial to winpct_payload from chart_data.
     2026-05-21 (#186): Wire chart_sf_cp_partial to sf_cp_payload from chart_data.
     2026-05-21 (#186): Wire chips_partial to chips_for_ply from chip_data.
+    2026-05-21 (#186): Task 14 — wire pgn_partial to walk PGN mainline and attach SF classifications.
 """
 
 import io as _io
@@ -772,6 +773,34 @@ def chart_lc0_wdl_partial(request: HttpRequest, slug: str) -> HttpResponse:
 
 
 def pgn_partial(request: HttpRequest, slug: str) -> HttpResponse:
-    """Render the PGN table partial."""
+    """Render the PGN table partial.
+
+    Walks the PGN mainline to produce a per-ply move list, attaching SF
+    classification from the new-schema MoveAnalysis rows keyed by ply.
+
+    Params:
+        request: The incoming HTTP request.
+        slug: The game slug identifying which game to render.
+
+    Returns:
+        HttpResponse: Rendered _pgn_table.html with ``pgn_moves`` context — a list
+        of dicts with keys: ply, san, color ("white"/"black"), move_number, classification.
+    """
     data = _load_or_404(slug)
-    return render(request, "games/partials/_pgn_table.html", {"data": data})
+    by_ply_class = {m.ply: m.classification for m in data.sf_moves}
+    moves: list[dict] = []
+    pgn_game = _pgn.read_game(_io.StringIO(data.pgn))
+    board = pgn_game.board()
+    start = board.ply()
+    for i, mv in enumerate(pgn_game.mainline_moves(), start=1):
+        san = board.san(mv)
+        board.push(mv)
+        ply = i + start
+        moves.append({
+            "ply": ply,
+            "san": san,
+            "color": "white" if ply % 2 == 1 else "black",
+            "move_number": (ply + 1) // 2,
+            "classification": by_ply_class.get(ply),
+        })
+    return render(request, "games/partials/_pgn_table.html", {"pgn_moves": moves})
