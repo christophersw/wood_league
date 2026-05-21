@@ -288,9 +288,12 @@ def _lc0_move_rows(lga: Lc0GameAnalysis | None) -> list[MoveRow] | None:
             ply=m.ply,
             san=m.san,
             fen=m.fen,
-            wdl_win=m.wdl_win,
-            wdl_draw=m.wdl_draw,
-            wdl_loss=m.wdl_loss,
+            # Chart consumes these in White's frame so the curve is consistent
+            # across plies. Raw mover-frame triples (m.wdl_win/draw/loss) flip
+            # perspective every ply and produce a sawtooth.
+            wdl_win=m.wdl_win_adj,
+            wdl_draw=m.wdl_draw_adj,
+            wdl_loss=m.wdl_loss_adj,
             # cp_equiv, arrow_score_*, move_win_delta, classification removed
             # from Lc0MoveAnalysis in #161 Phase F. UI dataclass keeps the slots
             # for SF interop; lc0 rows leave them None and surface base_severity
