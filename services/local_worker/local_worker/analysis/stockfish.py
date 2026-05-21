@@ -68,6 +68,33 @@ _PV_SAN_DEPTH = 10
 log = logging.getLogger(__name__)
 
 
+def _wdl_triple_mover(
+    info: dict,
+    mover: chess.Color,
+) -> tuple[Optional[int], Optional[int], Optional[int]]:
+    """Extract the mover-frame WDL triple from an engine.analyse info dict.
+
+    SF emits WDL only when UCI_ShowWDL was enabled. The returned triple is in
+    milli-units (sum ≈ 1000); missing-WDL builds yield (None, None, None).
+
+    Args:
+        info: One engine.analyse() result dict.
+        mover: Side to move at the searched root.
+
+    Returns:
+        (wins, draws, losses) in mover frame, or (None, None, None) when the
+        engine did not emit a WDL line.
+    """
+    povwdl = info.get("wdl")
+    if povwdl is None:
+        return (None, None, None)
+    try:
+        wdl = povwdl.pov(mover)
+        return (int(wdl.wins), int(wdl.draws), int(wdl.losses))
+    except Exception:  # noqa: BLE001
+        return (None, None, None)
+
+
 def _extract_arrows_and_pvs(
     info_list: list,
     board: chess.Board,
@@ -141,8 +168,10 @@ def _build_move_result(
     arrows: list[str],
     arrow_scores: list[Optional[float]],
     pv_sans: list[Optional[str]],
+    wdl_played: tuple[Optional[int], Optional[int], Optional[int]],
+    wdl_candidates: list[tuple[Optional[int], Optional[int], Optional[int]]],
 ) -> StockfishMoveResult:
-    """Assemble a raw StockfishMoveResult (#161 Phase H — no derivation).
+    """Assemble a raw StockfishMoveResult (#161 Phase H + #188 Phase A).
 
     Args:
         san: SAN of the played move.
@@ -152,14 +181,25 @@ def _build_move_result(
             ``mate_in_white``).
         mate_in_white: Signed mate distance (positive = White mates), or None.
         arrows: UCI strings for the top up-to-3 MultiPV candidate moves.
-        arrow_scores: Mover-frame Win% for each PV line (raw observable).
+        arrow_scores: Mover-frame Win% for each PV line (legacy raw observable;
+            removed in Phase D).
         pv_sans: JSON-encoded SAN continuations for each PV line.
+        wdl_played: Mover-frame WDL triple for the played move (any element
+            may be None when UCI_ShowWDL is unavailable).
+        wdl_candidates: Up to 3 mover-frame WDL triples mirroring ``arrows``.
+            Missing slots use (None, None, None).
 
     Returns:
         StockfishMoveResult with ply=0 (caller sets the real ply_index).
     """
     def _get(seq, idx, default=None):
         return seq[idx] if idx < len(seq) else default
+
+    def _cand(idx):
+        triple = _get(wdl_candidates, idx, (None, None, None))
+        return triple if triple is not None else (None, None, None)
+
+    c1, c2, c3 = _cand(0), _cand(1), _cand(2)
 
     return StockfishMoveResult(
         ply=0,
@@ -176,6 +216,12 @@ def _build_move_result(
         pv_san_1=_get(pv_sans, 0),
         pv_san_2=_get(pv_sans, 1),
         pv_san_3=_get(pv_sans, 2),
+        wdl_win=wdl_played[0],
+        wdl_draw=wdl_played[1],
+        wdl_loss=wdl_played[2],
+        wdl_win_1=c1[0], wdl_draw_1=c1[1], wdl_loss_1=c1[2],
+        wdl_win_2=c2[0], wdl_draw_2=c2[1], wdl_loss_2=c2[2],
+        wdl_win_3=c3[0], wdl_draw_3=c3[1], wdl_loss_3=c3[2],
     )
 
 
