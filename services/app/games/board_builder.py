@@ -22,7 +22,8 @@ Changelog:
                        fixed ply-association bug — arrows now keyed by row.ply
                        instead of positional index; _build_tier_map and
                        _build_arrow_entries_for_engine updated to read arrow_uci_1
-                       for new dataclasses (arrow_uci for legacy MoveRow).
+                       for new dataclasses (arrow_uci for legacy MoveRow);
+                       added _arrow_label() and label field on v2 arrow entries.
     2026-05-05 (#16): Exposed reusable move-quality board colors for main and
                       engine-line board highlights
     2026-05-05 (#16): Applied move-quality colors to main-board move squares
@@ -444,11 +445,46 @@ def _build_frames_v2(
     }
 
 
+_UNICODE_MINUS = "−"
+
+
+def _arrow_label(engine_key: str, score: float | None, delta_mu: float | None) -> str:
+    """
+    Build a compact human-readable label for a v2-path arrow.
+
+    For SF arrows the label shows the engine name and the candidate score in
+    pawns with two decimal places (e.g. "SF +0.34" or "SF −0.10").  For LC0
+    arrows it shows the Win% delta relative to the played move expressed as
+    whole percentage points (e.g. "Lc0 +12%" or "Lc0 −7%").
+
+    Params:
+        engine_key (str):          "sf" or "lc0".
+        score      (float | None): For SF: arrow_score_* in centipawns.
+                                   Unused for LC0 (pass None).
+        delta_mu   (float | None): For LC0: (candidate_mu − played_mu).
+                                   Unused for SF (pass None).
+
+    Returns:
+        Formatted label string, or "" when the required value is absent.
+    """
+    if engine_key == "sf" and score is not None:
+        pawns = score / 100.0
+        sign = "+" if pawns >= 0 else _UNICODE_MINUS
+        return f"SF {sign}{abs(pawns):.2f}"
+    if engine_key == "lc0" and delta_mu is not None:
+        delta_pct = delta_mu * 100.0
+        sign = "+" if delta_pct >= 0 else _UNICODE_MINUS
+        return f"Lc0 {sign}{abs(delta_pct):.0f}%"
+    return ""
+
+
 def _arrow_entries_from_row(engine_key: str, row: object, is_white_move: bool) -> list[dict]:
     """
     Extract flat arrow metadata dicts from a single analysis row.
 
     Reads arrow_uci_1 / arrow_uci_2 / arrow_uci_3 from new-schema dataclasses.
+    Attaches a human-readable `label` to each entry using arrow_score_* (SF) or
+    delta_mu (LC0).
 
     Params:
         engine_key    (str):    "sf" or "lc0".
@@ -456,17 +492,31 @@ def _arrow_entries_from_row(engine_key: str, row: object, is_white_move: bool) -
         is_white_move (bool):   True when the mover for this ply is White.
 
     Returns:
-        List of arrow dicts, each containing: engine, uci, tier.
+        List of arrow dicts, each containing: engine, uci, tier, label.
     """
     ucis = [
         getattr(row, "arrow_uci_1", None),
         getattr(row, "arrow_uci_2", None),
         getattr(row, "arrow_uci_3", None),
     ]
+    scores = [
+        getattr(row, "arrow_score_1", None),
+        getattr(row, "arrow_score_2", None),
+        getattr(row, "arrow_score_3", None),
+    ]
+    # LC0 label uses delta_mu directly (= candidate_mu − played_mu).
+    delta_mu: float | None = getattr(row, "delta_mu", None)
+
     entries: list[dict] = []
-    for tier_index, uci in enumerate(ucis):
+    for tier_index, (uci, score) in enumerate(zip(ucis, scores)):
         if uci and len(uci) >= 4:
-            entries.append({"engine": engine_key, "uci": uci, "tier": tier_index + 1})
+            label = _arrow_label(engine_key, score, delta_mu)
+            entries.append({
+                "engine": engine_key,
+                "uci": uci,
+                "tier": tier_index + 1,
+                "label": label,
+            })
     return entries
 
 

@@ -62,6 +62,9 @@
 .board-arrow-group:focus .board-arrow-visible{filter:brightness(1.12);}
 .board-arrow-label-box,
 .board-arrow-label-text{pointer-events:none;}
+.board-arrow-label{font-family:'DM Mono',monospace;font-size:11px;font-weight:700;paint-order:stroke fill;stroke:rgba(255,255,255,0.85);stroke-width:3px;pointer-events:none;}
+.board-arrow-label--sf{fill:#A8781B;}
+.board-arrow-label--lc0{fill:#35586F;}
 .board-controls{display:flex;align-items:center;gap:5px;padding:8px 0 6px;justify-content:center;border-top:1px solid #D4C4A0;flex-wrap:wrap;}
 .board-btn{background:transparent;color:#1A1A1A;border:1.5px solid #1A1A1A;border-radius:0;padding:4px 10px;cursor:pointer;font-family:'DM Mono',monospace;font-size:.85rem;min-width:32px;transition:background .15s,color .15s;}
 .board-btn:hover{background:#1A1A1A;color:#F2E6D0;}
@@ -341,8 +344,9 @@
     head.setAttribute('fill-opacity', Number(arrowData.opacity || 0.7));
     group.appendChild(head);
 
-    if (arrowData.delta_text) {
-      var labelText = String(arrowData.delta_text);
+    var rawLabelText = arrowData.label || arrowData.delta_text || '';
+    if (rawLabelText) {
+      var labelText = String(rawLabelText);
       var labelPositionRatio = 0.72;
       var labelCenterX = fromPoint.x + ((geometry.shaftEndX - fromPoint.x) * labelPositionRatio);
       var labelCenterY = fromPoint.y + ((geometry.shaftEndY - fromPoint.y) * labelPositionRatio);
@@ -355,15 +359,12 @@
       labelGroup.setAttribute('transform', 'translate(' + labelCenterX + ' ' + labelCenterY + ') rotate(' + labelAngleDegrees + ')');
 
       var label = document.createElementNS(SVG_NS, 'text');
-      label.setAttribute('class', 'board-arrow-label-text');
+      var engineClass = arrowData.engine ? ('board-arrow-label board-arrow-label--' + arrowData.engine) : 'board-arrow-label-text';
+      label.setAttribute('class', engineClass);
       label.setAttribute('x', '0');
       label.setAttribute('y', '0.5');
-      label.setAttribute('fill', '#F7F0E1');
       label.setAttribute('text-anchor', 'middle');
       label.setAttribute('dominant-baseline', 'middle');
-      label.setAttribute('font-family', 'DM Mono, monospace');
-      label.setAttribute('font-size', '8.2');
-      label.setAttribute('font-weight', '700');
       label.textContent = labelText;
       labelGroup.appendChild(label);
       group.appendChild(labelGroup);
