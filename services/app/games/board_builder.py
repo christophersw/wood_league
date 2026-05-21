@@ -8,7 +8,21 @@ Description:
     This keeps arrow drawing and click handling out of the serialized chess.svg
     markup and makes the browser contract easier to maintain.
 
+    Two calling conventions are supported:
+      Legacy: build_board_frames(data: GameAnalysisData, size=480, orientation=…)
+        Returns the original structure with frames as SVG strings and arrows_by_ply
+        as a separate dict keyed by ply.
+      New:    build_board_frames(pgn=…, sf_moves=…, lc0_moves=…, orientation=…)
+        Accepts SfMoveRow / Lc0MoveRow dataclasses (from services_v2).
+        Returns frames["frames"] as a list indexed by ply where each entry is a
+        dict {svg, arrows: [{engine, uci, tier, …}]}.
+
 Changelog:
+    2026-05-21 (#186): Added new pgn/sf_moves/lc0_moves keyword-based entry point;
+                       fixed ply-association bug — arrows now keyed by row.ply
+                       instead of positional index; _build_tier_map and
+                       _build_arrow_entries_for_engine updated to read arrow_uci_1
+                       for new dataclasses (arrow_uci for legacy MoveRow).
     2026-05-05 (#16): Exposed reusable move-quality board colors for main and
                       engine-line board highlights
     2026-05-05 (#16): Applied move-quality colors to main-board move squares
@@ -56,14 +70,17 @@ _UNIFORM_ARROW_STROKE_WIDTH = 11.5
 _MAX_SHADE_DELTA = 220.0
 
 
-def _build_tier_map(by_ply: dict[int, MoveRow], use_cp_equiv: bool) -> dict[int, list]:
+def _build_tier_map(by_ply: dict, use_cp_equiv: bool) -> dict[int, list]:
     """
     Build a ply-indexed map of arrow tier entries for one engine's analysis.
 
+    Supports both legacy MoveRow (arrow_uci attribute) and new SfMoveRow /
+    Lc0MoveRow dataclasses (arrow_uci_1 attribute).
+
     Params:
-        by_ply (dict): Mapping of ply number → MoveRow from the engine.
+        by_ply (dict): Mapping of ply number → row object from the engine.
         use_cp_equiv (bool): If True, allow cp_equiv to backfill the first score
-            when the engine did not store a primary arrow score.
+            when the engine did not store a primary arrow score (legacy MoveRow only).
 
     Returns:
         Dict mapping ply → list of {uci, score} dicts for arrow rendering.
@@ -71,9 +88,11 @@ def _build_tier_map(by_ply: dict[int, MoveRow], use_cp_equiv: bool) -> dict[int,
     result: dict[int, list] = {}
     for ply, row in by_ply.items():
         entries = []
-        ucis = [row.arrow_uci, row.arrow_uci_2, row.arrow_uci_3]
+        # New dataclasses use arrow_uci_1; legacy MoveRow uses arrow_uci.
+        primary_uci = row.arrow_uci_1 if hasattr(row, "arrow_uci_1") else row.arrow_uci
+        ucis = [primary_uci, row.arrow_uci_2, row.arrow_uci_3]
         scores = [row.arrow_score_1, row.arrow_score_2, row.arrow_score_3]
-        if use_cp_equiv and scores[0] is None:
+        if use_cp_equiv and scores[0] is None and hasattr(row, "cp_equiv"):
             scores[0] = row.cp_equiv
         for uci, score in zip(ucis, scores):
             if uci:
@@ -157,6 +176,103 @@ def _build_arrow_opacity(delta: float | None, tier_index: int) -> float:
     return round(max(0.42, min(0.98, opacity)), 3)
 
 
+def _compute_arrow_delta(
+    score: float | None,
+    tier_index: int,
+    played_mover: float | None,
+    top_score: float | None,
+) -> float | None:
+    """
+    Compute the improvement delta for a single arrow candidate.
+
+    Returns the delta vs the played move for tier-1 arrows, or vs the top
+    suggestion for lower-tier arrows. Returns None when scores are unavailable.
+
+    Params:
+        score       (float | None): Candidate move score.
+        tier_index  (int):          Zero-based tier index (0 = top suggestion).
+        played_mover(float | None): Mover-relative score of the move that was played.
+        top_score   (float | None): Score of the top suggestion.
+
+    Returns:
+        float | None: Improvement delta, or None if unavailable.
+    """
+    if score is None:
+        return None
+    if played_mover is not None:
+        return float(score) - played_mover
+    if tier_index > 0 and top_score is not None:
+        return float(score) - float(top_score)
+    return None
+
+
+def _build_single_arrow_entry(
+    engine_key: str,
+    engine_label: str,
+    base_color: str,
+    tier_index: int,
+    relative_ply: int,
+    move_uci: str,
+    delta: float | None,
+) -> dict:
+    """
+    Build one overlay-arrow metadata dict for the client renderer.
+
+    Params:
+        engine_key   (str):         "sf" or "lc0".
+        engine_label (str):         Human-readable label ("Stockfish" or "Lc0").
+        base_color   (str):         Hex colour for the engine.
+        tier_index   (int):         Zero-based rank of this arrow.
+        relative_ply (int):         One-based ply within the rendered game.
+        move_uci     (str):         UCI move string (at least 4 chars).
+        delta        (float | None): Improvement over played move or top suggestion.
+
+    Returns:
+        dict with keys engine, engine_label, tier, request_ply, move_uci,
+        from_sq, to_sq, color, opacity, stroke_width, delta, delta_text, title.
+    """
+    delta_text = _format_arrow_delta(engine_key, delta)
+    tooltip = f"{engine_label} #{tier_index + 1}: {move_uci}"
+    if delta_text:
+        tooltip += f" ({delta_text})"
+    return {
+        "engine": engine_key,
+        "engine_label": engine_label,
+        "tier": tier_index + 1,
+        "request_ply": max(0, relative_ply - 1),
+        "move_uci": move_uci,
+        "from_sq": move_uci[:2],
+        "to_sq": move_uci[2:4],
+        "color": base_color,
+        "opacity": _build_arrow_opacity(delta, tier_index),
+        "stroke_width": _UNIFORM_ARROW_STROKE_WIDTH,
+        "delta": round(float(delta), 2) if delta is not None else None,
+        "delta_text": delta_text,
+        "title": tooltip,
+    }
+
+
+_ENGINE_LABELS: dict[str, str] = {"sf": "Stockfish", "lc0": "Lc0"}
+
+
+def _resolve_tier_entries(tier_map: dict[int, list], abs_ply: int, relative_ply: int) -> list:
+    """
+    Look up tier entries for a ply, trying abs_ply first then relative_ply.
+
+    Params:
+        tier_map     (dict): Ply → tier-entry list mapping.
+        abs_ply      (int):  Absolute ply in the source game.
+        relative_ply (int):  One-based ply within the rendered frames.
+
+    Returns:
+        list: Tier entries (may be empty).
+    """
+    entries = tier_map.get(abs_ply)
+    if entries is None:
+        entries = tier_map.get(relative_ply)
+    return entries or []
+
+
 def _build_arrow_entries_for_engine(
     abs_ply: int,
     relative_ply: int,
@@ -179,55 +295,29 @@ def _build_arrow_entries_for_engine(
     Returns:
         A list of overlay metadata dicts, one per suggested move.
     """
-    if tier_map is None:
+    if not tier_map:
         return []
 
-    tier_entries = tier_map.get(abs_ply) or tier_map.get(relative_ply) or []
+    tier_entries = _resolve_tier_entries(tier_map, abs_ply, relative_ply)
     if not tier_entries:
         return []
 
     base_color = _ENGINE_BASE_COLORS[engine_key]
-    played_score = played_scores.get(abs_ply)
-    if played_score is None:
-        played_score = played_scores.get(relative_ply)
+    played_score = played_scores.get(abs_ply) or played_scores.get(relative_ply)
     played_mover = _mover_relative_score(played_score, is_white_move)
-
-    top_score = tier_entries[0].get("score") if tier_entries else None
-    engine_label = "Stockfish" if engine_key == "sf" else "Lc0"
+    top_score = tier_entries[0].get("score")
+    engine_label = _ENGINE_LABELS[engine_key]
     overlay_entries: list[dict] = []
 
     for tier_index, entry in enumerate(tier_entries):
         move_uci = entry.get("uci", "")
-        if not move_uci or len(move_uci) < 4:
-            continue
-
-        score = entry.get("score")
-        delta = None
-        if played_mover is not None and score is not None:
-            delta = float(score) - played_mover
-        elif tier_index > 0 and top_score is not None and score is not None:
-            delta = float(score) - float(top_score)
-
-        delta_text = _format_arrow_delta(engine_key, delta)
-        tooltip = f"{engine_label} #{tier_index + 1}: {move_uci}"
-        if delta_text:
-            tooltip += f" ({delta_text})"
-
-        overlay_entries.append({
-            "engine": engine_key,
-            "engine_label": engine_label,
-            "tier": tier_index + 1,
-            "request_ply": max(0, relative_ply - 1),
-            "move_uci": move_uci,
-            "from_sq": move_uci[:2],
-            "to_sq": move_uci[2:4],
-            "color": base_color,
-            "opacity": _build_arrow_opacity(delta, tier_index),
-            "stroke_width": _UNIFORM_ARROW_STROKE_WIDTH,
-            "delta": round(float(delta), 2) if delta is not None else None,
-            "delta_text": delta_text,
-            "title": tooltip,
-        })
+        if len(move_uci) >= 4:
+            delta = _compute_arrow_delta(entry.get("score"), tier_index, played_mover, top_score)
+            overlay_entries.append(
+                _build_single_arrow_entry(
+                    engine_key, engine_label, base_color, tier_index, relative_ply, move_uci, delta,
+                )
+            )
 
     return overlay_entries
 
@@ -259,87 +349,210 @@ def board_colors_for_move_classification(classification: str | None) -> dict[str
     }
 
 
-def build_board_frames(
-    data: GameAnalysisData,
-    size: int = 480,
-    orientation: str = "white",
+def _build_frames_v2(
+    pgn: str,
+    sf_moves: list,
+    lc0_moves: list,
+    size: int,
+    orientation: str,
 ) -> dict:
     """
-    Generate all SVG board frames for a game and return structured data for template rendering.
+    Build board frames using the new SfMoveRow / Lc0MoveRow dataclasses.
 
-    Produces one plain board frame per ply (including the start position at ply 0)
-    plus explicit engine-arrow overlay metadata. Returns a dict suitable for
-    JSON-encoding and embedding in the board partial template.
+    Fixes the ply-association bug: analysis rows are keyed by row.ply and
+    looked up after each board.push() using board.ply(), so a LC0 set that
+    starts at ply 3 never bleeds its arrows into ply 1 or ply 2.
+
+    Returns a dict where frames["frames"] is a list indexed by ply (0 = start).
+    Each entry is a dict {svg: str, arrows: list[dict]}.  The arrows list
+    contains one entry per suggested engine move with keys:
+        engine (str): "sf" or "lc0"
+        uci    (str): UCI move string for the suggestion (e.g. "g1f3")
+        tier   (int): 1-based rank among the engine's suggestions
 
     Params:
-        data (GameAnalysisData): Assembled game analysis data.
-        size (int): Board SVG size in pixels (default 480).
-        orientation (str): "white" or "black" perspective.
+        pgn      (str):  PGN text for the game.
+        sf_moves (list): SfMoveRow list, may be empty.
+        lc0_moves(list): Lc0MoveRow list, may be empty.
+        size     (int):  Board SVG pixel size.
+        orientation (str): "white" or "black".
 
     Returns:
-        Dict with keys:
-            frames (list[str]): SVG strings, one per ply (index 0 = start position).
-            arrows_by_ply (dict): Ply → list of overlay arrow metadata dicts.
-            san_list (list[str]): SAN move strings in game order.
-            total_frames (int): Number of frames (= number of moves + 1).
-            top_player (str): Player name shown at top of board.
-            top_sym (str): Chess piece symbol for top player.
-            top_side (str): "White" or "Black" for top player.
-            bottom_player (str): Player name shown at bottom.
-            bottom_sym (str): Chess piece symbol for bottom player.
-            bottom_side (str): "White" or "Black" for bottom player.
-            has_sf (bool): Whether Stockfish analysis is present.
-            has_lc0 (bool): Whether Lc0 analysis is present.
+        dict with keys: frames, san_list, total_frames, overlay_geometry,
+        has_sf, has_lc0.
     """
     flipped = orientation == "black"
-    game = chess.pgn.read_game(io.StringIO(data.pgn))
+    game = chess.pgn.read_game(io.StringIO(pgn))
+    overlay_geometry = _board_overlay_geometry(size)
+
     if game is None:
         board = chess.Board()
         start_svg = chess.svg.board(board, size=size, flipped=flipped, colors=_BOARD_COLORS)
         return {
-            "frames": [start_svg],
-            "arrows_by_ply": {},
+            "frames": [{"svg": start_svg, "arrows": []}],
             "san_list": [],
             "total_frames": 1,
-            "top_player": data.black if not flipped else data.white,
-            "top_sym": "♟" if not flipped else "♙",
-            "top_side": "Black" if not flipped else "White",
-            "bottom_player": data.white if not flipped else data.black,
-            "bottom_sym": "♙" if not flipped else "♟",
-            "bottom_side": "White" if not flipped else "Black",
-            "has_sf": data.has_sf,
-            "has_lc0": data.has_lc0,
-            "overlay_geometry": _board_overlay_geometry(size),
+            "overlay_geometry": overlay_geometry,
+            "has_sf": bool(sf_moves),
+            "has_lc0": bool(lc0_moves),
         }
 
+    # Index rows by ply for O(1) lookup — this is the ply-alignment fix.
+    sf_by_ply: dict[int, object] = {row.ply: row for row in (sf_moves or [])}
+    lc0_by_ply: dict[int, object] = {row.ply: row for row in (lc0_moves or [])}
+
     board = game.board()
-    start_ply_offset = board.ply()
     moves_played: list[chess.Move] = list(game.mainline_moves())
 
+    # Frame 0 — start position, no arrows (no move has been played yet).
+    start_svg = chess.svg.board(board, size=size, flipped=flipped, colors=_BOARD_COLORS)
+    frames: list[dict] = [{"svg": start_svg, "arrows": []}]
+    san_list: list[str] = []
+
+    for move in moves_played:
+        san_list.append(board.san(move))
+        is_white_move = board.turn == chess.WHITE
+        board.push(move)
+        current_ply = board.ply()
+
+        sf_row = sf_by_ply.get(current_ply)
+        lc0_row = lc0_by_ply.get(current_ply)
+
+        arrows: list[dict] = []
+        if sf_row is not None:
+            arrows.extend(_arrow_entries_from_row("sf", sf_row, is_white_move))
+        if lc0_row is not None:
+            arrows.extend(_arrow_entries_from_row("lc0", lc0_row, is_white_move))
+
+        sf_classification = sf_row.classification if sf_row is not None else None
+        svg = chess.svg.board(
+            board,
+            size=size,
+            lastmove=move,
+            flipped=flipped,
+            colors=board_colors_for_move_classification(sf_classification),
+        )
+        frames.append({"svg": svg, "arrows": arrows})
+
+    return {
+        "frames": frames,
+        "san_list": san_list,
+        "total_frames": len(frames),
+        "overlay_geometry": overlay_geometry,
+        "has_sf": bool(sf_by_ply),
+        "has_lc0": bool(lc0_by_ply),
+    }
+
+
+def _arrow_entries_from_row(engine_key: str, row: object, is_white_move: bool) -> list[dict]:
+    """
+    Extract flat arrow metadata dicts from a single analysis row.
+
+    Reads arrow_uci_1 / arrow_uci_2 / arrow_uci_3 from new-schema dataclasses.
+
+    Params:
+        engine_key    (str):    "sf" or "lc0".
+        row           (object): SfMoveRow or Lc0MoveRow instance.
+        is_white_move (bool):   True when the mover for this ply is White.
+
+    Returns:
+        List of arrow dicts, each containing: engine, uci, tier.
+    """
+    ucis = [
+        getattr(row, "arrow_uci_1", None),
+        getattr(row, "arrow_uci_2", None),
+        getattr(row, "arrow_uci_3", None),
+    ]
+    entries: list[dict] = []
+    for tier_index, uci in enumerate(ucis):
+        if uci and len(uci) >= 4:
+            entries.append({"engine": engine_key, "uci": uci, "tier": tier_index + 1})
+    return entries
+
+
+def _player_layout(data: GameAnalysisData, flipped: bool) -> dict:
+    """
+    Build the player-label fields for the legacy return dict.
+
+    Params:
+        data    (GameAnalysisData): Game data with white/black player names.
+        flipped (bool):             True when board is shown from Black's perspective.
+
+    Returns:
+        Dict with top_player, top_sym, top_side, bottom_player, bottom_sym,
+        bottom_side keys.
+    """
+    return {
+        "top_player":    data.black if not flipped else data.white,
+        "top_sym":       "♟" if not flipped else "♙",
+        "top_side":      "Black" if not flipped else "White",
+        "bottom_player": data.white if not flipped else data.black,
+        "bottom_sym":    "♙" if not flipped else "♟",
+        "bottom_side":   "White" if not flipped else "Black",
+    }
+
+
+def _legacy_tier_context(data: GameAnalysisData) -> tuple:
+    """
+    Build tier maps and played-score dicts from a legacy GameAnalysisData.
+
+    Params:
+        data (GameAnalysisData): Assembled game analysis with MoveRow lists.
+
+    Returns:
+        Tuple of (sf_by_ply, lc0_by_ply, sf_tier_map, lc0_tier_map,
+                  sf_played, lc0_played).
+    """
     sf_by_ply: dict[int, MoveRow] = {row.ply: row for row in data.moves}
     lc0_by_ply: dict[int, MoveRow] = (
         {row.ply: row for row in data.lc0_moves} if data.lc0_moves else {}
     )
-
     sf_tier_map = _build_tier_map(sf_by_ply, use_cp_equiv=False) if sf_by_ply else None
     lc0_tier_map = _build_tier_map(lc0_by_ply, use_cp_equiv=True) if lc0_by_ply else None
-
     sf_played: dict[int, float] = {
         ply: row.cp_eval for ply, row in sf_by_ply.items() if row.cp_eval is not None
     }
     lc0_played: dict[int, float] = {
         ply: row.cp_equiv for ply, row in lc0_by_ply.items() if row.cp_equiv is not None
     }
+    return sf_by_ply, lc0_by_ply, sf_tier_map, lc0_tier_map, sf_played, lc0_played
 
+
+def _legacy_frame_loop(
+    game: chess.pgn.Game,
+    sf_by_ply: dict,
+    sf_tier_map: dict | None,
+    lc0_tier_map: dict | None,
+    sf_played: dict,
+    lc0_played: dict,
+    size: int,
+    flipped: bool,
+    start_ply_offset: int,
+) -> tuple:
+    """
+    Walk game moves and build SVG frames + arrows for the legacy path.
+
+    Params:
+        game              (chess.pgn.Game): Parsed game object.
+        sf_by_ply         (dict):           SF rows keyed by ply.
+        sf_tier_map       (dict | None):    SF arrow tiers.
+        lc0_tier_map      (dict | None):    LC0 arrow tiers.
+        sf_played         (dict):           SF played-move scores.
+        lc0_played        (dict):           LC0 played-move scores.
+        size              (int):            Board SVG pixel size.
+        flipped           (bool):           True for Black's perspective.
+        start_ply_offset  (int):            First ply offset of the game.
+
+    Returns:
+        Tuple of (frames: list[str], san_list: list[str],
+                  arrows_by_ply: dict[int, list]).
+    """
+    board = game.board()
+    moves_played = list(game.mainline_moves())
     san_list: list[str] = []
     arrows_by_ply: dict[int, list] = {}
-    frames: list[str] = []
-    overlay_geometry = _board_overlay_geometry(size)
+    frames: list[str] = [chess.svg.board(board, size=size, flipped=flipped, colors=_BOARD_COLORS)]
 
-    # Frame 0: start position
-    frames.append(chess.svg.board(board, size=size, flipped=flipped, colors=_BOARD_COLORS))
-
-    board = game.board()
     for ply_i, move in enumerate(moves_played, start=1):
         abs_ply = ply_i + start_ply_offset
         move_row = sf_by_ply.get(abs_ply) or sf_by_ply.get(ply_i)
@@ -347,55 +560,120 @@ def build_board_frames(
         is_white_move = board.turn == chess.WHITE
         board.push(move)
 
-        sf_overlay_entries = _build_arrow_entries_for_engine(
-            abs_ply=abs_ply,
-            relative_ply=ply_i,
-            tier_map=sf_tier_map,
-            played_scores=sf_played,
-            engine_key="sf",
-            is_white_move=is_white_move,
+        sf_entries = _build_arrow_entries_for_engine(
+            abs_ply=abs_ply, relative_ply=ply_i, tier_map=sf_tier_map,
+            played_scores=sf_played, engine_key="sf", is_white_move=is_white_move,
         )
-        lc0_overlay_entries = _build_arrow_entries_for_engine(
-            abs_ply=abs_ply,
-            relative_ply=ply_i,
-            tier_map=lc0_tier_map,
-            played_scores=lc0_played,
-            engine_key="lc0",
-            is_white_move=is_white_move,
+        lc0_entries = _build_arrow_entries_for_engine(
+            abs_ply=abs_ply, relative_ply=ply_i, tier_map=lc0_tier_map,
+            played_scores=lc0_played, engine_key="lc0", is_white_move=is_white_move,
         )
-        if sf_overlay_entries or lc0_overlay_entries:
-            arrows_by_ply[ply_i] = sf_overlay_entries + lc0_overlay_entries
+        if sf_entries or lc0_entries:
+            arrows_by_ply[ply_i] = sf_entries + lc0_entries
 
-        svg = chess.svg.board(
-            board,
-            size=size,
-            lastmove=move,
-            flipped=flipped,
+        frames.append(chess.svg.board(
+            board, size=size, lastmove=move, flipped=flipped,
             colors=board_colors_for_move_classification(
                 move_row.classification if move_row else None
             ),
-        )
-        frames.append(svg)
+        ))
 
-    top_player = data.black if not flipped else data.white
-    top_sym = "♟" if not flipped else "♙"
-    top_side = "Black" if not flipped else "White"
-    bottom_player = data.white if not flipped else data.black
-    bottom_sym = "♙" if not flipped else "♟"
-    bottom_side = "White" if not flipped else "Black"
+    return frames, san_list, arrows_by_ply
+
+
+def _build_frames_legacy(data: GameAnalysisData, size: int, orientation: str) -> dict:
+    """
+    Build board frames using the legacy GameAnalysisData / MoveRow contract.
+
+    Produces SVG strings (not dicts) in frames[], and arrows_by_ply as a
+    separate top-level key.  This is the shape that views.py::board_partial
+    currently consumes.
+
+    Params:
+        data        (GameAnalysisData): Assembled game analysis.
+        size        (int):              Board SVG size in pixels.
+        orientation (str):              "white" or "black".
+
+    Returns:
+        dict with frames (list[str]), arrows_by_ply, san_list, total_frames,
+        top_player / bottom_player layout keys, has_sf, has_lc0,
+        overlay_geometry.
+    """
+    flipped = orientation == "black"
+    game = chess.pgn.read_game(io.StringIO(data.pgn))
+    overlay_geometry = _board_overlay_geometry(size)
+    layout = _player_layout(data, flipped)
+
+    if game is None:
+        board = chess.Board()
+        start_svg = chess.svg.board(board, size=size, flipped=flipped, colors=_BOARD_COLORS)
+        return {
+            "frames": [start_svg], "arrows_by_ply": {}, "san_list": [],
+            "total_frames": 1, "has_sf": data.has_sf, "has_lc0": data.has_lc0,
+            "overlay_geometry": overlay_geometry, **layout,
+        }
+
+    sf_by_ply, _, sf_tier_map, lc0_tier_map, sf_played, lc0_played = _legacy_tier_context(data)
+    start_ply_offset = game.board().ply()
+    frames, san_list, arrows_by_ply = _legacy_frame_loop(
+        game, sf_by_ply, sf_tier_map, lc0_tier_map, sf_played, lc0_played,
+        size, flipped, start_ply_offset,
+    )
 
     return {
-        "frames": frames,
-        "arrows_by_ply": arrows_by_ply,
-        "san_list": san_list,
-        "total_frames": len(frames),
-        "top_player": top_player,
-        "top_sym": top_sym,
-        "top_side": top_side,
-        "bottom_player": bottom_player,
-        "bottom_sym": bottom_sym,
-        "bottom_side": bottom_side,
-        "has_sf": data.has_sf,
-        "has_lc0": data.has_lc0,
-        "overlay_geometry": overlay_geometry,
+        "frames": frames, "arrows_by_ply": arrows_by_ply, "san_list": san_list,
+        "total_frames": len(frames), "has_sf": data.has_sf, "has_lc0": data.has_lc0,
+        "overlay_geometry": overlay_geometry, **layout,
     }
+
+
+def build_board_frames(
+    data: GameAnalysisData | None = None,
+    size: int = 480,
+    orientation: str = "white",
+    *,
+    pgn: str | None = None,
+    sf_moves: list | None = None,
+    lc0_moves: list | None = None,
+) -> dict:
+    """
+    Generate all SVG board frames for a game and return structured data for
+    template rendering.
+
+    Supports two calling conventions:
+
+    Legacy (existing views):
+        build_board_frames(data, size=480, orientation="white")
+        data must be a GameAnalysisData instance.
+        Returns the original dict with frames as SVG strings and a separate
+        arrows_by_ply dict keyed by ply.
+
+    New (services_v2 dataclasses):
+        build_board_frames(pgn=…, sf_moves=…, lc0_moves=…, orientation="white")
+        sf_moves / lc0_moves are SfMoveRow / Lc0MoveRow lists (may be empty/None).
+        Returns a dict where frames["frames"] is a list indexed by ply (0 = start),
+        each entry being a dict {svg, arrows: [{engine, uci, tier}]}.
+
+    Params:
+        data        (GameAnalysisData | None): Legacy assembled game analysis.
+        size        (int):  Board SVG size in pixels (default 480).
+        orientation (str):  "white" or "black" perspective.
+        pgn         (str):  PGN text — triggers new calling convention.
+        sf_moves    (list): SfMoveRow list for new convention.
+        lc0_moves   (list): Lc0MoveRow list for new convention.
+
+    Returns:
+        Legacy path: dict with frames (list[str]), arrows_by_ply, san_list,
+            total_frames, top_player/bottom_player, has_sf, has_lc0,
+            overlay_geometry.
+        New path: dict with frames (list[dict]), san_list, total_frames,
+            overlay_geometry, has_sf, has_lc0.
+    """
+    if pgn is not None:
+        return _build_frames_v2(
+            pgn=pgn, sf_moves=sf_moves or [], lc0_moves=lc0_moves or [],
+            size=size, orientation=orientation,
+        )
+    if data is None:
+        raise ValueError("build_board_frames requires either data or pgn=")
+    return _build_frames_legacy(data, size, orientation)
