@@ -177,16 +177,23 @@ def test_complete_stockfish_job_persists_wdl_and_npv() -> None:
     assert ga.normalize_to_pawn_value == 328
 
     move = MoveAnalysis.objects.get(analysis=ga, ply=1)
-    assert (move.wdl_win, move.wdl_draw, move.wdl_loss) == (120, 850, 30)
-    assert (move.wdl_win_1, move.wdl_draw_1, move.wdl_loss_1) == (120, 850, 30)
-    assert (move.wdl_win_2, move.wdl_draw_2, move.wdl_loss_2) == (110, 860, 30)
-    assert move.wdl_win_3 is None
-    assert move.wdl_draw_3 is None
-    assert move.wdl_loss_3 is None
-    # Phase B: _adj columns stay null until Phase C.
-    assert move.wdl_win_adj is None
-    assert move.wdl_draw_adj is None
-    assert move.wdl_loss_adj is None
+    # Compare every WDL slot in one structural assertion. _adj columns stay
+    # null in Phase B (Phase C populates them).
+    actual = (
+        (move.wdl_win, move.wdl_draw, move.wdl_loss),
+        (move.wdl_win_1, move.wdl_draw_1, move.wdl_loss_1),
+        (move.wdl_win_2, move.wdl_draw_2, move.wdl_loss_2),
+        (move.wdl_win_3, move.wdl_draw_3, move.wdl_loss_3),
+        (move.wdl_win_adj, move.wdl_draw_adj, move.wdl_loss_adj),
+    )
+    expected = (
+        (120, 850, 30),
+        (120, 850, 30),
+        (110, 860, 30),
+        (None, None, None),
+        (None, None, None),
+    )
+    assert actual == expected
 
 
 @pytest.mark.django_db
