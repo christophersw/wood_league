@@ -22,6 +22,14 @@ Changelog:
                 draw_rate_reference_override -> draw_rate_reference.
                 Without this every lc0 job raises TypeError before
                 analysis runs.
+    2026-05-20 (#182): drop dead warm_draw_rate_reference plumbing
+                (launch_engine returns 2-tuple post-#161; the 3-tuple
+                unpack was silently caught and degraded every run to
+                cold-start with draw_rate=0.0, which the server's
+                min_value=0.001 validator then rejected with HTTP 400).
+                _run_lc0_job now sources draw_rate_reference from
+                job.draw_rate_reference (app-attached at checkout from
+                the NetworkCalibration row); 0.5 fallback when None.
 """
 from __future__ import annotations
 
@@ -306,13 +314,17 @@ def _run_lc0_job(
     progress_callback: Callable,
     lc0_engine: Optional[chess.engine.SimpleEngine],
     lc0_network_name: str,
-    lc0_draw_rate_reference: float,
 ) -> bool:
     """Validate, analyse, and submit a single lc0 job.
 
     Validates the node budget, resolves per-game Elo ratings, runs the lc0
     analyser with the warm engine (if provided), and submits the result. Returns
     False and fails the job if the node budget is below the minimum floor.
+
+    The draw-rate reference is sourced from ``job.draw_rate_reference`` —
+    the app attaches it at checkout from the ``NetworkCalibration`` row
+    (#161 Phase B). A missing value (None) falls back to 0.5, matching
+    ``analyze_pgn``'s own default; both are above the server's 0.001 floor.
 
     Args:
         job: Job dataclass from WorkerClient.checkout().
@@ -326,8 +338,6 @@ def _run_lc0_job(
             analyze_pgn() launches its own.
         lc0_network_name: Network name resolved at engine launch, forwarded
             to analyze_pgn() when lc0_engine is provided.
-        lc0_draw_rate_reference: Draw-rate reference from engine launch.
-            0.0 = not yet measured.
 
     Returns:
         True when analysis succeeded and the result was submitted.
@@ -353,6 +363,15 @@ def _run_lc0_job(
     # Elo-aware calibration / classification, so we no longer forward
     # Elos or a fallback into analyze_pgn. _resolve_job_elos() is kept
     # for the app-side rating plumbing tests but is not called here.
+    # Source of truth for draw_rate_reference is the app: it attaches
+    # the calibrated value at checkout from the NetworkCalibration row
+    # (#161 Phase B). When a network is uncalibrated the app raises 409
+    # NEEDS_CALIBRATION and the worker's sampler runs upstream of this
+    # call, so a None here is a legacy / belt-and-suspenders path only.
+    draw_rate = (
+        job.draw_rate_reference if job.draw_rate_reference is not None
+        else 0.5
+    )
     cache = _open_eval_cache(settings)
     try:
         result = lc0_analyze(
@@ -366,7 +385,7 @@ def _run_lc0_job(
             eval_cache=cache,
             engine=lc0_engine,
             network_name_override=lc0_network_name,
-            draw_rate_reference=lc0_draw_rate_reference,
+            draw_rate_reference=draw_rate,
         )
     finally:
         if cache is not None:
@@ -387,7 +406,6 @@ def run_one_job(
     progress_callback: Optional[Callable[..., None]] = None,
     lc0_engine: Optional[chess.engine.SimpleEngine] = None,
     lc0_network_name: str = "",
-    lc0_draw_rate_reference: float = 0.0,
 ) -> bool:
     """Claim, analyse, and submit a single job.
 
@@ -403,10 +421,6 @@ def run_one_job(
             CUDA backend reload per game (issue #117).
         lc0_network_name: Resolved network name from the warm engine's
             ``id name``. Only consulted when ``lc0_engine`` is supplied.
-        lc0_draw_rate_reference: Measured draw-rate reference from
-            ``launch_engine``'s 3rd return element. 0.0 = not yet measured;
-            consumers MUST treat <=0.0 as 'unset' and not feed it to the
-            WDL rescale (Phase C). Forwarded to ``analyze_pgn`` (issue #159).
 
     Returns:
         True if the job completed successfully, False on error.
@@ -445,7 +459,7 @@ def run_one_job(
             # is removed now that the server sends nodes correctly.
             if not _run_lc0_job(
                 job, settings, stats, client, worker_id, _logging_progress,
-                lc0_engine, lc0_network_name, lc0_draw_rate_reference,
+                lc0_engine, lc0_network_name,
             ):
                 return False
         else:
@@ -585,16 +599,13 @@ def run_batch(
         nonlocal processed
         warm_engine: Optional[chess.engine.SimpleEngine] = None
         warm_network_name = ""
-        warm_draw_rate_reference = 0.0
         if engine == "lc0":
             try:
-                warm_engine, warm_network_name, warm_draw_rate_reference = (
-                    lc0_launch_engine(
-                        lc0_path=settings.lc0_path,
-                        weights_path=settings.lc0_weights_path,
-                        syzygy_path=settings.syzygy_path,
-                        backend=settings.lc0_backend or "cpu",
-                    )
+                warm_engine, warm_network_name = lc0_launch_engine(
+                    lc0_path=settings.lc0_path,
+                    weights_path=settings.lc0_weights_path,
+                    syzygy_path=settings.syzygy_path,
+                    backend=settings.lc0_backend or "cpu",
                 )
             except Exception:  # noqa: BLE001
                 log.warning("lc0: warm engine launch failed; per-job cold-start", exc_info=True)
@@ -652,7 +663,6 @@ def run_batch(
                     progress_callback=on_progress,
                     lc0_engine=warm_engine if engine == "lc0" else None,
                     lc0_network_name=warm_network_name,
-                    lc0_draw_rate_reference=warm_draw_rate_reference,
                 )
                 processed += 1
                 if (
@@ -662,19 +672,16 @@ def run_batch(
                 ):
                     log.warning("lc0: warm engine died; relaunching")
                     try:
-                        warm_engine, warm_network_name, warm_draw_rate_reference = (
-                            lc0_launch_engine(
-                                lc0_path=settings.lc0_path,
-                                weights_path=settings.lc0_weights_path,
-                                syzygy_path=settings.syzygy_path,
-                                backend=settings.lc0_backend or "cpu",
-                            )
+                        warm_engine, warm_network_name = lc0_launch_engine(
+                            lc0_path=settings.lc0_path,
+                            weights_path=settings.lc0_weights_path,
+                            syzygy_path=settings.syzygy_path,
+                            backend=settings.lc0_backend or "cpu",
                         )
                     except Exception:  # noqa: BLE001
                         log.warning("lc0: relaunch failed; remaining jobs cold-start", exc_info=True)
                         warm_engine = None
                         warm_network_name = ""
-                        warm_draw_rate_reference = 0.0
                 if on_job_done:
                     on_job_done(job, success, time.monotonic() - job_start)
         finally:
