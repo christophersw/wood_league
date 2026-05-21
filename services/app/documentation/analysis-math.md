@@ -60,15 +60,13 @@ $$
 where both evaluations are expressed from the mover's perspective using the sign
 convention above.
 
-### Win% conversion
+### Win% (WDL)
 
-Win% uses Lichess' empirical sigmoid:
+Win% for Stockfish is derived from the engine's native WDL triple captured via `UCI_ShowWDL`.
+The cp → Win% sigmoid previously used (Lichess empirical formula) is **no longer applied**.
 
-$$
-\text{Win\%} = \frac{100}{1 + e^{-0.00368208 \times \text{cp}}}
-$$
-
-where `cp` is from the mover's perspective (i.e., after the sign flip described above).
+For details on what Stockfish reports and how to interpret WDL scores, see the
+[Stockfish docs — Useful data](https://official-stockfish.github.io/docs/stockfish-wiki/Useful-data.html).
 
 ### Per-move accuracy
 
@@ -220,7 +218,6 @@ in the Stockfish pipeline above.
 
 ## References
 
-- Lichess Win% model: <https://github.com/lichess-org/scalachess/blob/master/core/src/main/scala/eval.scala>
+- Stockfish WDL docs: <https://official-stockfish.github.io/docs/stockfish-wiki/Useful-data.html>
 - Lichess accuracy aggregation: <https://github.com/lichess-org/lila/blob/master/modules/analyse/src/main/AccuracyPercent.scala>
 - Lc0 docs: <https://lczero.org/>
-- Updates surfaced via Kagi assistant: <https://kagi.com/assistant/2d10eafe-0e86-4831-bec6-5f3a6102348a>
