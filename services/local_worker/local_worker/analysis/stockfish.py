@@ -330,6 +330,8 @@ def _build_engine_opts(
             opts.setdefault(tuned_key, tuned_value)
     opts.setdefault("Threads", 4)
     opts.setdefault("Hash", 512)
+    # #188 Phase A: ask SF to emit its native WDL triple on every analyse().
+    opts.setdefault("UCI_ShowWDL", True)
     return opts
 
 
@@ -424,6 +426,15 @@ def analyze_pgn(
         engine.configure(opts)
         engine_name = engine.id.get("name", "") if hasattr(engine, "id") else ""
         cache_network = _resolve_sf_cache_network(engine)
+        # #188 Phase A: read NormalizeToPawnValue once per analysis run.
+        # SF 16+ exposes this as a read-only UCI option (default ≈ 328).
+        # Older builds without the option yield None — nullable end-to-end.
+        npv_opt = engine.options.get("NormalizeToPawnValue")
+        normalize_to_pawn_value = (
+            int(npv_opt.default) if npv_opt is not None and npv_opt.default is not None
+            else None
+        )
+        log.info("stockfish: NormalizeToPawnValue=%s", normalize_to_pawn_value)
 
         board = parsed.board()
         move_results: list[StockfishMoveResult] = []
@@ -447,6 +458,7 @@ def analyze_pgn(
         _log_sf_eval_cache_stats(eval_cache)
         return StockfishGameResult(
             engine_depth=depth, engine_name=engine_name, moves=move_results,
+            normalize_to_pawn_value=normalize_to_pawn_value,
         )
     finally:
         engine.quit()

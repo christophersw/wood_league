@@ -9,6 +9,20 @@ Changelog:
     2026-05-21 (#188/A): Initial creation.
 """
 from local_worker.analysis.models import StockfishGameResult, StockfishMoveResult
+from local_worker.analysis.stockfish import _build_engine_opts
+
+
+def test_build_engine_opts_enables_uci_showwdl_by_default():
+    """_build_engine_opts includes UCI_ShowWDL=True in the returned opts dict."""
+    opts = _build_engine_opts(threads=4, hash_mb=512, syzygy_path="", auto_tune=False)
+    assert opts.get("UCI_ShowWDL") is True
+
+
+def test_build_engine_opts_keeps_caller_overrides_intact():
+    """UCI_ShowWDL is additive — it must not displace caller-supplied values."""
+    opts = _build_engine_opts(threads=2, hash_mb=128, syzygy_path="", auto_tune=False)
+    assert opts["Threads"] == 2 and opts["Hash"] == 128
+    assert opts["UCI_ShowWDL"] is True
 
 
 def test_stockfish_move_result_accepts_wdl_triples_nullable():
