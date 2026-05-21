@@ -1,1 +1,138 @@
-<div data-partial="card-lc0"></div>
+{% load static %}
+<style>
+  .lc0-wdl-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; margin-top: .35rem; }
+  .lc0-wdl-bar__win  { background: #5da12a; height: 100%; }
+  .lc0-wdl-bar__draw { background: #b0a070; height: 100%; }
+  .lc0-wdl-bar__loss { background: #d63030; height: 100%; }
+  .lc0-sev-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; margin-top: .35rem; }
+  .lc0-sev-bar__seg { height: 100%; }
+  .lc0-dc-bar { display: flex; height: 5px; border-radius: 3px; overflow: hidden; margin-top: .2rem; opacity: .6; }
+  .lc0-dc-bar__seg { height: 100%; }
+  .lc0-dc-missed-win    { background: #d63030; }
+  .lc0-dc-losing-blunder{ background: #e08020; }
+  .lc0-dc-risky         { background: #f0c040; }
+  .lc0-dc-simplification{ background: #5da12a; }
+</style>
+
+<section class="wc-card wc-card--lc0" aria-label="LC0 analysis">
+  <header class="wc-card__head">
+    <h3>LC0</h3>
+    <details class="card-info-tooltip">
+      <summary aria-label="LC0 run info">ⓘ</summary>
+      <dl>
+        <dt>Network</dt><dd>{{ tooltip_meta.network_name|default:"—" }}</dd>
+        <dt>Nodes</dt><dd>{{ tooltip_meta.engine_nodes|default:"—" }}</dd>
+        <dt>Contempt</dt><dd>{{ tooltip_meta.contempt|default:"0" }}</dd>
+        <dt>Draw ref</dt><dd>{% if tooltip_meta.draw_rate_reference %}{{ tooltip_meta.draw_rate_reference|floatformat:3 }}{% else %}—{% endif %}</dd>
+        <dt>Cal. Elo</dt><dd>{{ tooltip_meta.calibration_elo|default:"—" }}</dd>
+        <dt>Analyzed</dt><dd>{{ tooltip_meta.analyzed_at|default:"—" }}</dd>
+      </dl>
+    </details>
+  </header>
+
+  {# White side #}
+  <div class="wc-card__side">
+    <div class="wc-card__side-title">{{ side_labels.0.1 }} (White)</div>
+    <div class="metric"><span>Accuracy</span><span>{% if lc0_white_accuracy %}{{ lc0_white_accuracy|floatformat:1 }}%{% else %}—{% endif %}</span></div>
+    <div class="metric"><span>Avg Δμ</span><span>{% if avg_delta_mu_white %}{{ avg_delta_mu_white|floatformat:4 }}{% else %}—{% endif %}</span></div>
+
+    {# Game-end WDL stacked bar — White-frame aggregated probabilities #}
+    {% with ww=wdl.white %}
+    <div class="lc0-wdl-bar" aria-label="White game-end WDL distribution">
+      {% if ww.win or ww.draw or ww.loss %}
+        {% if ww.win %}<div class="lc0-wdl-bar__win" style="flex:{{ ww.win }}" title="Win: {{ ww.win|floatformat:2 }}"></div>{% endif %}
+        {% if ww.draw %}<div class="lc0-wdl-bar__draw" style="flex:{{ ww.draw }}" title="Draw: {{ ww.draw|floatformat:2 }}"></div>{% endif %}
+        {% if ww.loss %}<div class="lc0-wdl-bar__loss" style="flex:{{ ww.loss }}" title="Loss: {{ ww.loss|floatformat:2 }}"></div>{% endif %}
+      {% else %}
+        <div style="flex:1;background:#e8e0d0;height:100%;" title="No WDL data"></div>
+      {% endif %}
+    </div>
+    {% endwith %}
+
+    {# Base severity stacked bar (primary) #}
+    {% with bsw=base_severity_counts.white %}
+    <div class="lc0-sev-bar" aria-label="White base severity distribution" title="White: severity breakdown">
+      {% with total_bsw=bsw.best|add:bsw.excellent|add:bsw.good|add:bsw.inaccuracy|add:bsw.mistake|add:bsw.blunder %}
+      {% if total_bsw %}
+        {% if bsw.best %}<div class="lc0-sev-bar__seg move-annotation-best" style="flex:{{ bsw.best }}" title="Best: {{ bsw.best }}"></div>{% endif %}
+        {% if bsw.excellent %}<div class="lc0-sev-bar__seg move-annotation-excellent" style="flex:{{ bsw.excellent }}" title="Excellent: {{ bsw.excellent }}"></div>{% endif %}
+        {% if bsw.good %}<div class="lc0-sev-bar__seg move-annotation-good" style="flex:{{ bsw.good }}" title="Good: {{ bsw.good }}"></div>{% endif %}
+        {% if bsw.inaccuracy %}<div class="lc0-sev-bar__seg move-annotation-inaccuracy" style="flex:{{ bsw.inaccuracy }}" title="Inaccuracy: {{ bsw.inaccuracy }}"></div>{% endif %}
+        {% if bsw.mistake %}<div class="lc0-sev-bar__seg move-annotation-mistake" style="flex:{{ bsw.mistake }}" title="Mistake: {{ bsw.mistake }}"></div>{% endif %}
+        {% if bsw.blunder %}<div class="lc0-sev-bar__seg move-annotation-blunder" style="flex:{{ bsw.blunder }}" title="Blunder: {{ bsw.blunder }}"></div>{% endif %}
+      {% else %}
+        <div class="lc0-sev-bar__seg" style="flex:1;background:#e8e0d0;" title="No severity data"></div>
+      {% endif %}
+      {% endwith %}
+    </div>
+    {% endwith %}
+
+    {# Draw-character stacked bar (subordinate, muted) #}
+    {% with dcw=draw_character_counts.white %}
+    <div class="lc0-dc-bar" aria-label="White draw-character distribution" title="White: draw-character overlay">
+      {% with total_dcw=dcw|dictsortreversed:"value" %}
+      {% if dcw.missed_win or dcw.losing_blunder or dcw.risky or dcw.simplification %}
+        {% if dcw.missed_win %}<div class="lc0-dc-bar__seg lc0-dc-missed-win" style="flex:{{ dcw.missed_win }}" title="Missed Win: {{ dcw.missed_win }}"></div>{% endif %}
+        {% if dcw.losing_blunder %}<div class="lc0-dc-bar__seg lc0-dc-losing-blunder" style="flex:{{ dcw.losing_blunder }}" title="Losing Blunder: {{ dcw.losing_blunder }}"></div>{% endif %}
+        {% if dcw.risky %}<div class="lc0-dc-bar__seg lc0-dc-risky" style="flex:{{ dcw.risky }}" title="Risky: {{ dcw.risky }}"></div>{% endif %}
+        {% if dcw.simplification %}<div class="lc0-dc-bar__seg lc0-dc-simplification" style="flex:{{ dcw.simplification }}" title="Simplification: {{ dcw.simplification }}"></div>{% endif %}
+      {% else %}
+        <div class="lc0-dc-bar__seg" style="flex:1;background:#e8e0d0;" title="No draw-character data"></div>
+      {% endif %}
+      {% endwith %}
+    </div>
+    {% endwith %}
+  </div>
+
+  {# Black side #}
+  <div class="wc-card__side">
+    <div class="wc-card__side-title">{{ side_labels.1.1 }} (Black)</div>
+    <div class="metric"><span>Accuracy</span><span>{% if lc0_black_accuracy %}{{ lc0_black_accuracy|floatformat:1 }}%{% else %}—{% endif %}</span></div>
+    <div class="metric"><span>Avg Δμ</span><span>{% if avg_delta_mu_black %}{{ avg_delta_mu_black|floatformat:4 }}{% else %}—{% endif %}</span></div>
+
+    {# Game-end WDL stacked bar — Black-side aggregated probabilities #}
+    {% with wb=wdl.black %}
+    <div class="lc0-wdl-bar" aria-label="Black game-end WDL distribution">
+      {% if wb.win or wb.draw or wb.loss %}
+        {% if wb.win %}<div class="lc0-wdl-bar__win" style="flex:{{ wb.win }}" title="Win: {{ wb.win|floatformat:2 }}"></div>{% endif %}
+        {% if wb.draw %}<div class="lc0-wdl-bar__draw" style="flex:{{ wb.draw }}" title="Draw: {{ wb.draw|floatformat:2 }}"></div>{% endif %}
+        {% if wb.loss %}<div class="lc0-wdl-bar__loss" style="flex:{{ wb.loss }}" title="Loss: {{ wb.loss|floatformat:2 }}"></div>{% endif %}
+      {% else %}
+        <div style="flex:1;background:#e8e0d0;height:100%;" title="No WDL data"></div>
+      {% endif %}
+    </div>
+    {% endwith %}
+
+    {# Base severity stacked bar (primary) #}
+    {% with bsb=base_severity_counts.black %}
+    <div class="lc0-sev-bar" aria-label="Black base severity distribution" title="Black: severity breakdown">
+      {% with total_bsb=bsb.best|add:bsb.excellent|add:bsb.good|add:bsb.inaccuracy|add:bsb.mistake|add:bsb.blunder %}
+      {% if total_bsb %}
+        {% if bsb.best %}<div class="lc0-sev-bar__seg move-annotation-best" style="flex:{{ bsb.best }}" title="Best: {{ bsb.best }}"></div>{% endif %}
+        {% if bsb.excellent %}<div class="lc0-sev-bar__seg move-annotation-excellent" style="flex:{{ bsb.excellent }}" title="Excellent: {{ bsb.excellent }}"></div>{% endif %}
+        {% if bsb.good %}<div class="lc0-sev-bar__seg move-annotation-good" style="flex:{{ bsb.good }}" title="Good: {{ bsb.good }}"></div>{% endif %}
+        {% if bsb.inaccuracy %}<div class="lc0-sev-bar__seg move-annotation-inaccuracy" style="flex:{{ bsb.inaccuracy }}" title="Inaccuracy: {{ bsb.inaccuracy }}"></div>{% endif %}
+        {% if bsb.mistake %}<div class="lc0-sev-bar__seg move-annotation-mistake" style="flex:{{ bsb.mistake }}" title="Mistake: {{ bsb.mistake }}"></div>{% endif %}
+        {% if bsb.blunder %}<div class="lc0-sev-bar__seg move-annotation-blunder" style="flex:{{ bsb.blunder }}" title="Blunder: {{ bsb.blunder }}"></div>{% endif %}
+      {% else %}
+        <div class="lc0-sev-bar__seg" style="flex:1;background:#e8e0d0;" title="No severity data"></div>
+      {% endif %}
+      {% endwith %}
+    </div>
+    {% endwith %}
+
+    {# Draw-character stacked bar (subordinate, muted) #}
+    {% with dcb=draw_character_counts.black %}
+    <div class="lc0-dc-bar" aria-label="Black draw-character distribution" title="Black: draw-character overlay">
+      {% if dcb.missed_win or dcb.losing_blunder or dcb.risky or dcb.simplification %}
+        {% if dcb.missed_win %}<div class="lc0-dc-bar__seg lc0-dc-missed-win" style="flex:{{ dcb.missed_win }}" title="Missed Win: {{ dcb.missed_win }}"></div>{% endif %}
+        {% if dcb.losing_blunder %}<div class="lc0-dc-bar__seg lc0-dc-losing-blunder" style="flex:{{ dcb.losing_blunder }}" title="Losing Blunder: {{ dcb.losing_blunder }}"></div>{% endif %}
+        {% if dcb.risky %}<div class="lc0-dc-bar__seg lc0-dc-risky" style="flex:{{ dcb.risky }}" title="Risky: {{ dcb.risky }}"></div>{% endif %}
+        {% if dcb.simplification %}<div class="lc0-dc-bar__seg lc0-dc-simplification" style="flex:{{ dcb.simplification }}" title="Simplification: {{ dcb.simplification }}"></div>{% endif %}
+      {% else %}
+        <div class="lc0-dc-bar__seg" style="flex:1;background:#e8e0d0;" title="No draw-character data"></div>
+      {% endif %}
+    </div>
+    {% endwith %}
+  </div>
+</section>

@@ -15,6 +15,7 @@ Changelog:
     2026-05-04 (#16): Full rewrite for ply-sync architecture; added board_partial
                       and queue_analysis views; removed build_board_viewer_html usage
     2026-05-21 (#186): Wire card_sf_partial to build_sf_card_context; import cards module.
+    2026-05-21 (#186): Wire card_lc0_partial to build_lc0_card_context with side_labels.
 """
 
 import io as _io
@@ -31,7 +32,7 @@ from analysis.models import AnalysisJob
 from games.board_builder import board_colors_for_move_classification, build_board_frames
 from games.models import Game
 from games.services import MoveRow, get_game_analysis
-from games.cards import build_sf_card_context
+from games.cards import build_lc0_card_context, build_sf_card_context
 from games.services_v2 import get_game_analysis_v2
 from openings.models import OpeningBook
 
@@ -662,9 +663,23 @@ def card_sf_partial(request: HttpRequest, slug: str) -> HttpResponse:
 
 
 def card_lc0_partial(request: HttpRequest, slug: str) -> HttpResponse:
-    """Render the LC0 card partial."""
+    """Render the LC0 stat card partial.
+
+    Builds the LC0 card context via build_lc0_card_context and passes the
+    flattened keys plus side_labels to _card_lc0.html.
+
+    Params:
+        request (HttpRequest): The incoming HTTP request.
+        slug (str): Game slug identifying which game to render.
+
+    Returns:
+        HttpResponse: Rendered _card_lc0.html partial with LC0 stats context.
+    """
     data = _load_or_404(slug)
-    return render(request, "games/partials/_card_lc0.html", {"data": data})
+    ctx = build_lc0_card_context(data)
+    ctx["side_labels"] = [("white", data.white), ("black", data.black)]
+    ctx["data"] = data
+    return render(request, "games/partials/_card_lc0.html", ctx)
 
 
 def chips_partial(request: HttpRequest, slug: str) -> HttpResponse:
