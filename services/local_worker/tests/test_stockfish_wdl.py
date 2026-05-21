@@ -92,3 +92,32 @@ def test_extract_arrows_and_pvs_returns_wdl_candidates():
     )
     assert arrows[0] == "e2e4"
     assert wdl_triples[0] == (120, 850, 30)
+
+
+from local_worker.analysis.stockfish import build_stockfish_payload
+
+
+def test_build_stockfish_payload_emits_wdl_and_npv():
+    """build_stockfish_payload includes WDL triples and normalize_to_pawn_value."""
+    move = StockfishMoveResult(
+        ply=1, san="e4", fen="...", cp_eval=30,
+        wdl_win=120, wdl_draw=850, wdl_loss=30,
+        wdl_win_1=120, wdl_draw_1=850, wdl_loss_1=30,
+    )
+    result = StockfishGameResult(
+        engine_depth=20, engine_name="Stockfish 16", moves=[move],
+        normalize_to_pawn_value=328,
+    )
+    payload = build_stockfish_payload(result, worker_id="w-1")
+    assert payload["normalize_to_pawn_value"] == 328
+    m = payload["moves"][0]
+    assert (m["wdl_win"], m["wdl_draw"], m["wdl_loss"]) == (120, 850, 30)
+    assert (m["wdl_win_1"], m["wdl_draw_1"], m["wdl_loss_1"]) == (120, 850, 30)
+    assert m["wdl_loss_3"] is None
+
+
+def test_build_stockfish_payload_npv_nullable():
+    """build_stockfish_payload handles None normalize_to_pawn_value gracefully."""
+    result = StockfishGameResult(engine_depth=20, moves=[])
+    payload = build_stockfish_payload(result, worker_id="w-1")
+    assert payload["normalize_to_pawn_value"] is None

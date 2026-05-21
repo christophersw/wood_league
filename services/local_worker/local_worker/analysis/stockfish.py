@@ -531,7 +531,7 @@ def analyze_pgn(
 
 
 def build_stockfish_payload(result: StockfishGameResult, *, worker_id: str) -> dict:
-    """Serialize a StockfishGameResult into the #161 raw API payload.
+    """Serialize a StockfishGameResult into the #161 + #188 raw API payload.
 
     Args:
         result: StockfishGameResult from analyze_pgn().
@@ -546,6 +546,9 @@ def build_stockfish_payload(result: StockfishGameResult, *, worker_id: str) -> d
         "worker_id": worker_id,
         "engine_depth": result.engine_depth,
         "engine_name": result.engine_name,
+        # #188 Phase A: SF build-constant captured at analyse time. Nullable
+        # for older SF builds that don't expose this UCI option.
+        "normalize_to_pawn_value": result.normalize_to_pawn_value,
         "moves": [
             {
                 "ply": m.ply,
@@ -562,6 +565,20 @@ def build_stockfish_payload(result: StockfishGameResult, *, worker_id: str) -> d
                 "pv_san_1": m.pv_san_1,
                 "pv_san_2": m.pv_san_2,
                 "pv_san_3": m.pv_san_3,
+                # #188 Phase A: played-move + per-candidate WDL triples,
+                # mover frame, milli-units. Fully nullable for missing-WDL builds.
+                "wdl_win": m.wdl_win,
+                "wdl_draw": m.wdl_draw,
+                "wdl_loss": m.wdl_loss,
+                "wdl_win_1": m.wdl_win_1,
+                "wdl_draw_1": m.wdl_draw_1,
+                "wdl_loss_1": m.wdl_loss_1,
+                "wdl_win_2": m.wdl_win_2,
+                "wdl_draw_2": m.wdl_draw_2,
+                "wdl_loss_2": m.wdl_loss_2,
+                "wdl_win_3": m.wdl_win_3,
+                "wdl_draw_3": m.wdl_draw_3,
+                "wdl_loss_3": m.wdl_loss_3,
             }
             for m in result.moves
         ],
