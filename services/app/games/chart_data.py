@@ -13,11 +13,34 @@ import math
 
 from games.services_v2 import GameAnalysisDataV2
 
+# Lichess Win% logistic coefficient. Pinned constant from the Lichess engine
+# scoring model — see ``wood_league.wiki/analysis-math.md`` ("Win%" section)
+# and the upstream reference at
+# https://github.com/lichess-org/scalachess/blob/master/core/src/main/scala/eval.scala
+# This is the SAME coefficient used by ``services/app/analysis/derivation/accuracy.py``;
+# both must stay in lockstep with analysis-math.md to avoid SF/LC0 Win% drift.
 _LICHESS_K = 0.00368208
 
 
 def _cp_to_winpct(cp: float) -> float:
-    """Lichess logistic: convert centipawn eval to Win-for-White percentage."""
+    """Convert a Stockfish centipawn evaluation to a Win-for-White percentage.
+
+    Uses the Lichess empirical sigmoid documented in
+    ``wood_league.wiki/analysis-math.md`` ("Win%" section)::
+
+        Win% = 100 / (1 + exp(-_LICHESS_K * cp))
+             = 50 + 50 * tanh(_LICHESS_K * cp / 2 * 2)
+             = 50 + 50 * tanh(_LICHESS_K * cp)         # algebraic identity
+
+    The tanh form is numerically stable for large |cp|.
+
+    Params:
+        cp (float): Raw white-frame Stockfish centipawn score. Mate scores
+            (|cp| >= 9000) should be clamped by the caller before passing in.
+
+    Returns:
+        float: Win-for-White percentage in [0, 100].
+    """
     return 50.0 + 50.0 * math.tanh(_LICHESS_K * cp)
 
 

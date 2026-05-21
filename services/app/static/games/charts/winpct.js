@@ -12,6 +12,8 @@
   var div = document.getElementById("winpct-chart");
   if (!div || typeof Plotly === "undefined") return;
 
+  var theme = window.WoodLeagueChartTheme;
+
   /**
    * Build Plotly trace array for the given perspective.
    *
@@ -32,7 +34,7 @@
         type: "scatter",
         mode: "lines+markers",
         name: "Stockfish",
-        line: { color: "#A8781B", width: 2 },
+        line: { color: theme.colors.sf, width: 2 },
       },
       {
         x: payload.lc0.map(function (p) { return p.ply; }),
@@ -40,7 +42,7 @@
         type: "scatter",
         mode: "lines+markers",
         name: "LC0",
-        line: { color: "#35586F", width: 2 },
+        line: { color: theme.colors.lc0, width: 2 },
       },
       {
         x: [null, null],
@@ -48,7 +50,7 @@
         mode: "lines",
         showlegend: false,
         hoverinfo: "skip",
-        line: { color: "#C17F24", width: 2, dash: "dot" },
+        line: { color: theme.colors.highlight, width: 2, dash: "dot" },
       },
     ];
   }
@@ -57,7 +59,8 @@
     yaxis: { range: [0, 100], ticksuffix: "%", title: "Win-for-White" },
     xaxis: { title: "Ply" },
     paper_bgcolor: "rgba(0,0,0,0)",
-    plot_bgcolor: "rgba(237,224,196,0.2)",
+    plot_bgcolor: theme.colors.plotBg,
+    font: { color: theme.colors.text, family: theme.fonts.serif },
     height: 280,
     margin: { l: 55, r: 20, t: 20, b: 40 },
     legend: { orientation: "h", y: -0.25 },

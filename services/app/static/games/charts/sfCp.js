@@ -16,6 +16,7 @@
 
   var moveQualityColors =
     (window.WoodLeagueMoveAnnotations && window.WoodLeagueMoveAnnotations.colors) || {};
+  var theme = window.WoodLeagueChartTheme;
 
   /** Maximum absolute centipawn value treated as a forced-mate signal. */
   var MATE_THRESHOLD = 9000;
@@ -58,7 +59,7 @@
    */
   function buildColors() {
     return rawPoints.map(function (p) {
-      return moveQualityColors[p.cls] || "#C9B998";
+      return moveQualityColors[p.cls] || theme.colors.barDefault;
     });
   }
 
@@ -103,31 +104,24 @@
    *   Array of Plotly shape objects.
    */
   function buildShapes(perspective) {
-    var shapes = [];
-    if (perspective === "white") {
-      shapes.push({
+    var bottomFill = perspective === "white"
+      ? theme.colors.whiteAdvantage
+      : theme.colors.blackAdvantage;
+    var topFill = perspective === "white"
+      ? theme.colors.blackAdvantage
+      : theme.colors.whiteAdvantage;
+    return [
+      {
         type: "rect", xref: "paper", yref: "y",
         x0: 0, x1: 1, y0: -DISPLAY_CAP, y1: 0,
-        fillcolor: "rgba(255,255,255,0.98)", line: { width: 0 }, layer: "below",
-      });
-      shapes.push({
+        fillcolor: bottomFill, line: { width: 0 }, layer: "below",
+      },
+      {
         type: "rect", xref: "paper", yref: "y",
         x0: 0, x1: 1, y0: 0, y1: DISPLAY_CAP,
-        fillcolor: "rgba(26,26,26,0.85)", line: { width: 0 }, layer: "below",
-      });
-    } else {
-      shapes.push({
-        type: "rect", xref: "paper", yref: "y",
-        x0: 0, x1: 1, y0: -DISPLAY_CAP, y1: 0,
-        fillcolor: "rgba(26,26,26,0.85)", line: { width: 0 }, layer: "below",
-      });
-      shapes.push({
-        type: "rect", xref: "paper", yref: "y",
-        x0: 0, x1: 1, y0: 0, y1: DISPLAY_CAP,
-        fillcolor: "rgba(255,255,255,0.98)", line: { width: 0 }, layer: "below",
-      });
-    }
-    return shapes;
+        fillcolor: topFill, line: { width: 0 }, layer: "below",
+      },
+    ];
   }
 
   /**
@@ -166,24 +160,24 @@
    */
   function buildLayout(perspective) {
     var axisTitle = perspective === "white" ? "White Advantage →" : "← Black Advantage";
-    var monoFont = { size: 11, color: "#1C1C1C", family: "DM Mono,monospace" };
+    var monoFont = { size: 11, color: theme.colors.text, family: theme.fonts.mono };
     return {
       xaxis: { title: { text: "Ply", font: monoFont }, zeroline: false, showgrid: false, tickfont: monoFont },
       yaxis: {
         title: { text: axisTitle, font: monoFont },
-        zeroline: true, zerolinecolor: "#1A1A1A",
-        showgrid: true, gridcolor: "#EDE0C4",
+        zeroline: true, zerolinecolor: theme.colors.textBold,
+        showgrid: true, gridcolor: theme.colors.grid,
         tickfont: monoFont,
       },
       margin: { l: 95, r: 20, t: 50, b: 50 },
       height: chartHeight,
       paper_bgcolor: "rgba(0,0,0,0)",
-      plot_bgcolor: "rgba(237,224,196,0.2)",
-      font: { color: "#1C1C1C", family: "EB Garamond,serif" },
+      plot_bgcolor: theme.colors.plotBg,
+      font: { color: theme.colors.text, family: theme.fonts.serif },
       hovermode: "x unified",
       hoverlabel: {
-        bgcolor: "white", bordercolor: "#1A1A1A",
-        font: { color: "#1A1A1A", family: "DM Mono,monospace", size: 12 },
+        bgcolor: "white", bordercolor: theme.colors.textBold,
+        font: { color: theme.colors.textBold, family: theme.fonts.mono, size: 12 },
       },
       shapes: buildShapes(perspective),
       annotations: [{
@@ -191,7 +185,7 @@
         xref: "paper", yref: "paper",
         x: 0.5, y: 1.10, xanchor: "center",
         showarrow: false,
-        font: { size: 14, color: "#1A1A1A", family: "Georgia,serif" },
+        font: { size: 14, color: theme.colors.textBold, family: theme.fonts.title },
       }],
     };
   }
@@ -203,7 +197,7 @@
     mode: "lines",
     showlegend: false,
     hoverinfo: "skip",
-    line: { color: "#C17F24", width: 2, dash: "dot" },
+    line: { color: theme.colors.highlight, width: 2, dash: "dot" },
   };
 
   var currentPerspective = WoodLeagueAnalysis.getState().perspective;

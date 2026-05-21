@@ -22,12 +22,13 @@
 
   var chartHeight = Math.max(240, 160 + rawPayload.length * 4);
 
-  var WHITE_FILL = "rgba(255,255,255,0.98)";
-  var WHITE_LINE = "#F7F7F7";
-  var BLACK_FILL = "rgba(26,26,26,0.85)";
-  var BLACK_LINE = "#1A1A1A";
-  var DRAW_FILL = "rgba(139,58,42,0.50)";
-  var DRAW_LINE = "#8B3A2A";
+  var theme = window.WoodLeagueChartTheme;
+  var WHITE_FILL = theme.colors.whiteAdvantage;
+  var WHITE_LINE = theme.colors.whiteLine;
+  var BLACK_FILL = theme.colors.blackAdvantage;
+  var BLACK_LINE = theme.colors.blackLine;
+  var DRAW_FILL = theme.colors.wdlDraw;
+  var DRAW_LINE = theme.colors.wdlLoss;
 
   /**
    * Build the three Plotly stacked-area traces for the given perspective.
@@ -88,38 +89,38 @@
    *   Plotly layout object.
    */
   function buildLayout() {
-    var monoFont = { size: 11, color: "#1C1C1C", family: "DM Mono,monospace" };
+    var monoFont = { size: 11, color: theme.colors.text, family: theme.fonts.mono };
     return {
       xaxis: {
         title: { text: "Ply", font: monoFont },
-        zeroline: false, gridcolor: "#EDE0C4", tickfont: monoFont,
+        zeroline: false, gridcolor: theme.colors.grid, tickfont: monoFont,
       },
       yaxis: {
         title: { text: "Win / Draw / Loss (%)", font: monoFont },
         range: [0, 100], ticksuffix: "%",
-        gridcolor: "#EDE0C4", tickfont: monoFont,
+        gridcolor: theme.colors.grid, tickfont: monoFont,
       },
       legend: {
         orientation: "h", y: -0.22,
-        font: { color: "#1C1C1C", family: "EB Garamond,serif", size: 12 },
+        font: { color: theme.colors.text, family: theme.fonts.serif, size: 12 },
         bgcolor: "rgba(0,0,0,0)",
       },
       margin: { l: 55, r: 20, t: 56, b: 60 },
       height: chartHeight,
       paper_bgcolor: "rgba(0,0,0,0)",
-      plot_bgcolor: "rgba(237,224,196,0.2)",
-      font: { color: "#1C1C1C", family: "EB Garamond,serif" },
+      plot_bgcolor: theme.colors.plotBg,
+      font: { color: theme.colors.text, family: theme.fonts.serif },
       hovermode: "x unified",
       hoverlabel: {
-        bgcolor: "white", bordercolor: "#1A1A1A",
-        font: { color: "#1A1A1A", family: "DM Mono,monospace", size: 12 },
+        bgcolor: "white", bordercolor: theme.colors.textBold,
+        font: { color: theme.colors.textBold, family: theme.fonts.mono, size: 12 },
       },
       annotations: [{
         text: "LC0 Win / Draw / Loss",
         xref: "paper", yref: "paper",
         x: 0.5, y: 1.13, xanchor: "center",
         showarrow: false,
-        font: { size: 14, color: "#1A1A1A", family: "Georgia,serif" },
+        font: { size: 14, color: theme.colors.textBold, family: theme.fonts.title },
       }],
     };
   }
@@ -130,7 +131,7 @@
     mode: "lines",
     showlegend: false,
     hoverinfo: "skip",
-    line: { color: "#C17F24", width: 2, dash: "dot" },
+    line: { color: theme.colors.highlight, width: 2, dash: "dot" },
   };
 
   var currentPerspective = WoodLeagueAnalysis.getState().perspective;

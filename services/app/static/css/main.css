@@ -75,6 +75,58 @@
   --color-gold:       #D4A843;
   --color-sky:        #4A6E8A;
 
+  /* Chart + engine semantic tokens (single source of truth for analysis-page
+     charts and cards — also exposed to JS via charts/chartTheme.js). */
+  --color-chart-sf:               #A8781B;
+  --color-chart-lc0:              #35586F;
+  --color-chart-highlight:        #C17F24;
+  --color-chart-grid:             #EDE0C4;
+  --color-chart-bar-default:      #C9B998;
+  --color-chart-plot-bg:          rgba(237, 224, 196, 0.2);
+  --color-chart-white-advantage:  rgba(255, 255, 255, 0.98);
+  --color-chart-white-line:       #F7F7F7;
+  --color-chart-black-advantage:  rgba(26, 26, 26, 0.85);
+  --color-chart-black-line:       #1A1A1A;
+  --color-chart-text:             #1C1C1C;
+  --color-chart-text-bold:        #1A1A1A;
+
+  --color-wdl-win:    #5DA12A;
+  --color-wdl-draw:   rgba(139, 58, 42, 0.50);
+  --color-wdl-loss:   #8B3A2A;
+
+  /* LC0 card WDL bar palette (cards/_card_lc0.html — the per-side game-end
+     stacked bar, distinct from the chart's wdl_*_adj area). */
+  --color-card-wdl-win:   #5DA12A;
+  --color-card-wdl-draw:  #B0A070;
+  --color-card-wdl-loss:  #D63030;
+
+  /* Move classification palette — used by .move-annotation-*, the LC0 severity
+     bar, and the move-category chip strip. */
+  --color-class-brilliant:   #1BACA6;
+  --color-class-best:        #5DA12A;
+  --color-class-great:       #96BC4B;
+  --color-class-excellent:   #96BC4B;
+  --color-class-good:        #96BC4B;
+  --color-class-inaccuracy:  #F0C040;
+  --color-class-mistake:     #E08020;
+  --color-class-blunder:     #D63030;
+
+  /* LC0 draw-character palette. */
+  --color-draw-missed-win:     #D63030;
+  --color-draw-losing-blunder: #E08020;
+  --color-draw-risky:          #F0C040;
+  --color-draw-simplification: #5DA12A;
+
+  /* Stat-card structural colors (background, borders, title text, muted copy,
+     empty-bar placeholder). Used by _card_sf.html and _card_lc0.html. */
+  --color-card-bg:          #FFFFFF;
+  --color-card-border:      #D4C9A8;
+  --color-card-title:       #2C2416;
+  --color-card-subtitle:    #5A4A2A;
+  --color-card-muted:       #7A6A4A;
+  --color-card-tooltip-bg:  #FFFDF5;
+  --color-empty-bar:        #E8E0D0;
+
   --font-serif:   "EB Garamond",         "Cormorant Garamond", Georgia,  serif;
   --font-display: "Playfair Display SC", "Playfair Display",   Georgia,  serif;
   --font-mono:    "DM Mono",             "Courier New",        monospace;
