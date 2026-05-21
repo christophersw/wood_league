@@ -9,9 +9,6 @@ Description:
 Changelog:
     2026-05-21 (#188/A): Initial creation.
 """
-import pytest
-from rest_framework.exceptions import ValidationError
-
 from api.serializers import StockfishCompleteSerializer
 
 
@@ -68,3 +65,4 @@ def test_payload_partial_wdl_triple_rejected():
     payload = _minimal_payload(wdl_win=120)  # missing draw + loss
     s = StockfishCompleteSerializer(data=payload)
     assert not s.is_valid()
+    assert "wdl_win" in s.errors["moves"][0]

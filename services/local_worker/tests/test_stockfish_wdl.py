@@ -10,10 +10,13 @@ Changelog:
 """
 import chess
 import chess.engine
-from unittest.mock import MagicMock
 
 from local_worker.analysis.models import StockfishGameResult, StockfishMoveResult
-from local_worker.analysis.stockfish import _build_engine_opts, _build_move_result
+from local_worker.analysis.stockfish import (
+    _build_engine_opts,
+    _build_move_result,
+    build_stockfish_payload,
+)
 
 
 def test_build_engine_opts_enables_uci_showwdl_by_default():
@@ -94,9 +97,6 @@ def test_extract_arrows_and_pvs_returns_wdl_candidates():
     assert wdl_triples[0] == (120, 850, 30)
 
 
-from local_worker.analysis.stockfish import build_stockfish_payload
-
-
 def test_build_stockfish_payload_emits_wdl_and_npv():
     """build_stockfish_payload includes WDL triples and normalize_to_pawn_value."""
     move = StockfishMoveResult(
@@ -121,3 +121,13 @@ def test_build_stockfish_payload_npv_nullable():
     result = StockfishGameResult(engine_depth=20, moves=[])
     payload = build_stockfish_payload(result, worker_id="w-1")
     assert payload["normalize_to_pawn_value"] is None
+
+
+def test_wdl_triple_mover_swaps_for_black_mover():
+    """Pins the W<->L swap that #156 (lc0 cp_equiv frame bug) flagged as a recurring hazard."""
+    from local_worker.analysis.stockfish import _wdl_triple_mover
+
+    povwdl = chess.engine.PovWdl(chess.engine.Wdl(200, 700, 100), chess.WHITE)
+    info = {"wdl": povwdl}
+    assert _wdl_triple_mover(info, chess.BLACK) == (100, 700, 200)
+    assert _wdl_triple_mover(info, chess.WHITE) == (200, 700, 100)
