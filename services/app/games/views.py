@@ -196,6 +196,9 @@ def _build_wdl_json(data) -> str:
 
     Returns:
         JSON string of [{ply, wdl_win, wdl_draw, wdl_loss, san, classification}] or "null".
+        WDL values are in White's frame (sourced from ``wdl_*_adj`` columns) so
+        the chart curve stays consistent across plies. Raw mover-frame triples
+        flip perspective every ply and would produce a sawtooth.
     """
     if not data.lc0_moves:
         return "null"
