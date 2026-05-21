@@ -62,6 +62,25 @@ def _bind_worker(inst: AnalysisInstance) -> None:
         inst.save(update_fields=["worker_id"])
 
 
+def _aware(dt):
+    """Return a TZ-aware datetime; coerce naive inputs to current TZ.
+
+    Defensive against legacy DB rows that pre-date ``USE_TZ=True``;
+    comparing a naive datetime to a TZ-aware one raises ``TypeError``.
+
+    Parameters:
+        dt: A ``datetime`` or ``None``.
+
+    Returns:
+        A TZ-aware ``datetime``, or ``None`` if ``dt`` was ``None``.
+    """
+    if dt is None:
+        return None
+    if timezone.is_naive(dt):
+        return timezone.make_aware(dt, timezone.get_current_timezone())
+    return dt
+
+
 def _is_drained(inst: AnalysisInstance, stale_cutoff) -> bool:
     """Return True when the instance's batch is drained.
 
@@ -74,7 +93,7 @@ def _is_drained(inst: AnalysisInstance, stale_cutoff) -> bool:
     if hb is None:
         # Worker was bound but its heartbeat row is gone → it exited.
         return True
-    if hb.last_seen < stale_cutoff:
+    if _aware(hb.last_seen) < stale_cutoff:
         return True
     return (hb.batch_total is not None
             and hb.batch_processed >= hb.batch_total)
@@ -226,7 +245,7 @@ def _reap_decision(inst: AnalysisInstance, now, stale_cutoff) -> str | None:
         return "drained"
     if (not inst.worker_id
             and inst.launched_at is not None
-            and inst.launched_at < stale_cutoff):
+            and _aware(inst.launched_at) < stale_cutoff):
         return "never_registered"
     return None
 
