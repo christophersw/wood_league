@@ -188,7 +188,6 @@ class TestLc0MoveAnalysisCalibrationColumns:
             wdl_win=500,
             wdl_draw=300,
             wdl_loss=200,
-            cp_equiv=10.0,
             best_move="e4",
             wdl_win_adj=480,
             wdl_draw_adj=260,

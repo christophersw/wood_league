@@ -9,6 +9,7 @@ Changelog:
     2026-05-08: Added file header to meet documentation standards
     2026-05-18: Add AnalysisSchedule + AnalysisInstance models (issue #155).
     2026-05-18: Add RecurringAnalysisSchedule + AnalysisSchedule.recurring_rule (#155 B).
+    2026-05-21: Add WDL columns + normalize_to_pawn_value (fresh-db reset, issue #188); restore arrow_score_1/2/3 (scope correction — Phase D).
 """
 from django.db import models
 
@@ -31,6 +32,9 @@ class GameAnalysis(models.Model):
     black_blunders = models.IntegerField(null=True, blank=True)
     black_mistakes = models.IntegerField(null=True, blank=True)
     black_inaccuracies = models.IntegerField(null=True, blank=True)
+    # #188 SF NormalizeToPawnValue captured at analyse time, for
+    # reproducibility across SF builds. Nullable for older builds.
+    normalize_to_pawn_value = models.IntegerField(null=True, blank=True)
 
     class Meta:
         db_table = "game_analysis"
@@ -60,7 +64,7 @@ class MoveAnalysis(models.Model):
     """Stockfish per-move analysis — raw worker output + app-derived fields (#161 F).
 
     Raw fields (worker → app, untouched): cp_eval, mate_in, arrow_uci_1/2/3,
-    arrow_score_1/2/3, pv_san_1/2/3, san, fen, ply.
+    arrow_score_1/2/3, pv_san_1/2/3, wdl_(win|draw|loss)(_1|_2|_3)?, san, fen, ply.
     Derived fields (computed by ``derivation.stockfish``): cpl,
     move_win_delta, classification, best_move.
     """
@@ -91,6 +95,28 @@ class MoveAnalysis(models.Model):
     pv_san_1 = models.TextField(null=True, blank=True)
     pv_san_2 = models.TextField(null=True, blank=True)
     pv_san_3 = models.TextField(null=True, blank=True)
+    # ── #188 SF native WDL (raw + adj) ──────────────────────────────────
+    # Raw played-move triple, mover frame, milli-units. Nullable for older
+    # SF builds without UCI_ShowWDL.
+    wdl_win = models.IntegerField(null=True, blank=True)
+    wdl_draw = models.IntegerField(null=True, blank=True)
+    wdl_loss = models.IntegerField(null=True, blank=True)
+    # Raw per-candidate triples (top 3 MultiPV); fully nullable per line.
+    wdl_win_1 = models.IntegerField(null=True, blank=True)
+    wdl_draw_1 = models.IntegerField(null=True, blank=True)
+    wdl_loss_1 = models.IntegerField(null=True, blank=True)
+    wdl_win_2 = models.IntegerField(null=True, blank=True)
+    wdl_draw_2 = models.IntegerField(null=True, blank=True)
+    wdl_loss_2 = models.IntegerField(null=True, blank=True)
+    wdl_win_3 = models.IntegerField(null=True, blank=True)
+    wdl_draw_3 = models.IntegerField(null=True, blank=True)
+    wdl_loss_3 = models.IntegerField(null=True, blank=True)
+    # Derived: White-frame rescaled WDL triple. SF rescale is identity
+    # (frame-mirror only); columns exist for chart symmetry with Lc0.
+    # Populated by derivation.stockfish in the upcoming derivation rewrite.
+    wdl_win_adj = models.IntegerField(null=True, blank=True)
+    wdl_draw_adj = models.IntegerField(null=True, blank=True)
+    wdl_loss_adj = models.IntegerField(null=True, blank=True)
 
     class Meta:
         db_table = "move_analysis"

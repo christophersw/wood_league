@@ -10,6 +10,7 @@ Changelog:
     2026-05-08: Added file header to meet documentation standards
     2026-05-11: Add time metadata columns to Game (issue #24).
     2026-05-19: Add WDL calibration columns to Lc0MoveAnalysis and Lc0GameAnalysis; remove stale classification column from Lc0MoveAnalysis (issue #159).
+    2026-05-21: Drop arrow_score_1/2/3 from MoveAnalysis; add WDL columns + normalize_to_pawn_value (fresh-db reset, issue #188).
 """
 from __future__ import annotations
 
@@ -144,6 +145,8 @@ class GameAnalysis(Base):
     black_blunders: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     black_mistakes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     black_inaccuracies: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # #188 SF NormalizeToPawnValue captured at analyse time.
+    normalize_to_pawn_value: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
     game: Mapped[Game] = relationship(back_populates="analysis")
     moves: Mapped[list[MoveAnalysis]] = relationship(
@@ -173,7 +176,6 @@ class MoveAnalysis(Base):
     arrow_uci_1: Mapped[str] = mapped_column(String(8), default="")
     arrow_uci_2: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
     arrow_uci_3: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
-    # Raw mover-frame Win% per candidate (kept verbatim from engine output).
     arrow_score_1: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     arrow_score_2: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     arrow_score_3: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
@@ -181,6 +183,25 @@ class MoveAnalysis(Base):
     pv_san_1: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     pv_san_2: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     pv_san_3: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # ── #188 SF native WDL (raw + adj) ──────────────────────────────────
+    # Raw played-move triple, mover frame, milli-units.
+    wdl_win: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    wdl_draw: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    wdl_loss: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # Raw per-candidate triples (top 3 MultiPV); fully nullable per line.
+    wdl_win_1: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    wdl_draw_1: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    wdl_loss_1: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    wdl_win_2: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    wdl_draw_2: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    wdl_loss_2: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    wdl_win_3: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    wdl_draw_3: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    wdl_loss_3: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # Derived: White-frame rescaled WDL triple.
+    wdl_win_adj: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    wdl_draw_adj: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    wdl_loss_adj: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
     analysis: Mapped[GameAnalysis] = relationship(back_populates="moves")
 
