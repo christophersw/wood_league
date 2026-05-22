@@ -218,6 +218,11 @@ ANALYSIS_DEPTH = config("ANALYSIS_DEPTH", default=20, cast=int)
 LC0_NODES = config("LC0_NODES", default=25000, cast=int)
 LC0_NETWORK = os.environ.get("LC0_NETWORK", "")
 
+# Auto-enqueue toggles (issue #201): env-only, opt-in, both default off.
+# Set on the Railway `wood_league_cron` service to enable per engine at runtime.
+AUTO_ENQUEUE_STOCKFISH = config("AUTO_ENQUEUE_STOCKFISH", default=False, cast=bool)
+AUTO_ENQUEUE_LC0 = config("AUTO_ENQUEUE_LC0", default=False, cast=bool)
+
 # Lc0 WDL calibration constants (issue #159)
 #
 # WL_LC0_FALLBACK_ELO: Elo used when one or both player ratings are missing.
