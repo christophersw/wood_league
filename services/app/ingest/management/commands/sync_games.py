@@ -3,8 +3,8 @@ Title: sync_games.py — Django management command for Chess.com game sync
 Description:
     Acquires a Postgres advisory lock (cron-overlap protection), runs the
     existing Chess.com sync subprocess (run_sync.py), then auto-enqueues
-    AnalysisJobs for newly-ingested games per SiteSettings toggles. After
-    the subprocess completes, parses %clk annotations and bulk-creates
+    AnalysisJobs for games lacking analysis per env toggles. After the
+    subprocess completes, parses %clk annotations and bulk-creates
     GameMoveTime rows for all games with non-empty PGN and a known
     time_class (idempotent; deletes and rewrites on re-ingest).
 
@@ -12,6 +12,7 @@ Changelog:
     2026-05-08: Added file header to meet documentation standards
     2026-05-10: Add advisory lock + auto-enqueue + SystemEvent (Task D1).
     2026-05-11: Post-sync GameMoveTime population (issue #24, Task 7).
+    2026-05-22: Switch to env-toggle + lacking-job sweep enqueue (#201).
 """
 from __future__ import annotations
 
@@ -24,10 +25,10 @@ from pathlib import Path
 from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.db import connection
-from django.utils import timezone
+from django.db.models import Exists, OuterRef, Q
 
-from analysis.services.enqueue import enqueue_analysis_job
-from core.models import SiteSettings
+from analysis.models import AnalysisJob
+from analysis.services.enqueue import _ACTIVE_STATUSES, enqueue_analysis_job
 from games.clock_parser import parse_move_times
 from games.models import Game, GameMoveTime
 from games.opening_resolver import resolve_opening_id
@@ -227,18 +228,16 @@ class Command(BaseCommand):
             )
             return
 
-        started_at = timezone.now()
         try:
-            self._do_sync(options, started_at)
+            self._do_sync(options)
         finally:
             _release_lock()
 
-    def _do_sync(self, options: dict, started_at) -> None:
+    def _do_sync(self, options: dict) -> None:
         """Inner body — keeps lock release in handle().
 
         Args:
             options: Parsed command options dict.
-            started_at: datetime when this sync run began (for new-game detection).
 
         Returns:
             None
@@ -289,21 +288,15 @@ class Command(BaseCommand):
             )
             return
 
-        # Auto-enqueue newly ingested games per SiteSettings toggles.
-        site = SiteSettings.get_solo()
+        # Auto-enqueue games still needing analysis, per env toggles (issue #201).
+        # Detection is by "lacking a satisfying job", not by created_at — the
+        # ingest subprocess writes via the legacy SQLAlchemy model which never
+        # stamps created_at.
         sf_count = lc_count = 0
-        new_games = Game.objects.filter(created_at__gte=started_at)
-        for game in new_games:
-            if site.auto_enqueue_stockfish:
-                if enqueue_analysis_job(
-                    game=game, engine="stockfish", depth=_stockfish_depth()
-                ):
-                    sf_count += 1
-            if site.auto_enqueue_lc0:
-                if enqueue_analysis_job(
-                    game=game, engine="lc0", depth=_lc0_nodes()
-                ):
-                    lc_count += 1
+        if settings.AUTO_ENQUEUE_STOCKFISH:
+            sf_count = self._sweep_enqueue("stockfish", _stockfish_depth())
+        if settings.AUTO_ENQUEUE_LC0:
+            lc_count = self._sweep_enqueue("lc0", _lc0_nodes())
 
         # Issue #24: populate per-move clock data for games written by the
         # subprocess. We pass `since=None` for now (full sweep is cheap and
@@ -319,7 +312,6 @@ class Command(BaseCommand):
             duration_seconds=elapsed,
             details=(
                 f"members={','.join(usernames)}; "
-                f"new_games={new_games.count()}; "
                 f"sf_enqueued={sf_count}; lc0_enqueued={lc_count}"
             ),
         )
@@ -327,6 +319,38 @@ class Command(BaseCommand):
             f"Sync complete in {elapsed:.1f}s — "
             f"auto-enqueued: stockfish={sf_count} lc0={lc_count}"
         )
+
+    def _sweep_enqueue(self, engine: str, depth: int) -> int:
+        """Enqueue every PGN game lacking a satisfying AnalysisJob for an engine.
+
+        A game is a candidate when it has no active job (pending/running/
+        submitted) and no completed job at depth >= the requested depth. Each
+        candidate is run through enqueue_analysis_job, which re-checks dedup
+        race-safely and skips 0-move PGNs.
+
+        Args:
+            engine: Engine name, 'stockfish' or 'lc0'.
+            depth: Stockfish depth or Lc0 node budget for new jobs and the
+                completed-job sufficiency threshold.
+
+        Returns:
+            int: Number of AnalysisJob rows created.
+
+        Side effects:
+            Creates AnalysisJob rows.
+        """
+        satisfying = AnalysisJob.objects.filter(
+            game=OuterRef("pk"), engine=engine,
+        ).filter(
+            Q(status__in=_ACTIVE_STATUSES)
+            | Q(status=AnalysisJob.STATUS_COMPLETED, depth__gte=depth)
+        )
+        candidates = Game.objects.filter(pgn__gt="").exclude(Exists(satisfying))
+        count = 0
+        for game in candidates.iterator():
+            if enqueue_analysis_job(game=game, engine=engine, depth=depth):
+                count += 1
+        return count
 
     def _run_move_time_post_step(self) -> None:
         """Populate GameMoveTime rows post-sync, isolating failures.
