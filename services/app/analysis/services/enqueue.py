@@ -29,6 +29,8 @@ log = logging.getLogger(__name__)
 # Statuses that indicate a job is actively being processed or waiting to run.
 # A job in any of these states blocks creation of a duplicate for the same
 # game+engine pair.
+# Also imported by ingest/management/commands/sync_games.py to build the
+# auto-enqueue sweep's Exists() subquery — keep this name stable.
 _ACTIVE_STATUSES = (
     AnalysisJob.STATUS_PENDING,
     AnalysisJob.STATUS_RUNNING,

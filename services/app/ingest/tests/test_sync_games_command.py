@@ -139,6 +139,61 @@ class SyncGamesCommandTests(TestCase):
             1,
         )
 
+    @override_settings(AUTO_ENQUEUE_STOCKFISH=True, AUTO_ENQUEUE_LC0=False)
+    def test_sweep_reenqueues_completed_below_depth_only(self):
+        """Completed job below requested depth -> re-enqueue; at/above depth -> skip."""
+        suffix = uuid.uuid4().hex[:8]
+        _make_player(f"alice-{suffix}")
+
+        def fake_run(*args, **kwargs):
+            shallow = Game.objects.create(
+                id=f"d1-shallow-{suffix}", played_at=timezone.now(),
+                time_control="600", pgn="1. e4 *",
+            )
+            deep = Game.objects.create(
+                id=f"d1-deep-{suffix}", played_at=timezone.now(),
+                time_control="600", pgn="1. d4 *",
+            )
+            # Shallow: completed at depth 5 (< default ANALYSIS_DEPTH=20) -> new job.
+            AnalysisJob.objects.create(
+                game=shallow, engine="stockfish",
+                status=AnalysisJob.STATUS_COMPLETED, depth=5,
+            )
+            # Deep: completed at depth 99 (>= 20) -> no new job.
+            AnalysisJob.objects.create(
+                game=deep, engine="stockfish",
+                status=AnalysisJob.STATUS_COMPLETED, depth=99,
+            )
+            return MagicMock(returncode=0)
+
+        with patch(
+            "ingest.management.commands.sync_games.subprocess.run",
+            side_effect=fake_run,
+        ):
+            call_command("sync_games", f"alice-{suffix}", stdout=StringIO())
+
+        # Shallow gained a new pending job (now 2 rows total for it).
+        self.assertEqual(
+            AnalysisJob.objects.filter(
+                engine="stockfish", game__id=f"d1-shallow-{suffix}"
+            ).count(),
+            2,
+        )
+        self.assertEqual(
+            AnalysisJob.objects.filter(
+                engine="stockfish", game__id=f"d1-shallow-{suffix}",
+                status=AnalysisJob.STATUS_PENDING,
+            ).count(),
+            1,
+        )
+        # Deep stayed at exactly 1 (the completed job); no new job created.
+        self.assertEqual(
+            AnalysisJob.objects.filter(
+                engine="stockfish", game__id=f"d1-deep-{suffix}"
+            ).count(),
+            1,
+        )
+
     def test_subprocess_runs_with_pythonpath_set(self):
         """run_sync.py imports `from app.config import ...` and needs services/app on PYTHONPATH."""
         suffix = uuid.uuid4().hex[:8]

@@ -183,7 +183,7 @@ def _populate_opening_ids_for_recent_games(*, since, stdout) -> int:
 
 
 class Command(BaseCommand):
-    """Sync Chess.com games (advisory-locked) and auto-enqueue per SiteSettings."""
+    """Sync Chess.com games (advisory-locked) and auto-enqueue per env toggles."""
 
     help = "Sync games from Chess.com for all (or specified) club members."
 
