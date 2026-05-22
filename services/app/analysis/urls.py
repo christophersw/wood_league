@@ -5,6 +5,7 @@ Description:
     per-engine queues management pages.
 
 Changelog:
+    2026-05-22 (#200): Add analysis/ → overview; keep schedule/ alias.
     2026-05-18: Add /schedule/ routes (#155 B).
     2026-05-14 (#106): Add /dashboard/ + 6 HTMX partial routes; convert
         /diagnostics/ to a redirect to /dashboard/.
@@ -37,8 +38,12 @@ urlpatterns = [
     path("dashboard/failures/", views_dashboard.dashboard_failures, name="dash_failures"),
     path("dashboard/logs/", views_dashboard.dashboard_logs, name="dash_logs"),
 
+    # Combined analysis page (dashboard + scheduling) — #200.
+    path("analysis/", views_schedule.overview, name="overview"),
+
     # Scheduling admin — recurring rules, one-off runs, HTMX preview.
-    path("schedule/", views_schedule.scheduling_page, name="scheduling"),
+    # schedule/ is kept as a backwards-compatible alias until Task 4 removes it.
+    path("schedule/", views_schedule.overview, name="scheduling"),
     path("schedule/rule/new/", views_schedule.rule_create,
          name="rule_create"),
     path("schedule/rule/<int:pk>/edit/", views_schedule.rule_edit,

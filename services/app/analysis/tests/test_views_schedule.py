@@ -4,6 +4,8 @@ Description:
     _admin_login_required gating; rule CRUD/toggle; run-once; re-run;
     tables render; HTMX preview ok + error.
 Changelog:
+    2026-05-22 (#200): Repoint gating + table tests to overview; add
+        test_run_once_redirects_to_overview and OverviewPageTests.
     2026-05-18: Initial — issue #155 Sub-project B.
 """
 from __future__ import annotations
@@ -31,19 +33,19 @@ class SchedulingGatingTests(TestCase):
 
     def test_anonymous_redirected(self):
         """Anonymous GET → login redirect (302)."""
-        resp = self.client.get(reverse("analysis:scheduling"))
+        resp = self.client.get(reverse("analysis:overview"))
         self.assertEqual(resp.status_code, 302)
 
     def test_non_admin_forbidden(self):
         """Authenticated non-admin → not 200 (403/redirect)."""
         self.client.force_login(_user("player"))
-        resp = self.client.get(reverse("analysis:scheduling"))
+        resp = self.client.get(reverse("analysis:overview"))
         self.assertNotEqual(resp.status_code, 200)
 
     def test_admin_ok(self):
         """Admin GET → 200 and the page renders."""
         self.client.force_login(_user("admin"))
-        resp = self.client.get(reverse("analysis:scheduling"))
+        resp = self.client.get(reverse("analysis:overview"))
         self.assertEqual(resp.status_code, 200)
 
 
@@ -138,7 +140,7 @@ class SchedulingActionsTests(TestCase):
             schedule=sched, status=AnalysisInstance.STATUS_DESTROYED,
             vast_instance_id="42", offer_dph=0.9)
         body = self.client.get(
-            reverse("analysis:scheduling")).content.decode()
+            reverse("analysis:overview")).content.decode()
         self.assertIn("wk", body)
         self.assertIn("42", body)
 
@@ -167,3 +169,42 @@ class SchedulingActionsTests(TestCase):
             "crontab": "bogus", "timezone": "UTC"})
         self.assertEqual(resp.status_code, 200)
         self.assertIn("Invalid", resp.content.decode())
+
+    def test_run_once_redirects_to_overview(self):
+        """Run-once 302s back to the combined overview page."""
+        resp = self.client.post(reverse("analysis:run_once"))
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(resp.url, reverse("analysis:overview"))
+
+    def test_rerun_redirects_to_overview(self):
+        """Re-run 302s back to the combined overview page."""
+        src = AnalysisSchedule.objects.create(
+            status=AnalysisSchedule.STATUS_FAILED, max_jobs=10)
+        resp = self.client.post(reverse("analysis:rerun", args=[src.pk]))
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(resp.url, reverse("analysis:overview"))
+
+
+class OverviewPageTests(TestCase):
+    """The combined /admin/analysis/ page renders both halves."""
+
+    def setUp(self):
+        self.client.force_login(_user("admin"))
+
+    def test_overview_renders_dashboard_and_schedule_sections(self):
+        """Page shows dashboard HTMX wrappers + scheduling sections."""
+        body = self.client.get(reverse("analysis:overview")).content.decode()
+        for wrapper_id in (
+            "dash-banner", "dash-workers", "dash-recent",
+            "dash-queues", "dash-throughput", "dash-failures", "dash-logs",
+        ):
+            self.assertIn(f'id="{wrapper_id}"', body)
+        self.assertIn("Recurring rules", body)
+        self.assertIn("Future planned runs", body)
+        self.assertIn("Recent runs", body)
+        self.assertIn("Run once now", body)
+
+    def test_overview_uses_even_grid_rows(self):
+        """The 50/50 rows use the panel-grid--even modifier."""
+        body = self.client.get(reverse("analysis:overview")).content.decode()
+        self.assertIn("panel-grid--even", body)
