@@ -172,3 +172,39 @@ class SyncGamesCommandTests(TestCase):
         self.assertEqual(len(rows), 2)
         self.assertEqual(rows[0].time_spent_ms, 0)
         self.assertEqual(rows[1].time_spent_ms, 2_000)
+
+    def test_full_flag_passed_to_subprocess(self):
+        """--full must be forwarded to the run_sync.py subprocess command."""
+        suffix = uuid.uuid4().hex[:6]
+        _make_player(f"alice-{suffix}")
+        captured = {}
+
+        def fake_run(*args, **kwargs):
+            captured["args"] = args[0] if args else kwargs.get("args")
+            return MagicMock(returncode=0)
+
+        with patch(
+            "ingest.management.commands.sync_games.subprocess.run",
+            side_effect=fake_run,
+        ):
+            call_command("sync_games", f"alice-{suffix}", "--full", stdout=StringIO())
+
+        assert "--full" in captured["args"], captured["args"]
+
+    def test_full_flag_absent_by_default(self):
+        """Without --full the subprocess command must not contain it."""
+        suffix = uuid.uuid4().hex[:6]
+        _make_player(f"alice-{suffix}")
+        captured = {}
+
+        def fake_run(*args, **kwargs):
+            captured["args"] = args[0] if args else kwargs.get("args")
+            return MagicMock(returncode=0)
+
+        with patch(
+            "ingest.management.commands.sync_games.subprocess.run",
+            side_effect=fake_run,
+        ):
+            call_command("sync_games", f"alice-{suffix}", stdout=StringIO())
+
+        assert "--full" not in captured["args"], captured["args"]

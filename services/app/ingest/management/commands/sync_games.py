@@ -12,6 +12,7 @@ Changelog:
     2026-05-08: Added file header to meet documentation standards
     2026-05-10: Add advisory lock + auto-enqueue + SystemEvent (Task D1).
     2026-05-11: Post-sync GameMoveTime population (issue #24, Task 7).
+    2026-05-22: Drop dead --days; add --full to force full re-ingest (#204).
 """
 from __future__ import annotations
 
@@ -201,10 +202,12 @@ class Command(BaseCommand):
             help="Chess.com usernames to sync. Defaults to all club members.",
         )
         parser.add_argument(
-            "--days",
-            type=int,
-            default=None,
-            help="Only sync archives from the last N days.",
+            "--full",
+            action="store_true",
+            help=(
+                "Ignore the per-player watermark and re-ingest all in-scope "
+                "archives (forced full re-sync)."
+            ),
         )
 
     def handle(self, *args, **options):
@@ -268,8 +271,8 @@ class Command(BaseCommand):
         # run_sync.py accepts `--usernames=a,b,c` (single comma-joined flag),
         # NOT positional args. Always pass via the flag.
         cmd = [sys.executable, str(_SCRIPT), "--usernames", ",".join(usernames)]
-        if options["days"]:
-            cmd += ["--days", str(options["days"])]
+        if options["full"]:
+            cmd += ["--full"]
         # run_sync.py uses `from app.config import get_settings`, so the
         # parent of the `app` package (services/app/) must be on PYTHONPATH.
         sync_env = {**os.environ, "PYTHONPATH": str(_SCRIPT.parents[2])}
