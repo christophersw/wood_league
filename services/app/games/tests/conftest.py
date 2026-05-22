@@ -146,13 +146,14 @@ def _make_sf_analysis(game, with_derived=True):
         black_inaccuracies=2,
     )
     moves_data = [
-        # (ply, san, cp_eval, move_win_delta, cpl, classification)
-        (1, "e4",  30.0,  -5.0,   5.0,  "best"),
-        (2, "e5",  -25.0, -3.0,   3.0,  "best"),
-        (3, "Nf3",  40.0, -2.0,   2.0,  "great"),
-        (4, "Nc6", -35.0, -8.0,   8.0,  "inaccuracy"),
+        # (ply, san, cp_eval, mwd, cpl, cls, wdl_adj triple, arrow_uci, best_move)
+        (1, "e4",  30.0,  -5.0, 5.0, "best",       (520, 450, 30), "e2e4", "e2e4"),
+        (2, "e5",  -25.0, -3.0, 3.0, "best",       (480, 480, 40), "e7e5", "e7e5"),
+        (3, "Nf3",  40.0, -2.0, 2.0, "great",      (530, 440, 30), "g1f3", "e7e5"),
+        (4, "Nc6", -35.0, -8.0, 8.0, "inaccuracy", (470, 480, 50), "b8c6", "e7e5"),
     ]
-    for ply, san, cp_eval, mwd, cpl_val, cls in moves_data:
+    for ply, san, cp_eval, mwd, cpl_val, cls, wdl_adj, arrow_uci, best in moves_data:
+        derived_win, derived_draw, derived_loss = wdl_adj if with_derived else (None, None, None)
         MoveAnalysis.objects.create(
             analysis=ga,
             ply=ply,
@@ -163,9 +164,13 @@ def _make_sf_analysis(game, with_derived=True):
             cpl=cpl_val if with_derived else None,
             move_win_delta=mwd if with_derived else None,
             classification=cls if with_derived else None,
-            arrow_uci_1="e2e4" if ply == 1 else "e7e5" if ply == 2 else "g1f3" if ply == 3 else "b8c6",
-            best_move="e2e4" if ply == 1 else "e7e5",
+            arrow_uci_1=arrow_uci,
+            best_move=best,
             pv_san_1=san,
+            # #188: White-frame WDL adj for the symmetric Win% chart.
+            wdl_win_adj=derived_win,
+            wdl_draw_adj=derived_draw,
+            wdl_loss_adj=derived_loss,
         )
     return ga
 
