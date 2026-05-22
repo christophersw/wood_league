@@ -37,6 +37,7 @@ class SyncStats:
     inserted: int = 0
     updated: int = 0
     archives_scanned: int = 0
+    archives_skipped: int = 0
 
 
 SyncProgressCallback = Callable[[str, int, int, SyncStats], None]
@@ -144,6 +145,34 @@ class ChessComSyncService:
             .join(GameParticipant, GameParticipant.game_id == Game.id)
             .where(GameParticipant.player_id == player.id)
         )
+
+    def _select_archives(
+        self, all_archives: list[str], watermark: datetime | None, full: bool
+    ) -> tuple[list[str], int]:
+        """Choose which archives to fetch and count how many are skipped.
+
+        When the player has a watermark and full is False, only archives at or
+        after the watermark's month are fetched (older months hold only
+        already-loaded games). Otherwise the existing ingest_month_limit scope
+        applies — the first-sync backfill depth for new players, and the full
+        re-ingest scope when full is True.
+
+        Args:
+            all_archives: Every archive URL Chess.com returned for the player.
+            watermark: The player's latest game datetime, or None.
+            full: When True, ignore the watermark and use the month-limit scope.
+
+        Returns:
+            tuple[list[str], int]: (archives to fetch, count skipped).
+        """
+        if watermark is not None and not full:
+            fetched = [
+                url for url in all_archives
+                if self._archive_in_watermark_scope(url, watermark)
+            ]
+        else:
+            fetched = [url for url in all_archives if self._archive_in_scope(url)]
+        return fetched, len(all_archives) - len(fetched)
 
     def sync_many(self, usernames: list[str]) -> list[SyncStats]:
         """Sync multiple players and return statistics for each."""

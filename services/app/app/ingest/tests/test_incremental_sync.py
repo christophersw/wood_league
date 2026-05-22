@@ -15,7 +15,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from unittest.mock import MagicMock
 
-from app.ingest.sync_service import ChessComSyncService
+from app.ingest.sync_service import ChessComSyncService, SyncStats
 
 
 def test_to_epoch_naive_treated_as_utc() -> None:
@@ -90,3 +90,46 @@ def test_player_watermark_none_when_no_games() -> None:
     session = MagicMock(name="session")
     session.scalar.return_value = None
     assert service._player_watermark(session, MagicMock(id=7)) is None
+
+
+def _service_with_limit(month_limit: int) -> ChessComSyncService:
+    """Build a service shell with a stubbed settings object (no DB/network)."""
+    service = ChessComSyncService.__new__(ChessComSyncService)
+    service._settings = MagicMock(ingest_month_limit=month_limit)
+    return service
+
+
+_ALL_ARCHIVES = [f"{_BASE}/2024/04", f"{_BASE}/2024/05", f"{_BASE}/2024/06", f"{_BASE}/2024/07"]
+
+
+def test_syncstats_archives_skipped_defaults_zero() -> None:
+    """SyncStats grows an archives_skipped field defaulting to 0."""
+    assert SyncStats(username="x").archives_skipped == 0
+
+
+def test_select_archives_watermark_drops_older_months() -> None:
+    """With a watermark, months before the watermark month are skipped."""
+    service = _service_with_limit(24)
+    fetched, skipped = service._select_archives(
+        _ALL_ARCHIVES, datetime(2024, 6, 1, tzinfo=UTC), full=False
+    )
+    assert fetched == [f"{_BASE}/2024/06", f"{_BASE}/2024/07"]
+    assert skipped == 2
+
+
+def test_select_archives_full_ignores_watermark() -> None:
+    """full=True ignores the watermark and uses the month-limit scope."""
+    service = _service_with_limit(0)  # 0 = unlimited in _archive_in_scope
+    fetched, skipped = service._select_archives(
+        _ALL_ARCHIVES, datetime(2024, 6, 1, tzinfo=UTC), full=True
+    )
+    assert fetched == _ALL_ARCHIVES
+    assert skipped == 0
+
+
+def test_select_archives_no_watermark_uses_month_limit() -> None:
+    """A new player (no watermark) falls back to the month-limit scope."""
+    service = _service_with_limit(0)
+    fetched, skipped = service._select_archives(_ALL_ARCHIVES, None, full=False)
+    assert fetched == _ALL_ARCHIVES
+    assert skipped == 0
