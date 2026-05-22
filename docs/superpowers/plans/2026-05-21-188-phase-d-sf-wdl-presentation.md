@@ -38,12 +38,12 @@
 
 **Modified:**
 - `services/app/games/chart_data.py::winpct_payload` — drop SF sigmoid branch.
-- `services/app/analysis/derivation/stockfish.py` — remove `_cp_from_win_pct`, `_gap_from_arrow_scores`, `_WIN_PCT_K`. Fallback path classifier gap becomes `None` (which `classify_sf_move` already handles → "Best" floor).
-- `services/local_worker/local_worker/analysis/stockfish.py::_extract_arrows_and_pvs` — drop sigmoid call, return WDL triples only (already returns them post-Phase-A — this just deletes the now-unused `arrow_scores` channel).
-- `services/local_worker/local_worker/analysis/models.py` — drop `arrow_score_*` from `StockfishMoveResult`.
-- `services/app/api/serializers.py::StockfishMoveSerializer` — drop `arrow_score_*` fields and add them to `_FORBIDDEN_PER_MOVE`.
-- `services/app/analysis/derivation/stockfish.py` + `services/app/analysis/services/jobs.py` — stop passing `arrow_score_*` through.
-- `services/app/analysis/migrations/00YY_drop_arrow_scores.py` — drop the three columns from `MoveAnalysis`.
+- `services/app/analysis/derivation/stockfish.py` — switch the classifier's `second_best_gap` to a native cp subtraction of the stored candidate cps (`arrow_cp_1 - arrow_cp_2`, mover frame); then delete `_cp_from_win_pct`, `_gap_from_arrow_scores`, `_WIN_PCT_K`.
+- `services/local_worker/local_worker/analysis/stockfish.py::_extract_arrows_and_pvs` — return candidate white-frame cp (already computed as `pv_cp_white`) + drop the sigmoid `arrow_scores` channel.
+- `services/local_worker/local_worker/analysis/models.py` — `StockfishMoveResult`: add `arrow_cp_1/2/3`, drop `arrow_score_*`.
+- `services/app/api/serializers.py::StockfishMoveSerializer` — add `arrow_cp_1/2/3` (nullable); drop `arrow_score_*` fields + add them to `_FORBIDDEN_PER_MOVE`.
+- `services/app/analysis/services/jobs.py` + `derive_sf_game` — pass/write `arrow_cp_*`; stop passing `arrow_score_*`.
+- `services/app/analysis/migrations/00YY_*.py` — add `arrow_cp_1/2/3`, drop `arrow_score_1/2/3` on `MoveAnalysis`.
 - `services/local_worker/pyproject.toml` — `0.13.0`.
 
 **Created:**
@@ -51,6 +51,25 @@
 
 **Not changed:**
 - `accuracy.win_pct` — kept verbatim. The fallback path in `_derive_one_move` is its only caller. A test asserts that.
+
+---
+
+## Task D0: Store SF candidate centipawns → native-cp classifier gap (do FIRST)
+
+> **Why this exists / context (2026-05-21 code review on PR #195):** The SF Brilliant/Great thresholds are cp-denominated (`SF_GREAT_GAP=80`, `SF_BRILLIANT_GAP=150`), but we never store per-candidate cp — only the played move has `cp_eval`. So the classifier gap has always been *reconstructed* from a lossy proxy: legacy via the inverse Lichess sigmoid (`_gap_from_arrow_scores`), and a since-reverted Phase C attempt via `WDL_mu × NPV × 2`. Both back into a number SF computes directly and the worker throws away — in `_extract_arrows_and_pvs`, `pv_cp_white = white_cp(pv_info["score"])` is right there before it's converted to Win% and dropped. Store it instead.
+>
+> This task must land **before** D2/D3 drop `arrow_score_*`, because once the native-cp gap exists, the arrow-score reconstruction path is what D2/D3/D4 are then free to delete.
+
+**Outcome:** classifier gap = `mover_cp_1 - mover_cp_2` from stored candidate cps, compared natively against `SF_GREAT_GAP`/`SF_BRILLIANT_GAP`. `NormalizeToPawnValue` stays pure metadata. `_gap_from_arrow_scores`, `_cp_from_win_pct`, `_WIN_PCT_K` all delete.
+
+- [ ] **D0.1 Worker — emit candidate cp.** In `_extract_arrows_and_pvs`, return a 4th list of white-frame candidate cp (`pv_cp_white` per PV; `None` for empty slots). Thread through `_analyze_one_move` → `_build_move_result`. Add `arrow_cp_1/2/3: Optional[float]` to `StockfishMoveResult`. Emit in `build_stockfish_payload`. Store **white-frame** to match the `cp_eval` raw convention (#161). Bump worker to `0.13.0` and remember the dual tag (`worker-v0.13.0` + `vast-worker-v0.13.0`).
+- [ ] **D0.2 Serializer.** Add `arrow_cp_1/2/3 = FloatField(required=False, allow_null=True, default=None)` to `StockfishMoveSerializer`.
+- [ ] **D0.3 Migration.** Add three nullable `FloatField`s `arrow_cp_1/2/3` to `MoveAnalysis` (this CAN be combined with the `arrow_score_*` drop migration in D3, or kept separate — your call).
+- [ ] **D0.4 Derivation.** Replace the `_gap_from_arrow_scores(...)` call in `_derive_one_move` with a native helper, e.g. `_gap_from_candidate_cp(move, mover_is_white)` that converts the two white-frame candidate cps to mover frame and returns `max(0.0, mover_cp_1 - mover_cp_2)` (or `None` when either is absent → classifier floors to "Best", same as MultiPV<2 today). Delete `_gap_from_arrow_scores`, `_cp_from_win_pct`, `_WIN_PCT_K`.
+- [ ] **D0.5 Persistence.** `complete_stockfish_job` writes `arrow_cp_*`; `derive_sf_game` passes them through.
+- [ ] **D0.6 Tests.** Pin: candidate cp persists round-trip; gap = `cp_1 - cp_2` in mover frame for a White AND a Black mover (frame correctness — convert white→mover before subtracting); missing candidate cp → gap `None`. Regenerate the WDL golden vectors if any pinned `classification` shifts under the native-cp gap.
+
+> **Mover-frame note for D0.4:** candidate cps are stored white-frame. For a Black mover, the "better for the mover" line is the one with the *lower* white-frame cp, so convert each to mover frame (`mover_cp = cp if white else -cp`) before subtracting. This is the exact frame step the reconstruction helpers were doing implicitly — get it right and add a Black-mover test (#156-class hazard).
 
 ---
 
@@ -312,19 +331,14 @@ EOF
 
 ## Task D4: Clean the unused sigmoid helpers in derivation
 
+> **Mostly subsumed by Task D0.** If you did D0 first (recommended), `_cp_from_win_pct`, `_gap_from_arrow_scores`, and `_WIN_PCT_K` were already deleted there when the gap switched to native candidate cp. This task then reduces to a confirmation grep. If you skipped D0, do the deletions here — but note the gap then has no source and falls to `None` for every move, which silently disables Brilliant/Great for SF. Prefer D0.
+
 **Files:**
 - Modify: `services/app/analysis/derivation/stockfish.py`
 
-With `arrow_score_*` gone, the fallback path no longer has anything to call `_gap_from_arrow_scores` on.
+- [ ] **Step 1: Confirm the helpers are gone (D0) or delete them**
 
-- [ ] **Step 1: Delete the now-unreferenced helpers**
-
-Remove from `services/app/analysis/derivation/stockfish.py`:
-- `_cp_from_win_pct`
-- `_gap_from_arrow_scores`
-- `_WIN_PCT_K` module constant
-
-Update the fallback branch in `_derive_one_move`: `gap = None` (the classifier already maps `gap=None` to "Best").
+Confirm `_cp_from_win_pct`, `_gap_from_arrow_scores`, `_WIN_PCT_K` no longer exist (D0 removed them). If D0 was skipped, remove them now — but reconsider doing D0 instead, since a permanently-`None` gap regresses SF classification.
 
 - [ ] **Step 2: Confirm `accuracy.win_pct` is only called from the fallback path**
 
