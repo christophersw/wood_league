@@ -92,7 +92,9 @@ def _build_tier_map(by_ply: dict, use_cp_equiv: bool) -> dict[int, list]:
         # New dataclasses use arrow_uci_1; legacy MoveRow uses arrow_uci.
         primary_uci = row.arrow_uci_1 if hasattr(row, "arrow_uci_1") else row.arrow_uci
         ucis = [primary_uci, row.arrow_uci_2, row.arrow_uci_3]
-        scores = [row.arrow_score_1, row.arrow_score_2, row.arrow_score_3]
+        # White-frame candidate centipawns (#197). Converted to the mover frame
+        # at the comparison site in _build_arrow_entries_for_engine.
+        scores = [row.arrow_cp_1, row.arrow_cp_2, row.arrow_cp_3]
         if use_cp_equiv and scores[0] is None and hasattr(row, "cp_equiv"):
             scores[0] = row.cp_equiv
         for uci, score in zip(ucis, scores):
@@ -306,14 +308,17 @@ def _build_arrow_entries_for_engine(
     base_color = _ENGINE_BASE_COLORS[engine_key]
     played_score = played_scores.get(abs_ply) or played_scores.get(relative_ply)
     played_mover = _mover_relative_score(played_score, is_white_move)
-    top_score = tier_entries[0].get("score")
+    # Candidate cps are White-frame (#197); convert to the mover frame so deltas
+    # against the (mover-frame) played score are sign-correct for Black moves.
+    top_score = _mover_relative_score(tier_entries[0].get("score"), is_white_move)
     engine_label = _ENGINE_LABELS[engine_key]
     overlay_entries: list[dict] = []
 
     for tier_index, entry in enumerate(tier_entries):
         move_uci = entry.get("uci", "")
         if len(move_uci) >= 4:
-            delta = _compute_arrow_delta(entry.get("score"), tier_index, played_mover, top_score)
+            cand_score = _mover_relative_score(entry.get("score"), is_white_move)
+            delta = _compute_arrow_delta(cand_score, tier_index, played_mover, top_score)
             overlay_entries.append(
                 _build_single_arrow_entry(
                     engine_key, engine_label, base_color, tier_index, relative_ply, move_uci, delta,
@@ -425,7 +430,7 @@ def _build_frames_v2(
         if lc0_row is not None:
             arrows.extend(_arrow_entries_from_row("lc0", lc0_row, is_white_move))
 
-        sf_classification = sf_row.classification if sf_row is not None else None
+        sf_classification = getattr(sf_row, "classification", None)
         svg = chess.svg.board(
             board,
             size=size,
@@ -459,8 +464,8 @@ def _arrow_label(engine_key: str, score: float | None, delta_mu: float | None) -
 
     Params:
         engine_key (str):          "sf" or "lc0".
-        score      (float | None): For SF: arrow_score_* in centipawns.
-                                   Unused for LC0 (pass None).
+        score      (float | None): For SF: candidate cp (arrow_cp_*) in the
+                                   mover frame. Unused for LC0 (pass None).
         delta_mu   (float | None): For LC0: (candidate_mu − played_mu).
                                    Unused for SF (pass None).
 
@@ -483,7 +488,7 @@ def _arrow_entries_from_row(engine_key: str, row: object, is_white_move: bool) -
     Extract flat arrow metadata dicts from a single analysis row.
 
     Reads arrow_uci_1 / arrow_uci_2 / arrow_uci_3 from new-schema dataclasses.
-    Attaches a human-readable `label` to each entry using arrow_score_* (SF) or
+    Attaches a human-readable `label` to each entry using arrow_cp_* (SF) or
     delta_mu (LC0).
 
     Params:
@@ -499,10 +504,12 @@ def _arrow_entries_from_row(engine_key: str, row: object, is_white_move: bool) -
         getattr(row, "arrow_uci_2", None),
         getattr(row, "arrow_uci_3", None),
     ]
+    # White-frame candidate centipawns (#197); flipped to the mover frame below
+    # so the SF eval label reads positive for a good move by the side to move.
     scores = [
-        getattr(row, "arrow_score_1", None),
-        getattr(row, "arrow_score_2", None),
-        getattr(row, "arrow_score_3", None),
+        getattr(row, "arrow_cp_1", None),
+        getattr(row, "arrow_cp_2", None),
+        getattr(row, "arrow_cp_3", None),
     ]
     # LC0 label uses delta_mu directly (= candidate_mu − played_mu).
     delta_mu: float | None = getattr(row, "delta_mu", None)
@@ -510,7 +517,9 @@ def _arrow_entries_from_row(engine_key: str, row: object, is_white_move: bool) -
     entries: list[dict] = []
     for tier_index, (uci, score) in enumerate(zip(ucis, scores)):
         if uci and len(uci) >= 4:
-            label = _arrow_label(engine_key, score, delta_mu)
+            label = _arrow_label(
+                engine_key, _mover_relative_score(score, is_white_move), delta_mu,
+            )
             entries.append({
                 "engine": engine_key,
                 "uci": uci,

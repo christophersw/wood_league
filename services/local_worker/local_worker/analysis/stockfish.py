@@ -50,14 +50,13 @@ import chess
 import chess.engine
 import chess.pgn
 
-from ._stockfish_helpers import mover_cp, white_cp
+from ._stockfish_helpers import white_cp
 from .eval_cache import (
     EvalCache,
     cached_pvs_to_info_list,
     info_list_to_cached_pvs,
     zobrist_key,
 )
-from .math import win_pct
 from .models import StockfishGameResult, StockfishMoveResult
 from .stockfish_tuning import get_tuned_opts
 
@@ -101,19 +100,16 @@ def _extract_arrows_and_pvs(
     mover: chess.Color,
 ) -> tuple[
     list[str],
-    list[Optional[float]],
     list[Optional[str]],
     list[tuple[Optional[int], Optional[int], Optional[int]]],
     list[Optional[int]],
 ]:
-    """Extract MultiPV arrow UCIs, mover-frame Win% scores, PV SAN lines, WDL, cp.
+    """Extract MultiPV arrow UCIs, PV SAN lines, WDL triples, and White-frame cp.
 
-    Mirrors lc0._extract_arrows_and_pvs but converts each PV's cp evaluation
-    (White's frame) into mover Win% via white_cp -> mover_cp -> win_pct.
-    Also extracts the per-PV WDL triple when UCI_ShowWDL is enabled (#188 Phase A)
-    and the per-PV White-frame centipawn eval (#188 Phase D) — the latter lets
-    the app compute the classifier's second-best gap natively in cp instead of
-    reconstructing it from a Win%/WDL proxy.
+    Mirrors lc0._extract_arrows_and_pvs. Extracts the per-PV WDL triple when
+    UCI_ShowWDL is enabled (#188 Phase A) and the per-PV White-frame centipawn
+    eval (#188 Phase D) — the latter is the native source for the app's
+    classifier second-best gap.
 
     Args:
         info_list: MultiPV result list from engine.analyse(..., multipv=N).
@@ -121,12 +117,11 @@ def _extract_arrows_and_pvs(
         mover: Side to move.
 
     Returns:
-        Tuple of (arrows, arrow_scores, pv_sans, wdl_triples, arrow_cps), each
-        up to 3 entries. Missing slots are "", None, None, (None, None, None),
-        None respectively. ``arrow_cps`` are White-frame integer centipawns.
+        Tuple of (arrows, pv_sans, wdl_triples, arrow_cps), each up to 3
+        entries. Missing slots are "", None, (None, None, None), None
+        respectively. ``arrow_cps`` are White-frame integer centipawns.
     """
     arrows: list[str] = []
-    arrow_scores: list[Optional[float]] = []
     pv_sans: list[Optional[str]] = []
     wdl_triples: list[tuple[Optional[int], Optional[int], Optional[int]]] = []
     arrow_cps: list[Optional[int]] = []
@@ -135,7 +130,6 @@ def _extract_arrows_and_pvs(
         pv = pv_info.get("pv") or []
         if not pv:
             arrows.append("")
-            arrow_scores.append(None)
             pv_sans.append(None)
             wdl_triples.append((None, None, None))
             arrow_cps.append(None)
@@ -143,7 +137,6 @@ def _extract_arrows_and_pvs(
 
         arrows.append(pv[0].uci())
         pv_cp_white = white_cp(pv_info["score"])
-        arrow_scores.append(win_pct(mover_cp(pv_cp_white, mover)))
         wdl_triples.append(_wdl_triple_mover(pv_info, mover))
         arrow_cps.append(int(pv_cp_white))
 
@@ -157,7 +150,7 @@ def _extract_arrows_and_pvs(
                 break
         pv_sans.append(json.dumps(pv_san_list) if pv_san_list else None)
 
-    return arrows, arrow_scores, pv_sans, wdl_triples, arrow_cps
+    return arrows, pv_sans, wdl_triples, arrow_cps
 
 
 def _mate_in_from_score(score: chess.engine.PovScore) -> Optional[int]:
@@ -183,7 +176,6 @@ def _build_move_result(
     cp_eval_after_white: int,
     mate_in_white: Optional[int],
     arrows: list[str],
-    arrow_scores: list[Optional[float]],
     pv_sans: list[Optional[str]],
     wdl_played: tuple[Optional[int], Optional[int], Optional[int]],
     wdl_candidates: list[tuple[Optional[int], Optional[int], Optional[int]]],
@@ -199,7 +191,6 @@ def _build_move_result(
             ``mate_in_white``).
         mate_in_white: Signed mate distance (positive = White mates), or None.
         arrows: UCI strings for the top up-to-3 MultiPV candidate moves.
-        arrow_scores: Mover-frame Win% for each PV line (legacy raw observable).
         pv_sans: JSON-encoded SAN continuations for each PV line.
         wdl_played: Mover-frame WDL triple for the played move (any element
             may be None when UCI_ShowWDL is unavailable).
@@ -229,9 +220,6 @@ def _build_move_result(
         arrow_uci_1=_get(arrows, 0, "") or "",
         arrow_uci_2=_get(arrows, 1),
         arrow_uci_3=_get(arrows, 2),
-        arrow_score_1=_get(arrow_scores, 0),
-        arrow_score_2=_get(arrow_scores, 1),
-        arrow_score_3=_get(arrow_scores, 2),
         pv_san_1=_get(pv_sans, 0),
         pv_san_2=_get(pv_sans, 1),
         pv_san_3=_get(pv_sans, 2),
@@ -308,9 +296,9 @@ def _analyze_one_move(
     """Analyse a single move and emit a raw StockfishMoveResult (#161 Phase H).
 
     Pushes ``move`` onto ``board`` in place. Returns white-frame cp_eval +
-    mate_in + top-3 candidate UCIs + mover-frame arrow_score Win% + PV SAN
-    lists. All derivation (CPL, classification, accuracy) runs app-side
-    via ``analysis.derivation.stockfish``.
+    mate_in + top-3 candidate UCIs + White-frame candidate cp + PV SAN lists.
+    All derivation (CPL, classification, accuracy) runs app-side via
+    ``analysis.derivation.stockfish``.
 
     Args:
         board: Position before the move (will be mutated by push).
@@ -332,7 +320,7 @@ def _analyze_one_move(
         board, engine, limit,
         cache=cache, network=network, nodes=depth_key, multipv=3,
     )
-    arrows, arrow_scores, pv_sans, wdl_candidates, arrow_cps = _extract_arrows_and_pvs(
+    arrows, pv_sans, wdl_candidates, arrow_cps = _extract_arrows_and_pvs(
         info_before, board, mover,
     )
 
@@ -365,7 +353,6 @@ def _analyze_one_move(
         cp_eval_after_white=eval_after_white,
         mate_in_white=mate_in_white,
         arrows=arrows,
-        arrow_scores=arrow_scores,
         pv_sans=pv_sans,
         wdl_played=wdl_played,
         wdl_candidates=wdl_candidates,
@@ -572,9 +559,6 @@ def build_stockfish_payload(result: StockfishGameResult, *, worker_id: str) -> d
                 "arrow_uci_1": m.arrow_uci_1,
                 "arrow_uci_2": m.arrow_uci_2,
                 "arrow_uci_3": m.arrow_uci_3,
-                "arrow_score_1": m.arrow_score_1,
-                "arrow_score_2": m.arrow_score_2,
-                "arrow_score_3": m.arrow_score_3,
                 "pv_san_1": m.pv_san_1,
                 "pv_san_2": m.pv_san_2,
                 "pv_san_3": m.pv_san_3,

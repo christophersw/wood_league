@@ -129,7 +129,7 @@ class BuildTierMapTest(TestCase):
 
     def test_includes_ply_with_arrow(self):
         """_build_tier_map includes entries for plies that have an arrow_uci."""
-        row = MoveRow(ply=1, san="e4", fen="", arrow_uci="e2e4", arrow_score_1=30.0)
+        row = MoveRow(ply=1, san="e4", fen="", arrow_uci="e2e4", arrow_cp_1=30.0)
         result = _build_tier_map({1: row}, use_cp_equiv=False)
         self.assertIn(1, result)
         self.assertEqual(result[1][0]["uci"], "e2e4")
@@ -156,8 +156,8 @@ class BuildTierMapTest(TestCase):
             arrow_uci_2="d2d4",
             arrow_uci_3="g1f3",
             cp_equiv=150.0,
-            arrow_score_2=110.0,
-            arrow_score_3=80.0,
+            arrow_cp_2=110.0,
+            arrow_cp_3=80.0,
         )
         result = _build_tier_map({1: row}, use_cp_equiv=True)
         self.assertEqual(result[1][0]["score"], 150.0)
@@ -243,9 +243,9 @@ class BuildBoardFramesTest(TestCase):
             arrow_uci="e2e4",
             arrow_uci_2="d2d4",
             arrow_uci_3="g1f3",
-            arrow_score_1=60.0,
-            arrow_score_2=35.0,
-            arrow_score_3=10.0,
+            arrow_cp_1=60.0,
+            arrow_cp_2=35.0,
+            arrow_cp_3=10.0,
             classification="best",
         )
         data = _minimal_data(moves=[move_with_tiers, MOVE_E5, MOVE_NF3, MOVE_NC6], white_accuracy=85.0)
@@ -274,9 +274,9 @@ class BuildBoardFramesTest(TestCase):
             arrow_uci="e2e4",
             arrow_uci_2="d2d4",
             arrow_uci_3="g1f3",
-            arrow_score_1=60.0,
-            arrow_score_2=35.0,
-            arrow_score_3=10.0,
+            arrow_cp_1=60.0,
+            arrow_cp_2=35.0,
+            arrow_cp_3=10.0,
             classification="best",
         )
         data = _minimal_data(moves=[move_with_tiers, MOVE_E5, MOVE_NF3, MOVE_NC6], white_accuracy=85.0)

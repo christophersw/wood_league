@@ -31,7 +31,7 @@ def _sf(ply, uci):
         cp_eval=0.0, mate_in=None, cpl=0.0, move_win_delta=0.0,
         classification="best", best_move="", arrow_uci_1=uci,
         arrow_uci_2=None, arrow_uci_3=None,
-        arrow_score_1=0.0, arrow_score_2=None, arrow_score_3=None,
+        arrow_cp_1=0.0, arrow_cp_2=None, arrow_cp_3=None,
         pv_san_1=None, pv_san_2=None, pv_san_3=None,
     )
 

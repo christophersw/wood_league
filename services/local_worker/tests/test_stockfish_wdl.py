@@ -59,7 +59,7 @@ def test_build_move_result_carries_played_wdl_triple():
     """_build_move_result populates played-move and candidate WDL fields correctly."""
     move = _build_move_result(
         san="e4", fen_before="...", cp_eval_after_white=30, mate_in_white=None,
-        arrows=["e7e5", "c7c5", ""], arrow_scores=[55.0, 52.0, None],
+        arrows=["e7e5", "c7c5", ""],
         pv_sans=["[\"e5\"]", None, None],
         wdl_played=(120, 850, 30),
         wdl_candidates=[(120, 850, 30), (110, 860, 30), (None, None, None)],
@@ -75,7 +75,7 @@ def test_build_move_result_handles_missing_wdl():
     """_build_move_result handles (None, None, None) WDL gracefully."""
     move = _build_move_result(
         san="e4", fen_before="...", cp_eval_after_white=30, mate_in_white=None,
-        arrows=["e7e5"], arrow_scores=[55.0], pv_sans=[None],
+        arrows=["e7e5"], pv_sans=[None],
         wdl_played=(None, None, None),
         wdl_candidates=[(None, None, None)],
         arrow_cps=[None],
@@ -94,7 +94,7 @@ def test_extract_arrows_and_pvs_returns_wdl_candidates():
     score = chess.engine.PovScore(chess.engine.Cp(30), chess.WHITE)
     wdl_white = chess.engine.PovWdl(chess.engine.Wdl(120, 850, 30), chess.WHITE)
     info = {"pv": [chess.Move.from_uci("e2e4")], "score": score, "wdl": wdl_white}
-    arrows, scores, sans, wdl_triples, arrow_cps = _extract_arrows_and_pvs(
+    arrows, sans, wdl_triples, arrow_cps = _extract_arrows_and_pvs(
         [info], board, chess.WHITE,
     )
     assert arrows[0] == "e2e4"

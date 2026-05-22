@@ -36,9 +36,10 @@ class SfMoveRow:
     arrow_uci_1: str
     arrow_uci_2: str | None
     arrow_uci_3: str | None
-    arrow_score_1: float | None
-    arrow_score_2: float | None
-    arrow_score_3: float | None
+    # White-frame candidate centipawns (#197; was the legacy arrow_score Win%).
+    arrow_cp_1: float | None
+    arrow_cp_2: float | None
+    arrow_cp_3: float | None
     pv_san_1: str | None
     pv_san_2: str | None
     pv_san_3: str | None
@@ -174,8 +175,8 @@ def _sf_rows(ga: GameAnalysis | None) -> list[SfMoveRow]:
             classification=r.classification, best_move=r.best_move or "",
             arrow_uci_1=r.arrow_uci_1 or "",
             arrow_uci_2=r.arrow_uci_2, arrow_uci_3=r.arrow_uci_3,
-            arrow_score_1=r.arrow_score_1, arrow_score_2=r.arrow_score_2,
-            arrow_score_3=r.arrow_score_3,
+            arrow_cp_1=r.arrow_cp_1, arrow_cp_2=r.arrow_cp_2,
+            arrow_cp_3=r.arrow_cp_3,
             pv_san_1=r.pv_san_1, pv_san_2=r.pv_san_2, pv_san_3=r.pv_san_3,
             wdl_win_adj=r.wdl_win_adj, wdl_draw_adj=r.wdl_draw_adj,
             wdl_loss_adj=r.wdl_loss_adj,

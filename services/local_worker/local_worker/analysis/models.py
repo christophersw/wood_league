@@ -29,9 +29,9 @@ class StockfishMoveResult:
     """Raw per-move Stockfish observables (#161 Phase H).
 
     cp_eval is white-frame post-move cp; mate_in is the signed mate distance
-    (positive = White mates) or None when no mate score. arrow_uci_*/_score_*
-    carry the top-3 MultiPV candidates' UCIs + mover-frame Win% scores from
-    the position *before* the played move.
+    (positive = White mates) or None when no mate score. arrow_uci_* carry the
+    top-3 MultiPV candidates' UCIs and arrow_cp_* their White-frame centipawn
+    evals, from the position *before* the played move.
     """
 
     ply: int
@@ -42,9 +42,6 @@ class StockfishMoveResult:
     arrow_uci_1: str = ""
     arrow_uci_2: Optional[str] = None
     arrow_uci_3: Optional[str] = None
-    arrow_score_1: Optional[float] = None
-    arrow_score_2: Optional[float] = None
-    arrow_score_3: Optional[float] = None
     pv_san_1: Optional[str] = None
     pv_san_2: Optional[str] = None
     pv_san_3: Optional[str] = None

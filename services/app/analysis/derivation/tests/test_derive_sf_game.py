@@ -20,7 +20,6 @@ from analysis.derivation.stockfish import derive_sf_game
 
 def _raw_move(
     ply: int, *, cp_eval: int = 0, mate_in: int | None = None,
-    arrow_score_1: float | None = None, arrow_score_2: float | None = None,
     arrow_cp_1: float | None = None, arrow_cp_2: float | None = None,
     san: str = "—", fen: str = "—", arrow_uci_1: str = "e2e4",
 ) -> dict:
@@ -29,8 +28,6 @@ def _raw_move(
         "ply": ply, "san": san, "fen": fen,
         "cp_eval": cp_eval, "mate_in": mate_in,
         "arrow_uci_1": arrow_uci_1,
-        "arrow_score_1": arrow_score_1,
-        "arrow_score_2": arrow_score_2,
         "arrow_cp_1": arrow_cp_1,
         "arrow_cp_2": arrow_cp_2,
     }
@@ -149,7 +146,7 @@ def test_per_move_payload_carries_raw_and_derived_fields() -> None:
         "ply", "san", "fen",
         "cp_eval", "mate_in",
         "arrow_uci_1", "arrow_uci_2", "arrow_uci_3",
-        "arrow_score_1", "arrow_score_2", "arrow_score_3",
+        "arrow_cp_1", "arrow_cp_2", "arrow_cp_3",
         "pv_san_1", "pv_san_2", "pv_san_3",
         "wdl_win", "wdl_draw", "wdl_loss",
         "wdl_win_1", "wdl_draw_1", "wdl_loss_1",

@@ -53,10 +53,6 @@ class Lc0MoveResult:
     arrow_uci: str
     arrow_uci_2: str = ""
     arrow_uci_3: str = ""
-    # Candidate eval scores from mover perspective (cp-equivalent) for tiers 1-3.
-    arrow_score_1: float | None = None
-    arrow_score_2: float | None = None
-    arrow_score_3: float | None = None
     # Win% drop for the side that just moved (≥ 0, higher = worse move)
     move_win_delta: float = 0.0
     # Renamed from classification → base_severity to match DB column (#159)
@@ -231,20 +227,6 @@ def analyze_pgn(  # noqa: C901 — inherent: tightly-coupled move loop with boar
             pre_w, pre_d, pre_l = _extract_wdl(pre_top)
             # pre_w is mover's wins (since python-chess gives relative to side-to-move)
             mover_win_before = pre_w / 10.0
-            # Map move candidates to mover-perspective cp-equivalent for UI labels/intensity.
-            pre_q = (pre_w - pre_l) / 1000.0
-            score_1 = _q_to_cp(pre_q)
-
-            score_2: float | None = None
-            score_3: float | None = None
-            if pre_alt is not None:
-                alt_w, _, alt_l = _extract_wdl(pre_alt)
-                alt_q = (alt_w - alt_l) / 1000.0
-                score_2 = _q_to_cp(alt_q)
-            if pre_third is not None:
-                third_w, _, third_l = _extract_wdl(pre_third)
-                third_q = (third_w - third_l) / 1000.0
-                score_3 = _q_to_cp(third_q)
 
             best_move_obj = pre_top.get("pv", [None])[0]
             best_move_str = best_move_obj.uci() if best_move_obj else ""
@@ -355,9 +337,6 @@ def analyze_pgn(  # noqa: C901 — inherent: tightly-coupled move loop with boar
                     arrow_uci=best_move_str,
                     arrow_uci_2=arrow_2_str,
                     arrow_uci_3=arrow_3_str,
-                    arrow_score_1=score_1,
-                    arrow_score_2=score_2,
-                    arrow_score_3=score_3,
                     move_win_delta=win_delta,
                     base_severity=base_severity,
                 )

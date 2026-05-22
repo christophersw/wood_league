@@ -33,9 +33,10 @@ class MoveRow:
     arrow_uci: str = ""
     arrow_uci_2: str = ""
     arrow_uci_3: str = ""
-    arrow_score_1: float | None = None
-    arrow_score_2: float | None = None
-    arrow_score_3: float | None = None
+    # White-frame candidate centipawns (#197; was the legacy arrow_score Win%).
+    arrow_cp_1: float | None = None
+    arrow_cp_2: float | None = None
+    arrow_cp_3: float | None = None
     classification: str | None = None
     wdl_win: int | None = None
     wdl_draw: int | None = None
@@ -168,9 +169,9 @@ def get_game_analysis(slug: str) -> GameAnalysisData | None:
                 arrow_uci=m.arrow_uci_1 or "",
                 arrow_uci_2=m.arrow_uci_2 or "",
                 arrow_uci_3=m.arrow_uci_3 or "",
-                arrow_score_1=m.arrow_score_1,
-                arrow_score_2=m.arrow_score_2,
-                arrow_score_3=m.arrow_score_3,
+                arrow_cp_1=m.arrow_cp_1,
+                arrow_cp_2=m.arrow_cp_2,
+                arrow_cp_3=m.arrow_cp_3,
                 classification=m.classification,
                 pv_san_1=m.pv_san_1,
                 pv_san_2=m.pv_san_2,
@@ -294,18 +295,17 @@ def _lc0_move_rows(lga: Lc0GameAnalysis | None) -> list[MoveRow] | None:
             wdl_win=m.wdl_win_adj,
             wdl_draw=m.wdl_draw_adj,
             wdl_loss=m.wdl_loss_adj,
-            # cp_equiv, arrow_score_*, move_win_delta, classification removed
-            # from Lc0MoveAnalysis in #161 Phase F. UI dataclass keeps the slots
-            # for SF interop; lc0 rows leave them None and surface base_severity
-            # as the closest analogue to the old classification column.
+            # cp_equiv, arrow_cp_*, move_win_delta, classification are SF-only
+            # slots on this UI dataclass; lc0 rows leave them None and surface
+            # base_severity as the closest analogue to the old classification.
             cp_equiv=None,
             best_move=m.best_move or "",
             arrow_uci=m.arrow_uci_1 or "",
             arrow_uci_2=m.arrow_uci_2 or "",
             arrow_uci_3=m.arrow_uci_3 or "",
-            arrow_score_1=None,
-            arrow_score_2=None,
-            arrow_score_3=None,
+            arrow_cp_1=None,
+            arrow_cp_2=None,
+            arrow_cp_3=None,
             move_win_delta=None,
             classification=m.base_severity,
             pv_san_1=m.pv_san_1,
