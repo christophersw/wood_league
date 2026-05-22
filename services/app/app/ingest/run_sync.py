@@ -6,6 +6,8 @@ Description:
     parses PGNs, and upserts Game and GameParticipant records with real-time progress display.
 
 Changelog:
+    2026-05-22: Add --full to bypass the incremental watermark (#204) and
+                report archives skipped in the summary.
     2026-05-08: Added file header to meet documentation standards
 """
 from __future__ import annotations
@@ -33,6 +35,11 @@ def main() -> None:
         "--usernames",
         default="",
         help="Comma-separated usernames. If omitted, uses CHESS_COM_USERNAMES from environment.",
+    )
+    parser.add_argument(
+        "--full",
+        action="store_true",
+        help="Ignore the per-player watermark and re-ingest all in-scope archives.",
     )
     args = parser.parse_args()
 
@@ -65,14 +72,18 @@ def main() -> None:
             sys.stdout.write("\r" + message)
             sys.stdout.flush()
 
-        result = service.sync_player(username, progress_callback=progress_callback)
+        result = service.sync_player(
+            username, progress_callback=progress_callback, full=args.full
+        )
         results.append(result)
         sys.stdout.write("\n")
         sys.stdout.flush()
 
     for result in results:
         print(
-            f"{result.username}: archives={result.archives_scanned} inserted={result.inserted} updated={result.updated}"
+            f"{result.username}: archives={result.archives_scanned} "
+            f"skipped={result.archives_skipped} "
+            f"inserted={result.inserted} updated={result.updated}"
         )
 
 
