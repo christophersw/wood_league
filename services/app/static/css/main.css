@@ -562,6 +562,7 @@
   }
   @media (min-width: 880px) {
     .panel-grid--2 { grid-template-columns: 1fr 1.4fr; }
+    .panel-grid--even { grid-template-columns: 1fr 1fr; }
   }
 
   /* Form field grid — pairs labels+inputs in a responsive 2-up
