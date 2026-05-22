@@ -13,7 +13,7 @@ Changelog:
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from app.ingest.sync_service import ChessComSyncService, SyncStats
 
@@ -133,3 +133,96 @@ def test_select_archives_no_watermark_uses_month_limit() -> None:
     fetched, skipped = service._select_archives(_ALL_ARCHIVES, None, full=False)
     assert fetched == _ALL_ARCHIVES
     assert skipped == 0
+
+
+def _session_cm(session: MagicMock) -> MagicMock:
+    """Wrap a mock session in a context manager mock for `with get_session()`."""
+    cm = MagicMock()
+    cm.__enter__.return_value = session
+    cm.__exit__.return_value = False
+    return cm
+
+
+def test_sync_player_skips_archives_older_than_watermark() -> None:
+    """Archives before the watermark month are never fetched over HTTP."""
+    service = ChessComSyncService.__new__(ChessComSyncService)
+    service._settings = MagicMock(ingest_month_limit=24)
+    client = MagicMock()
+    client.get_archives.return_value = [f"{_BASE}/2024/05", f"{_BASE}/2024/06"]
+    client.get_games_for_archive.return_value = []
+    service._client = client
+
+    session = MagicMock()
+    session.scalar.return_value = MagicMock(id=1)  # player lookup
+
+    with patch("app.ingest.sync_service.get_session", return_value=_session_cm(session)), \
+         patch.object(
+             ChessComSyncService, "_player_watermark",
+             return_value=datetime(2024, 6, 10, tzinfo=UTC),
+         ):
+        stats = service.sync_player("alice")
+
+    fetched = [call.args[0] for call in client.get_games_for_archive.call_args_list]
+    assert fetched == [f"{_BASE}/2024/06"]
+    assert stats.archives_skipped == 1
+    assert stats.archives_scanned == 1
+
+
+def test_sync_player_skips_already_loaded_games_in_watermark_month() -> None:
+    """Within a fetched archive, games at/below the watermark are not upserted."""
+    service = ChessComSyncService.__new__(ChessComSyncService)
+    service._settings = MagicMock(ingest_month_limit=24)
+    watermark = datetime(2024, 6, 10, tzinfo=UTC)
+    wm_epoch = int(watermark.timestamp())
+    old_game = {"end_time": wm_epoch - 100}
+    new_game = {"end_time": wm_epoch + 100}
+    client = MagicMock()
+    client.get_archives.return_value = [f"{_BASE}/2024/06"]
+    client.get_games_for_archive.return_value = [old_game, new_game]
+    service._client = client
+
+    session = MagicMock()
+    session.scalar.return_value = MagicMock(id=1)
+    upserted: list[dict] = []
+
+    def fake_upsert(_session, _player, payload):
+        upserted.append(payload)
+        return "inserted"
+
+    with patch("app.ingest.sync_service.get_session", return_value=_session_cm(session)), \
+         patch.object(ChessComSyncService, "_player_watermark", return_value=watermark), \
+         patch.object(ChessComSyncService, "_upsert_game", side_effect=fake_upsert):
+        stats = service.sync_player("alice")
+
+    assert upserted == [new_game]
+    assert stats.inserted == 1
+
+
+def test_sync_player_full_bypasses_watermark() -> None:
+    """full=True ignores the watermark: all in-scope games are upserted."""
+    service = ChessComSyncService.__new__(ChessComSyncService)
+    service._settings = MagicMock(ingest_month_limit=0)  # unlimited scope
+    client = MagicMock()
+    client.get_archives.return_value = [f"{_BASE}/2024/06"]
+    client.get_games_for_archive.return_value = [{"end_time": 1}, {"end_time": 2}]
+    service._client = client
+
+    session = MagicMock()
+    session.scalar.return_value = MagicMock(id=1)
+    upserted: list[dict] = []
+
+    def fake_upsert(_session, _player, payload):
+        upserted.append(payload)
+        return "inserted"
+
+    # _player_watermark must NOT be consulted when full=True.
+    with patch("app.ingest.sync_service.get_session", return_value=_session_cm(session)), \
+         patch.object(
+             ChessComSyncService, "_player_watermark",
+             side_effect=AssertionError("watermark must not be queried when full"),
+         ), \
+         patch.object(ChessComSyncService, "_upsert_game", side_effect=fake_upsert):
+        stats = service.sync_player("alice", full=True)
+
+    assert len(upserted) == 2
+    assert stats.inserted == 2

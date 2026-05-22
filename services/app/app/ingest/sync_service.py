@@ -10,6 +10,8 @@ Changelog:
     2026-05-08: Suppressed C901 on _upsert_game — inherent sequential game record construction
     2026-05-11: Skip ingest of games with no mainline moves (issue #18) to prevent
                 0-ply analysis pollution from abandoned/forfeit/glitched Chess.com PGNs.
+    2026-05-22: Incremental sync (#204) — per-player played_at watermark skips
+                archive months and games already loaded; full= forces re-ingest.
 """
 from __future__ import annotations
 
@@ -178,8 +180,32 @@ class ChessComSyncService:
         """Sync multiple players and return statistics for each."""
         return [self.sync_player(username) for username in usernames]
 
-    def sync_player(self, username: str, progress_callback: SyncProgressCallback | None = None) -> SyncStats:
-        """Sync all in-scope archives for a player, creating or updating Game and GameParticipant records."""
+    def sync_player(
+        self,
+        username: str,
+        progress_callback: SyncProgressCallback | None = None,
+        *,
+        full: bool = False,
+    ) -> SyncStats:
+        """Sync a player's new games, skipping archives/games already loaded.
+
+        A per-player watermark (max played_at) gates the work: archive months
+        older than the watermark are not fetched, and games at/below the
+        watermark within fetched archives are not upserted. Pass full=True to
+        ignore the watermark and re-ingest every archive within the configured
+        ingest_month_limit (used for forced re-syncs and the first sync of a
+        player with no games yet).
+
+        Args:
+            username: Chess.com username to sync.
+            progress_callback: Optional callback (username, idx, total, stats).
+            full: When True, bypass the watermark and re-ingest all in-scope
+                archives.
+
+        Returns:
+            SyncStats: Per-player counts (inserted, updated, archives scanned
+            and skipped).
+        """
         username = username.lower().strip()
         stats = SyncStats(username=username)
 
@@ -190,27 +216,57 @@ class ChessComSyncService:
                 session.add(player)
                 session.flush()
 
-            archives = self._client.get_archives(username)
-            archives = [a for a in archives if self._archive_in_scope(a)]
+            watermark = None if full else self._player_watermark(session, player)
+            all_archives = self._client.get_archives(username)
+            archives, stats.archives_skipped = self._select_archives(
+                all_archives, watermark, full
+            )
             stats.archives_scanned = len(archives)
+            watermark_epoch = self._to_epoch(watermark) if watermark is not None else None
 
             if progress_callback is not None:
                 progress_callback(username, 0, len(archives), stats)
 
             for archive_idx, archive_url in enumerate(archives, start=1):
-                for payload in self._client.get_games_for_archive(archive_url):
-                    changed = self._upsert_game(session, player, payload)
-                    if changed == "inserted":
-                        stats.inserted += 1
-                    elif changed == "updated":
-                        stats.updated += 1
-
+                self._ingest_archive_games(
+                    session, player, archive_url, watermark_epoch, stats
+                )
                 if progress_callback is not None:
                     progress_callback(username, archive_idx, len(archives), stats)
 
             session.commit()
 
         return stats
+
+    def _ingest_archive_games(
+        self, session, player, archive_url: str, watermark_epoch: int | None, stats: SyncStats
+    ) -> None:
+        """Upsert the new games in one archive, updating `stats` counts in place.
+
+        Games at or below `watermark_epoch` are skipped as already loaded. When
+        `watermark_epoch` is None (full sync or new player) every game in the
+        archive is upserted.
+
+        Args:
+            session: An active SQLAlchemy session.
+            player: The Player the archive belongs to.
+            archive_url: The Chess.com monthly archive URL to fetch and ingest.
+            watermark_epoch: Latest loaded game time as Unix epoch, or None.
+            stats: SyncStats to increment (inserted/updated) in place.
+
+        Returns:
+            None
+        """
+        for payload in self._client.get_games_for_archive(archive_url):
+            if watermark_epoch is not None and not self._payload_is_new(
+                payload, watermark_epoch
+            ):
+                continue
+            changed = self._upsert_game(session, player, payload)
+            if changed == "inserted":
+                stats.inserted += 1
+            elif changed == "updated":
+                stats.updated += 1
 
     @staticmethod
     def _has_mainline_moves(pgn: str) -> bool:
