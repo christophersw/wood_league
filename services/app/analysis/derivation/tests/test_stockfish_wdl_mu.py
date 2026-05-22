@@ -2,24 +2,25 @@
 Title: test_stockfish_wdl_mu.py — SF WDL_mu derivation math (#188 Phase C)
 Description:
     Unit and integration tests for the WDL_mu math switch in the Stockfish
-    derivation pipeline. Covers:
+    derivation pipeline. Phase C scope: WDL drives the *accuracy* Win% only;
+    the classifier's second-best gap stays cp-based via arrow scores. Covers:
       - Frame mirror helpers (_sf_wdl_mover_to_white, _sf_wdl_mu_white)
-      - Classifier gap from WDL_mu (_gap_from_arrow_wdl_mu)
       - _derive_one_move WDL path and fallback path
-      - derive_sf_game walk: mu threading, NPV pass-through
+      - derive_sf_game walk: mu threading, NPV pass-through (metadata)
       - Black-mover frame correctness
       - Mate saturation on WDL path
       - 1-ply game edge case
 
 Changelog:
     2026-05-21 (#188/C): Initial.
+    2026-05-21 (#188/C): Drop WDL-gap tests — classifier gap reverted to the
+        cp-based arrow-score path; native-cp gap deferred to SF-candidate-cp.
 """
 from __future__ import annotations
 
 import pytest
 
 from analysis.derivation.stockfish import (
-    _gap_from_arrow_wdl_mu,
     _sf_wdl_mover_to_white,
     _sf_wdl_mu_white,
 )
@@ -48,33 +49,6 @@ def test_sf_wdl_mover_to_white_white_mover_identity():
 def test_sf_wdl_mover_to_white_black_mover_swaps_win_loss():
     """Black-mover triple swaps W↔L; draw is symmetric."""
     assert _sf_wdl_mover_to_white(120, 850, 30, mover_is_white=False) == (30, 850, 120)
-
-
-def test_gap_from_arrow_wdl_mu_simple():
-    """mu_1=0.6, mu_2=0.5 → gap = 0.1 * NPV * 2."""
-    assert _gap_from_arrow_wdl_mu(
-        mu_1=0.6, mu_2=0.5, normalize_to_pawn_value=328,
-    ) == pytest.approx(0.1 * 328 * 2)
-
-
-def test_gap_from_arrow_wdl_mu_none_for_missing():
-    """Returns None when either mu is missing."""
-    assert _gap_from_arrow_wdl_mu(mu_1=None, mu_2=0.5, normalize_to_pawn_value=328) is None
-    assert _gap_from_arrow_wdl_mu(mu_1=0.5, mu_2=None, normalize_to_pawn_value=328) is None
-
-
-def test_gap_from_arrow_wdl_mu_falls_back_to_default_npv():
-    """When NPV is None, use SF 16 default of 328."""
-    assert _gap_from_arrow_wdl_mu(
-        mu_1=0.6, mu_2=0.5, normalize_to_pawn_value=None,
-    ) == pytest.approx(0.1 * 328 * 2)
-
-
-def test_gap_from_arrow_wdl_mu_clamps_non_negative():
-    """mu_2 > mu_1 (inverted — caller-side bug) returns 0.0, not negative."""
-    assert _gap_from_arrow_wdl_mu(
-        mu_1=0.4, mu_2=0.6, normalize_to_pawn_value=328,
-    ) == 0.0
 
 
 # ── Task C2: _derive_one_move ────────────────────────────────────────────
@@ -108,7 +82,7 @@ def _move(**overrides):
 
 def test_derive_one_move_uses_wdl_mu_when_present():
     """WDL path: mover-frame triple → White-frame adj + wdl_mu."""
-    out = _derive_one_move(_move(), before_white_mu=0.5, normalize_to_pawn_value=328)
+    out = _derive_one_move(_move(), before_white_mu=0.5)
     # Ply 1 = White mover; mover-frame = White-frame (identity).
     # wdl_win_adj=200, wdl_draw_adj=700, wdl_loss_adj=100
     assert (out["wdl_win_adj"], out["wdl_draw_adj"], out["wdl_loss_adj"]) == (200, 700, 100)
@@ -122,46 +96,9 @@ def test_derive_one_move_uses_wdl_mu_when_present():
 def test_derive_one_move_black_mover_swaps_frame():
     """Black-mover: mover-frame (100,700,200) → White-frame (200,700,100), mu=0.55."""
     move = _move(ply=2, wdl_win=100, wdl_draw=700, wdl_loss=200)
-    out = _derive_one_move(move, before_white_mu=0.5, normalize_to_pawn_value=328)
+    out = _derive_one_move(move, before_white_mu=0.5)
     assert (out["wdl_win_adj"], out["wdl_draw_adj"], out["wdl_loss_adj"]) == (200, 700, 100)
     assert out["wdl_mu"] == pytest.approx(0.55)
-
-
-def test_candidate_mu_mover_is_mover_frame_no_flip():
-    """Candidate mu is mover-frame for both colours — no ``1 - mu`` flip.
-
-    SF emits candidate triples in the mover's frame, so the expected-score
-    formula on those values is already mover-frame mu. Regression guard for
-    the #156-class flip bug that inverted the candidate gap sign for Black.
-    """
-    from analysis.derivation.stockfish import _candidate_mu_mover
-
-    move = {"wdl_win_1": 220, "wdl_draw_1": 700, "wdl_loss_1": 80}
-    # mover-frame mu = (220 + 700/2) / 1000 = 0.57, independent of side to move.
-    assert _candidate_mu_mover(move, "1") == pytest.approx(0.57)
-
-
-def test_derive_one_move_black_mover_candidate_gap_is_positive():
-    """A Black best move with a real candidate gap is not silently floored.
-
-    Regression for the flip bug: the Black-mover candidate gap used to be
-    sign-inverted and clamped to 0, so Black moves could never reach the
-    Great/Brilliant tier. Candidate 1 (mover-frame mu 0.60) beats candidate 2
-    (0.50), so ``_wdl_path`` must return a strictly positive gap.
-    """
-    from analysis.derivation.stockfish import _wdl_path
-
-    move = _move(
-        ply=2,
-        wdl_win=300, wdl_draw=600, wdl_loss=100,
-        wdl_win_1=300, wdl_draw_1=600, wdl_loss_1=100,   # mover-frame mu = 0.60
-        wdl_win_2=200, wdl_draw_2=600, wdl_loss_2=200,   # mover-frame mu = 0.50
-    )
-    gap = _wdl_path(
-        move, mover_is_white=False, before_white_mu=0.5, normalize_to_pawn_value=328,
-    )[6]
-    # mu gap 0.10 → cp-equiv 0.10 * 328 * 2 = 65.6, strictly positive.
-    assert gap == pytest.approx(0.10 * 328 * 2)
 
 
 def test_derive_one_move_falls_back_to_sigmoid_when_wdl_missing():
@@ -169,7 +106,7 @@ def test_derive_one_move_falls_back_to_sigmoid_when_wdl_missing():
     move = _move()
     for k in ("wdl_win", "wdl_draw", "wdl_loss"):
         move[k] = None
-    out = _derive_one_move(move, before_white_mu=0.5, normalize_to_pawn_value=328)
+    out = _derive_one_move(move, before_white_mu=0.5)
     assert out["wdl_win_adj"] is None
     assert out["wdl_draw_adj"] is None
     assert out["wdl_loss_adj"] is None
@@ -181,7 +118,7 @@ def test_derive_one_move_falls_back_to_sigmoid_when_wdl_missing():
 def test_derive_one_move_mate_saturates():
     """mate_in=3 → wdl_mu near 1.0 (saturated WDL triple)."""
     move = _move(cp_eval=0, mate_in=3, wdl_win=999, wdl_draw=1, wdl_loss=0)
-    out = _derive_one_move(move, before_white_mu=0.5, normalize_to_pawn_value=328)
+    out = _derive_one_move(move, before_white_mu=0.5)
     assert out["wdl_mu"] > 0.99
 
 
@@ -189,13 +126,13 @@ def test_derive_one_move_cpl_is_cp_based_not_mu():
     """CPL must remain cp-based on the WDL path — no mu conversion."""
     # White at 0cp before, move plays to cp_eval=-200 → mover CPL=200.
     move = _move(ply=1, cp_eval=-200, wdl_win=100, wdl_draw=600, wdl_loss=300)
-    out = _derive_one_move(move, before_white=0, before_white_mu=0.5, normalize_to_pawn_value=328)
+    out = _derive_one_move(move, before_white=0, before_white_mu=0.5)
     assert out["cpl"] == 200
 
 
 def test_derive_one_move_wdl_raw_passthrough_unchanged():
     """Raw WDL triples survive the derivation verbatim."""
-    out = _derive_one_move(_move(), before_white_mu=0.5, normalize_to_pawn_value=328)
+    out = _derive_one_move(_move(), before_white_mu=0.5)
     assert (out["wdl_win"], out["wdl_draw"], out["wdl_loss"]) == (200, 700, 100)
     assert (out["wdl_win_1"], out["wdl_draw_1"], out["wdl_loss_1"]) == (220, 700, 80)
 

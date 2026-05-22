@@ -63,21 +63,18 @@ __all__ = [
 # change classification.
 MATE_SCORE = 10000
 
-# #188 Phase C: kept for missing-WDL fallback. When Phase D drops
-# arrow_score_* from the worker payload, _WIN_PCT_K and the helpers that
-# depend on it (_cp_from_win_pct, _gap_from_arrow_scores) can also go.
+# Classifier gap source: the cp-equivalent second-best gap is reconstructed
+# from the candidate arrow-score Win% pair via the inverse Lichess sigmoid
+# (_cp_from_win_pct / _gap_from_arrow_scores). This is a stopgap — the worker
+# already computes each candidate's centipawn eval and discards it; once it
+# persists arrow_cp_1/2/3 the gap becomes a native cp subtraction and these
+# helpers (+ _WIN_PCT_K) go away. Tracked as the SF-candidate-cp follow-up.
 _WIN_PCT_K = 0.00368208
-
-# #188 Phase C: SF 16+ NormalizeToPawnValue default.  Used when the payload
-# does not carry an explicit NPV (older builds or non-standard configurations).
-_SF_DEFAULT_NPV = 328
 
 
 # ── #188 Phase C: SF native WDL math ─────────────────────────────────────
 # Frame note: SF emits WDL in the side-to-move (mover) frame.  To put it in
 # White's frame for a Black move, swap W↔L (draws are symmetric).
-# NPV note: NormalizeToPawnValue is SF's published scaling constant (default
-# 328 for SF 16+); a mu gap of Δ translates to ~2·Δ·NPV cp around mu=0.5.
 
 
 def _sf_wdl_mover_to_white(
@@ -119,32 +116,6 @@ def _sf_wdl_mu_white(win: int, draw: int, loss: int) -> float:  # noqa: ARG001
         ``(W + D/2) / 1000``, a float in [0.0, 1.0].
     """
     return (win + draw / 2.0) / 1000.0
-
-
-def _gap_from_arrow_wdl_mu(
-    *,
-    mu_1: Optional[float],
-    mu_2: Optional[float],
-    normalize_to_pawn_value: Optional[int],
-) -> Optional[float]:
-    """Cp-equivalent gap between top-2 candidates from mover-frame WDL_mu.
-
-    Replaces ``_gap_from_arrow_scores`` on the WDL path.  SF's published
-    scaling around mu=0.5 is ``cp ≈ (mu - 0.5) * NPV * 2``, so a mu gap of
-    Δ corresponds to a cp gap of ``Δ * NPV * 2``.
-
-    Args:
-        mu_1: Mover-frame WDL_mu for the top candidate.
-        mu_2: Mover-frame WDL_mu for the second candidate.
-        normalize_to_pawn_value: SF build constant; None falls back to 328.
-
-    Returns:
-        Non-negative cp gap, or None when either mu is missing.
-    """
-    if mu_1 is None or mu_2 is None:
-        return None
-    npv = normalize_to_pawn_value if normalize_to_pawn_value is not None else _SF_DEFAULT_NPV
-    return max(0.0, (mu_1 - mu_2) * npv * 2.0)
 
 
 def cpl(
@@ -308,51 +279,29 @@ def _saturated_cp(cp_eval: Optional[int], mate_in: Optional[int]) -> int:
     return int(cp_eval or 0)
 
 
-def _candidate_mu_mover(move: dict, suffix: str) -> Optional[float]:
-    """Mover-frame WDL_mu for one candidate line (top-1 or top-2).
-
-    SF emits candidate triples in the *mover's* frame (the worker's
-    ``_extract_arrows_and_pvs`` reads each PV via ``_wdl_triple_mover(pv, mover)``),
-    same as the played-move triple. The expected-score formula ``(w + d/2)/1000``
-    is frame-agnostic, so applying it to the mover-frame triple yields mover-frame
-    mu directly — no rotation, no ``1 - mu`` flip. (An earlier revision flipped for
-    Black movers, which inverted the candidate gap sign and clamped every
-    Black-mover ``second_best_gap`` to 0 — a #156-class frame bug.)
-
-    Args:
-        move: Raw move dict from the SF payload.
-        suffix: ``"1"`` or ``"2"`` (top-1 / top-2 MultiPV line).
-
-    Returns:
-        Mover-frame WDL_mu in [0, 1], or None when the candidate is absent.
-    """
-    if move.get(f"wdl_win_{suffix}") is None:
-        return None
-    return _sf_wdl_mu_white(
-        move[f"wdl_win_{suffix}"], move[f"wdl_draw_{suffix}"], move[f"wdl_loss_{suffix}"],
-    )
-
-
 def _wdl_path(
     move: dict,
     *,
     mover_is_white: bool,
     before_white_mu: float,
-    normalize_to_pawn_value: Optional[int],
-) -> tuple[int, int, int, float, float, float, Optional[float]]:
-    """Compute WDL-path outputs for one move (all values, no branching side-effects).
+) -> tuple[int, int, int, float, float, float]:
+    """Compute WDL-path Win%/mu outputs for one move (no side-effects).
+
+    Phase C scope: this path only changes the *accuracy* source (mover Win%
+    from WDL_mu instead of the cp sigmoid) and populates the White-frame
+    ``wdl_*_adj`` triple. The classifier's second-best gap is NOT computed
+    here — it stays cp-based via the caller's ``_gap_from_arrow_scores`` on
+    both the WDL and fallback paths.
 
     Args:
         move: Raw move dict.
         mover_is_white: True iff the mover is White.
         before_white_mu: White-frame WDL_mu of the position before this move.
-        normalize_to_pawn_value: SF build constant (None → 328).
 
     Returns:
         Tuple of (wdl_win_adj, wdl_draw_adj, wdl_loss_adj,
-                  win_pct_before_mover, win_pct_after_mover,
-                  mu_after_white, gap). ``mu_after_white`` doubles as the
-                  White-frame mu for both the stored value and the game walk.
+                  win_pct_before_mover, win_pct_after_mover, mu_after_white).
+        ``mu_after_white`` doubles as the stored mu and the game-walk mu.
     """
     wdl_win_w, wdl_draw_w, wdl_loss_w = _sf_wdl_mover_to_white(
         move["wdl_win"], move["wdl_draw"], move["wdl_loss"],
@@ -361,12 +310,7 @@ def _wdl_path(
     mu_after_white = _sf_wdl_mu_white(wdl_win_w, wdl_draw_w, wdl_loss_w)
     wp_before = (before_white_mu if mover_is_white else (1.0 - before_white_mu)) * 100.0
     wp_after = (mu_after_white if mover_is_white else (1.0 - mu_after_white)) * 100.0
-    mu_1 = _candidate_mu_mover(move, "1")
-    mu_2 = _candidate_mu_mover(move, "2")
-    gap: Optional[float] = _gap_from_arrow_wdl_mu(
-        mu_1=mu_1, mu_2=mu_2, normalize_to_pawn_value=normalize_to_pawn_value,
-    )
-    return (wdl_win_w, wdl_draw_w, wdl_loss_w, wp_before, wp_after, mu_after_white, gap)
+    return (wdl_win_w, wdl_draw_w, wdl_loss_w, wp_before, wp_after, mu_after_white)
 
 
 def _derive_one_move(
@@ -374,18 +318,21 @@ def _derive_one_move(
     *,
     before_white: int = 0,
     before_white_mu: float = 0.5,
-    normalize_to_pawn_value: Optional[int] = None,
 ) -> dict:
     """Compute every derived field for one raw Stockfish move entry (#188 Phase C).
 
-    Delegates to ``_wdl_path`` when WDL is present; falls back to the
-    Lichess sigmoid otherwise.  CPL is cp-based on both paths.
+    Phase C only changes the *accuracy* source: when WDL is present, mover
+    Win% comes from ``wdl_mu * 100`` (``_wdl_path``) instead of the cp
+    sigmoid, and the White-frame ``wdl_*_adj`` triple is populated. CPL stays
+    cp-based, and the classifier's second-best gap stays cp-based via
+    ``_gap_from_arrow_scores`` on BOTH paths (the candidate gap is unchanged
+    from before Phase C — a native-cp gap arrives with the SF-candidate-cp
+    follow-up).
 
     Args:
         move: One element of ``raw_payload["moves"]`` (#161/#188 SF raw contract).
         before_white: White-frame cp eval before this move (CPL + fallback Win%).
         before_white_mu: White-frame WDL_mu before this move (WDL path only).
-        normalize_to_pawn_value: SF build constant; None falls back to 328.
 
     Returns:
         Dict with raw passthrough fields, derived fields, and walking-state
@@ -412,17 +359,14 @@ def _derive_one_move(
     wdl_draw_adj: Optional[int]
     wdl_loss_adj: Optional[int]
     wdl_mu_white: Optional[float]
-    gap: Optional[float]
     if have_wdl:
         (
             wdl_win_adj, wdl_draw_adj, wdl_loss_adj,
-            win_pct_before_mover, win_pct_after_mover,
-            wdl_mu_white, gap,
+            win_pct_before_mover, win_pct_after_mover, wdl_mu_white,
         ) = _wdl_path(
             move,
             mover_is_white=mover_is_white,
             before_white_mu=before_white_mu,
-            normalize_to_pawn_value=normalize_to_pawn_value,
         )
         # On the WDL path the White-frame mu drives both the stored value and
         # the game-accuracy walk.
@@ -434,10 +378,13 @@ def _derive_one_move(
         win_pct_after_mover = win_pct(mover_cp_after)
         wdl_win_adj = wdl_draw_adj = wdl_loss_adj = None
         wdl_mu_white = None
-        gap = _gap_from_arrow_scores(
-            move.get("arrow_score_1"), move.get("arrow_score_2"),
-        )
         mu_for_walk = win_pct(cp_after_white) / 100.0
+
+    # Classifier gap is cp-based on both paths (reconstructed from the candidate
+    # arrow-score Win% pair). Independent of which path produced the accuracy.
+    gap = _gap_from_arrow_scores(
+        move.get("arrow_score_1"), move.get("arrow_score_2"),
+    )
 
     move_acc = move_accuracy(win_pct_before_mover, win_pct_after_mover)
     classification = classify_sf_move(
@@ -574,6 +521,8 @@ def derive_sf_game(raw_payload: dict, game: Any) -> dict:  # noqa: ARG001
     derived_moves: list[dict] = []
     before_white = 0
     before_white_mu = 0.5  # mu of the starting position (matches cp=0 assumption).
+    # NPV is persisted as reproducibility metadata only — no derivation path
+    # reads it (the candidate gap stays cp-based via arrow scores).
     npv = raw_payload.get("normalize_to_pawn_value")
     all_win_pcts_white: list[float] = [_initial_win_pct_white()]
     for move in raw_payload["moves"]:
@@ -581,7 +530,6 @@ def derive_sf_game(raw_payload: dict, game: Any) -> dict:  # noqa: ARG001
             move,
             before_white=before_white,
             before_white_mu=before_white_mu,
-            normalize_to_pawn_value=npv,
         )
         before_white = result.pop("_cp_after_white")
         before_white_mu = result.pop("_mu_after_white")
