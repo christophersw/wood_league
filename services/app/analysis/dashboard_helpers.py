@@ -1,13 +1,15 @@
 """
 Title: dashboard_helpers.py — Pure helpers for the worker dashboard
 Description:
-    Pure-function helpers consumed by both the legacy queues_summary view
-    and the consolidated /admin/dashboard/ partials. Includes percentile
+    Pure-function helpers consumed by the worker-dashboard HTMX partials
+    on the combined /admin/analysis/ page. Includes percentile
     calculation, per-engine throughput rollups, failure-row construction,
     worker-liveness classification, rate/ETA calculation, recent-game
     grouping, and game-link resolution.
 
 Changelog:
+    2026-05-22 (#200): Drop stale refs to the removed queues_summary view
+        and /admin/dashboard/ shell; partials now serve /admin/analysis/.
     2026-05-14 (#106): Initial extraction from views.py (#86) + new
         dashboard-specific helpers.
     2026-05-14 (#106): Added _rate_per_min and _eta_for for queues partial.
