@@ -104,12 +104,16 @@ def _extract_arrows_and_pvs(
     list[Optional[float]],
     list[Optional[str]],
     list[tuple[Optional[int], Optional[int], Optional[int]]],
+    list[Optional[int]],
 ]:
-    """Extract MultiPV arrow UCIs, mover-frame Win% scores, PV SAN lines, and WDL.
+    """Extract MultiPV arrow UCIs, mover-frame Win% scores, PV SAN lines, WDL, cp.
 
     Mirrors lc0._extract_arrows_and_pvs but converts each PV's cp evaluation
     (White's frame) into mover Win% via white_cp -> mover_cp -> win_pct.
-    Also extracts the per-PV WDL triple when UCI_ShowWDL is enabled (#188 Phase A).
+    Also extracts the per-PV WDL triple when UCI_ShowWDL is enabled (#188 Phase A)
+    and the per-PV White-frame centipawn eval (#188 Phase D) — the latter lets
+    the app compute the classifier's second-best gap natively in cp instead of
+    reconstructing it from a Win%/WDL proxy.
 
     Args:
         info_list: MultiPV result list from engine.analyse(..., multipv=N).
@@ -117,14 +121,15 @@ def _extract_arrows_and_pvs(
         mover: Side to move.
 
     Returns:
-        Tuple of (arrows, arrow_scores, pv_sans, wdl_triples), each up to 3
-        entries. Missing slots are "", None, None, (None, None, None)
-        respectively.
+        Tuple of (arrows, arrow_scores, pv_sans, wdl_triples, arrow_cps), each
+        up to 3 entries. Missing slots are "", None, None, (None, None, None),
+        None respectively. ``arrow_cps`` are White-frame integer centipawns.
     """
     arrows: list[str] = []
     arrow_scores: list[Optional[float]] = []
     pv_sans: list[Optional[str]] = []
     wdl_triples: list[tuple[Optional[int], Optional[int], Optional[int]]] = []
+    arrow_cps: list[Optional[int]] = []
 
     for pv_info in info_list[:3]:
         pv = pv_info.get("pv") or []
@@ -133,12 +138,14 @@ def _extract_arrows_and_pvs(
             arrow_scores.append(None)
             pv_sans.append(None)
             wdl_triples.append((None, None, None))
+            arrow_cps.append(None)
             continue
 
         arrows.append(pv[0].uci())
         pv_cp_white = white_cp(pv_info["score"])
         arrow_scores.append(win_pct(mover_cp(pv_cp_white, mover)))
         wdl_triples.append(_wdl_triple_mover(pv_info, mover))
+        arrow_cps.append(int(pv_cp_white))
 
         pv_board = board.copy()
         pv_san_list: list[str] = []
@@ -150,7 +157,7 @@ def _extract_arrows_and_pvs(
                 break
         pv_sans.append(json.dumps(pv_san_list) if pv_san_list else None)
 
-    return arrows, arrow_scores, pv_sans, wdl_triples
+    return arrows, arrow_scores, pv_sans, wdl_triples, arrow_cps
 
 
 def _mate_in_from_score(score: chess.engine.PovScore) -> Optional[int]:
@@ -180,8 +187,9 @@ def _build_move_result(
     pv_sans: list[Optional[str]],
     wdl_played: tuple[Optional[int], Optional[int], Optional[int]],
     wdl_candidates: list[tuple[Optional[int], Optional[int], Optional[int]]],
+    arrow_cps: list[Optional[int]],
 ) -> StockfishMoveResult:
-    """Assemble a raw StockfishMoveResult (#161 Phase H + #188 Phase A).
+    """Assemble a raw StockfishMoveResult (#161 Phase H + #188 Phase A/D).
 
     Args:
         san: SAN of the played move.
@@ -191,13 +199,14 @@ def _build_move_result(
             ``mate_in_white``).
         mate_in_white: Signed mate distance (positive = White mates), or None.
         arrows: UCI strings for the top up-to-3 MultiPV candidate moves.
-        arrow_scores: Mover-frame Win% for each PV line (legacy raw observable;
-            removed in Phase D).
+        arrow_scores: Mover-frame Win% for each PV line (legacy raw observable).
         pv_sans: JSON-encoded SAN continuations for each PV line.
         wdl_played: Mover-frame WDL triple for the played move (any element
             may be None when UCI_ShowWDL is unavailable).
         wdl_candidates: Up to 3 mover-frame WDL triples mirroring ``arrows``.
             Missing slots use (None, None, None).
+        arrow_cps: Up to 3 White-frame centipawn evals mirroring ``arrows``
+            (#188 Phase D — the native classifier-gap source). Missing → None.
 
     Returns:
         StockfishMoveResult with ply=0 (caller sets the real ply_index).
@@ -232,6 +241,9 @@ def _build_move_result(
         wdl_win_1=c1[0], wdl_draw_1=c1[1], wdl_loss_1=c1[2],
         wdl_win_2=c2[0], wdl_draw_2=c2[1], wdl_loss_2=c2[2],
         wdl_win_3=c3[0], wdl_draw_3=c3[1], wdl_loss_3=c3[2],
+        arrow_cp_1=_get(arrow_cps, 0),
+        arrow_cp_2=_get(arrow_cps, 1),
+        arrow_cp_3=_get(arrow_cps, 2),
     )
 
 
@@ -320,7 +332,7 @@ def _analyze_one_move(
         board, engine, limit,
         cache=cache, network=network, nodes=depth_key, multipv=3,
     )
-    arrows, arrow_scores, pv_sans, wdl_candidates = _extract_arrows_and_pvs(
+    arrows, arrow_scores, pv_sans, wdl_candidates, arrow_cps = _extract_arrows_and_pvs(
         info_before, board, mover,
     )
 
@@ -357,6 +369,7 @@ def _analyze_one_move(
         pv_sans=pv_sans,
         wdl_played=wdl_played,
         wdl_candidates=wdl_candidates,
+        arrow_cps=arrow_cps,
     )
 
 
@@ -579,6 +592,9 @@ def build_stockfish_payload(result: StockfishGameResult, *, worker_id: str) -> d
                 "wdl_win_3": m.wdl_win_3,
                 "wdl_draw_3": m.wdl_draw_3,
                 "wdl_loss_3": m.wdl_loss_3,
+                "arrow_cp_1": m.arrow_cp_1,
+                "arrow_cp_2": m.arrow_cp_2,
+                "arrow_cp_3": m.arrow_cp_3,
             }
             for m in result.moves
         ],
