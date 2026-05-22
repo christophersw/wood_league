@@ -39,7 +39,6 @@ Changelog:
 """
 from __future__ import annotations
 
-import math
 from typing import Any, Optional
 
 from analysis.derivation import thresholds
@@ -63,13 +62,9 @@ __all__ = [
 # change classification.
 MATE_SCORE = 10000
 
-# Classifier gap source: the cp-equivalent second-best gap is reconstructed
-# from the candidate arrow-score Win% pair via the inverse Lichess sigmoid
-# (_cp_from_win_pct / _gap_from_arrow_scores). This is a stopgap — the worker
-# already computes each candidate's centipawn eval and discards it; once it
-# persists arrow_cp_1/2/3 the gap becomes a native cp subtraction and these
-# helpers (+ _WIN_PCT_K) go away. Tracked as the SF-candidate-cp follow-up.
-_WIN_PCT_K = 0.00368208
+# Classifier gap source (#188 Phase D): the second-best gap is a native cp
+# subtraction of the worker's persisted candidate centipawns (arrow_cp_*),
+# via _gap_from_candidate_cp. No sigmoid/WDL reconstruction.
 
 
 # ── #188 Phase C: SF native WDL math ─────────────────────────────────────
@@ -212,51 +207,36 @@ def classify_sf_move(
     return "Blunder"
 
 
-def _cp_from_win_pct(pct: float) -> float:
-    """Invert the Lichess sigmoid: recover cp from a Win% in (0, 100).
-
-    #188 Phase C: kept for missing-WDL fallback only. When Phase D drops
-    arrow_score_* from the worker payload, this function can also go.
-
-    Used only to convert the raw arrow-score Win% gap (mover-frame) into the
-    cp gap the band ladder expects. Saturated inputs (≤0 / ≥100) return
-    ±MATE_SCORE so the inverse never explodes.
-
-    Args:
-        pct: Mover-frame Win% in [0, 100].
-
-    Returns:
-        Mover-frame cp value (signed). Saturation returns ±MATE_SCORE.
-    """
-    if pct <= 0.0:
-        return -float(MATE_SCORE)
-    if pct >= 100.0:
-        return float(MATE_SCORE)
-    # cp = -ln(100/p - 1) / k. p in (0, 100); k = sigmoid coefficient.
-    return -math.log(100.0 / pct - 1.0) / _WIN_PCT_K
-
-
-def _gap_from_arrow_scores(
-    arrow_score_1: Optional[float], arrow_score_2: Optional[float],
+def _gap_from_candidate_cp(
+    arrow_cp_1: Optional[float],
+    arrow_cp_2: Optional[float],
+    *,
+    mover_is_white: bool,
 ) -> Optional[float]:
-    """Compute a cp-equivalent ``second_best_gap`` from two arrow scores.
+    """Native cp ``second_best_gap`` from the top-2 candidate centipawns (#188 Phase D).
 
-    #188 Phase C: kept for missing-WDL fallback only. The WDL path uses
-    ``_gap_from_arrow_wdl_mu`` instead. When Phase D drops arrow_score_*
-    from the worker payload, this function (and _cp_from_win_pct) can go.
+    The worker now persists each candidate's White-frame cp (``arrow_cp_*``);
+    the classifier wants the mover-frame gap "how much better is the best line
+    than the second". Convert each candidate to the mover's frame, then subtract.
+
+    Frame note (#156-class hazard): candidate cps are White-frame. For a Black
+    mover the better line is the *more negative* White-frame cp, so negate before
+    subtracting.
 
     Args:
-        arrow_score_1: Mover-frame Win% for the top candidate.
-        arrow_score_2: Mover-frame Win% for the second candidate.
+        arrow_cp_1: White-frame cp of the top candidate.
+        arrow_cp_2: White-frame cp of the second candidate.
+        mover_is_white: True iff the mover at this position is White.
 
     Returns:
-        Non-negative cp gap between the two, or None when either is missing.
+        Non-negative mover-frame cp gap, or None when either candidate cp is
+        missing (classifier then floors the top tier to "Best", as with MultiPV<2).
     """
-    if arrow_score_1 is None or arrow_score_2 is None:
+    if arrow_cp_1 is None or arrow_cp_2 is None:
         return None
-    cp_1 = _cp_from_win_pct(float(arrow_score_1))
-    cp_2 = _cp_from_win_pct(float(arrow_score_2))
-    return max(0.0, cp_1 - cp_2)
+    mover_cp_1 = arrow_cp_1 if mover_is_white else -arrow_cp_1
+    mover_cp_2 = arrow_cp_2 if mover_is_white else -arrow_cp_2
+    return max(0.0, mover_cp_1 - mover_cp_2)
 
 
 def _saturated_cp(cp_eval: Optional[int], mate_in: Optional[int]) -> int:
@@ -290,8 +270,8 @@ def _wdl_path(
     Phase C scope: this path only changes the *accuracy* source (mover Win%
     from WDL_mu instead of the cp sigmoid) and populates the White-frame
     ``wdl_*_adj`` triple. The classifier's second-best gap is NOT computed
-    here — it stays cp-based via the caller's ``_gap_from_arrow_scores`` on
-    both the WDL and fallback paths.
+    here — the caller derives it natively from candidate cps via
+    ``_gap_from_candidate_cp`` on both the WDL and fallback paths.
 
     Args:
         move: Raw move dict.
@@ -321,13 +301,11 @@ def _derive_one_move(
 ) -> dict:
     """Compute every derived field for one raw Stockfish move entry (#188 Phase C).
 
-    Phase C only changes the *accuracy* source: when WDL is present, mover
-    Win% comes from ``wdl_mu * 100`` (``_wdl_path``) instead of the cp
-    sigmoid, and the White-frame ``wdl_*_adj`` triple is populated. CPL stays
-    cp-based, and the classifier's second-best gap stays cp-based via
-    ``_gap_from_arrow_scores`` on BOTH paths (the candidate gap is unchanged
-    from before Phase C — a native-cp gap arrives with the SF-candidate-cp
-    follow-up).
+    When WDL is present, mover Win% comes from ``wdl_mu * 100`` (``_wdl_path``)
+    instead of the cp sigmoid, and the White-frame ``wdl_*_adj`` triple is
+    populated. CPL stays cp-based. The classifier's second-best gap is a native
+    cp subtraction of the worker's candidate centipawns (``_gap_from_candidate_cp``)
+    on BOTH paths — #188 Phase D.
 
     Args:
         move: One element of ``raw_payload["moves"]`` (#161/#188 SF raw contract).
@@ -380,10 +358,12 @@ def _derive_one_move(
         wdl_mu_white = None
         mu_for_walk = win_pct(cp_after_white) / 100.0
 
-    # Classifier gap is cp-based on both paths (reconstructed from the candidate
-    # arrow-score Win% pair). Independent of which path produced the accuracy.
-    gap = _gap_from_arrow_scores(
-        move.get("arrow_score_1"), move.get("arrow_score_2"),
+    # Classifier gap is cp-based on both paths, now from the worker's native
+    # candidate centipawns (arrow_cp_*). Independent of which path produced the
+    # accuracy. Falls back to None (→ "Best" floor) when candidate cps are absent.
+    gap = _gap_from_candidate_cp(
+        move.get("arrow_cp_1"), move.get("arrow_cp_2"),
+        mover_is_white=mover_is_white,
     )
 
     move_acc = move_accuracy(win_pct_before_mover, win_pct_after_mover)
@@ -424,6 +404,10 @@ def _derive_one_move(
         "wdl_win_3": move.get("wdl_win_3"),
         "wdl_draw_3": move.get("wdl_draw_3"),
         "wdl_loss_3": move.get("wdl_loss_3"),
+        # #188 Phase D: candidate White-frame cp passthrough (gap source).
+        "arrow_cp_1": move.get("arrow_cp_1"),
+        "arrow_cp_2": move.get("arrow_cp_2"),
+        "arrow_cp_3": move.get("arrow_cp_3"),
         # #188 Phase C: White-frame WDL (frame-mirror only; null on fallback).
         "wdl_win_adj": wdl_win_adj,
         "wdl_draw_adj": wdl_draw_adj,

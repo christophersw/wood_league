@@ -172,6 +172,10 @@ class StockfishMoveSerializer(serializers.Serializer):
     wdl_loss_3 = serializers.IntegerField(
         min_value=0, max_value=1000, required=False, allow_null=True, default=None,
     )
+    # #188 Phase D: per-candidate White-frame centipawn evals (native gap source).
+    arrow_cp_1 = serializers.FloatField(required=False, allow_null=True, default=None)
+    arrow_cp_2 = serializers.FloatField(required=False, allow_null=True, default=None)
+    arrow_cp_3 = serializers.FloatField(required=False, allow_null=True, default=None)
 
     class Meta:
         # DRF doesn't enforce "no extra fields" by default — we layer that on
