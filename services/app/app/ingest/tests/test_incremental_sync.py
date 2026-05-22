@@ -226,3 +226,27 @@ def test_sync_player_full_bypasses_watermark() -> None:
 
     assert len(upserted) == 2
     assert stats.inserted == 2
+
+
+def test_run_sync_passes_full_flag(monkeypatch) -> None:
+    """run_sync.py --full reaches sync_player as full=True."""
+    import sys
+
+    import app.ingest.run_sync as run_sync
+
+    calls: list[tuple[str, bool]] = []
+
+    def fake_sync_player(_self, username, progress_callback=None, *, full=False):
+        calls.append((username, full))
+        return SyncStats(username=username)
+
+    monkeypatch.setattr(ChessComSyncService, "__init__", lambda self: None)
+    monkeypatch.setattr(ChessComSyncService, "sync_player", fake_sync_player)
+    monkeypatch.setattr(
+        run_sync, "get_settings", lambda: MagicMock(chess_com_usernames="alice")
+    )
+    monkeypatch.setattr(sys, "argv", ["run_sync.py", "--usernames", "alice", "--full"])
+
+    run_sync.main()
+
+    assert calls == [("alice", True)]
