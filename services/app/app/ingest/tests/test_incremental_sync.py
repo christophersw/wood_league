@@ -42,3 +42,32 @@ def test_payload_at_watermark_is_new() -> None:
 def test_payload_before_watermark_not_new() -> None:
     """A game ending before the watermark is already loaded and is skipped."""
     assert ChessComSyncService._payload_is_new({"end_time": 50}, 100) is False
+
+
+_WATERMARK = datetime(2024, 6, 15, tzinfo=UTC)
+_BASE = "https://api.chess.com/pub/player/alice/games"
+
+
+def test_archive_newer_month_in_scope() -> None:
+    """An archive month after the watermark month is kept."""
+    assert ChessComSyncService._archive_in_watermark_scope(f"{_BASE}/2024/07", _WATERMARK) is True
+
+
+def test_archive_same_month_in_scope() -> None:
+    """The watermark's own month is kept (it can hold newer games)."""
+    assert ChessComSyncService._archive_in_watermark_scope(f"{_BASE}/2024/06", _WATERMARK) is True
+
+
+def test_archive_older_month_out_of_scope() -> None:
+    """An earlier month in the same year is skipped."""
+    assert ChessComSyncService._archive_in_watermark_scope(f"{_BASE}/2024/05", _WATERMARK) is False
+
+
+def test_archive_older_year_out_of_scope() -> None:
+    """An earlier year is skipped."""
+    assert ChessComSyncService._archive_in_watermark_scope(f"{_BASE}/2023/12", _WATERMARK) is False
+
+
+def test_archive_unparseable_defaults_in_scope() -> None:
+    """An unparseable URL is fetched rather than silently dropped."""
+    assert ChessComSyncService._archive_in_watermark_scope("garbage", _WATERMARK) is True

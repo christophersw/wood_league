@@ -102,6 +102,32 @@ class ChessComSyncService:
         """
         return int(payload.get("end_time", 0)) >= watermark_epoch
 
+    @staticmethod
+    def _archive_in_watermark_scope(archive_url: str, watermark: datetime) -> bool:
+        """Return True if the archive's year/month is >= the watermark's month.
+
+        Chess.com archive URLs end with '/YYYY/MM'. Any archive whose month is
+        strictly before the watermark's month contains only already-loaded
+        games and can be skipped without an HTTP fetch.
+
+        Args:
+            archive_url: A Chess.com monthly archive URL.
+            watermark: The player's latest loaded game datetime (UTC).
+
+        Returns:
+            bool: True to fetch the archive; False to skip it. Unparseable URLs
+            return True (fetch) so a parsing quirk never drops real games.
+        """
+        parts = archive_url.rstrip("/").split("/")
+        if len(parts) < 2:
+            return True
+        try:
+            year = int(parts[-2])
+            month = int(parts[-1])
+        except ValueError:
+            return True
+        return (year, month) >= (watermark.year, watermark.month)
+
     def sync_many(self, usernames: list[str]) -> list[SyncStats]:
         """Sync multiple players and return statistics for each."""
         return [self.sync_player(username) for username in usernames]
