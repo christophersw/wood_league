@@ -20,7 +20,7 @@ def test_sf_arrow_has_signed_pawn_label(simple_pgn_game):
     sf = [SfMoveRow(
         ply=1, san="e4", fen="", cp_eval=34.0, mate_in=None, cpl=0.0, move_win_delta=0.0,
         classification="best", best_move="", arrow_uci_1="e2e4", arrow_uci_2=None, arrow_uci_3=None,
-        arrow_score_1=34.0, arrow_score_2=None, arrow_score_3=None,
+        arrow_cp_1=34.0, arrow_cp_2=None, arrow_cp_3=None,
         pv_san_1=None, pv_san_2=None, pv_san_3=None,
     )]
     frames = build_board_frames(pgn=simple_pgn_game.pgn, sf_moves=sf, lc0_moves=[], orientation="white")

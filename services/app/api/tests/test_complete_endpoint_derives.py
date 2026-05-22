@@ -47,7 +47,7 @@ def _sf_raw_move(ply: int, cp_eval: int = 30) -> dict:
         "ply": ply, "san": "e4" if ply == 1 else "e5", "fen": "—",
         "cp_eval": cp_eval, "mate_in": None,
         "arrow_uci_1": "e2e4", "arrow_uci_2": None, "arrow_uci_3": None,
-        "arrow_score_1": 55.0, "arrow_score_2": None, "arrow_score_3": None,
+        "arrow_cp_1": 30, "arrow_cp_2": None, "arrow_cp_3": None,
         "pv_san_1": None, "pv_san_2": None, "pv_san_3": None,
     }
 

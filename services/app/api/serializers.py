@@ -109,9 +109,9 @@ class StockfishMoveSerializer(serializers.Serializer):
     """One Stockfish move — *raw observables only* (#161 raw contract).
 
     Worker emits cp_eval (white-frame, post-move) and optionally mate_in plus
-    the top-3 candidate UCIs / mover-frame Win% scores / PV SAN lists. Every
-    derived field (cpl, classification, move_win_delta, best_move) is computed
-    app-side by ``derivation.stockfish.derive_sf_game``.
+    the top-3 candidate UCIs / White-frame candidate cp (arrow_cp_*) / PV SAN
+    lists. Every derived field (cpl, classification, move_win_delta, best_move)
+    is computed app-side by ``derivation.stockfish.derive_sf_game``.
     """
 
     ply = serializers.IntegerField(min_value=1)
@@ -127,9 +127,6 @@ class StockfishMoveSerializer(serializers.Serializer):
     arrow_uci_3 = serializers.CharField(
         max_length=8, required=False, default=None, allow_null=True, allow_blank=True,
     )
-    arrow_score_1 = serializers.FloatField(required=False, allow_null=True, default=None)
-    arrow_score_2 = serializers.FloatField(required=False, allow_null=True, default=None)
-    arrow_score_3 = serializers.FloatField(required=False, allow_null=True, default=None)
     pv_san_1 = serializers.CharField(required=False, allow_null=True, default=None)
     pv_san_2 = serializers.CharField(required=False, allow_null=True, default=None)
     pv_san_3 = serializers.CharField(required=False, allow_null=True, default=None)
@@ -250,6 +247,10 @@ class StockfishCompleteSerializer(serializers.Serializer):
     })
     _FORBIDDEN_PER_MOVE = frozenset({
         "cpl", "classification", "best_move", "move_win_delta", "arrow_uci",
+        # #197: legacy mover-frame sigmoid Win% scalars, retired in favour of
+        # native arrow_cp_* (gap/eval) + wdl_*_adj (Win%). A stale worker that
+        # still emits these must fail loud rather than have them silently dropped.
+        "arrow_score_1", "arrow_score_2", "arrow_score_3",
     })
 
     def validate(self, attrs):

@@ -54,10 +54,6 @@ class MoveResult:
     arrow_uci: str  # tier-1 (best)
     arrow_uci_2: str = ""  # tier-2 (better)
     arrow_uci_3: str = ""  # tier-3 (good)
-    # Candidate eval scores from mover perspective (cp) for tiers 1-3.
-    arrow_score_1: float | None = None
-    arrow_score_2: float | None = None
-    arrow_score_3: float | None = None
     cpl: float = 0.0  # centipawn loss for the side that just moved (≥ 0)
     classification: str = "best"  # brilliant / great / best / excellent / good / inaccuracy / mistake / blunder
 
@@ -279,9 +275,6 @@ def analyze_pgn(  # noqa: C901 — inherent: tightly-coupled move loop with boar
                         arrow_uci=move.uci(),
                         arrow_uci_2="",
                         arrow_uci_3="",
-                        arrow_score_1=0.0,
-                        arrow_score_2=None,
-                        arrow_score_3=None,
                         cpl=0.0,
                         classification="best",
                     )
@@ -299,11 +292,6 @@ def analyze_pgn(  # noqa: C901 — inherent: tightly-coupled move loop with boar
                     if len(best_result) > 1
                     else None
                 )
-                third_cp_before: float | None = (
-                    _cp(best_result[2]["score"].white())
-                    if len(best_result) > 2
-                    else None
-                )
                 pv_1 = top.get("pv", [None])[0] if top else None
                 pv_2 = (
                     best_result[1].get("pv", [None])[0]
@@ -318,7 +306,6 @@ def analyze_pgn(  # noqa: C901 — inherent: tightly-coupled move loop with boar
             else:
                 top = best_result
                 second_cp_before = None
-                third_cp_before = None
                 pv_1 = top.get("pv", [None])[0] if top else None
                 pv_2 = None
                 pv_3 = None
@@ -327,14 +314,6 @@ def analyze_pgn(  # noqa: C901 — inherent: tightly-coupled move loop with boar
             best_move_str = pv_1.uci() if pv_1 else ""
             arrow_2_str = pv_2.uci() if pv_2 else ""
             arrow_3_str = pv_3.uci() if pv_3 else ""
-            # Convert candidate scores to mover perspective for UI labels/intensity.
-            score_1 = best_cp_before if is_white_move else -best_cp_before
-            score_2 = (
-                second_cp_before if is_white_move else -second_cp_before
-            ) if second_cp_before is not None else None
-            score_3 = (
-                third_cp_before if is_white_move else -third_cp_before
-            ) if third_cp_before is not None else None
 
             is_capture = board.is_capture(move)
             board.push(move)
@@ -387,9 +366,6 @@ def analyze_pgn(  # noqa: C901 — inherent: tightly-coupled move loop with boar
                     arrow_uci=best_move_str,
                     arrow_uci_2=arrow_2_str,
                     arrow_uci_3=arrow_3_str,
-                    arrow_score_1=score_1,
-                    arrow_score_2=score_2,
-                    arrow_score_3=score_3,
                     cpl=cpl,
                     classification=classification,
                 )

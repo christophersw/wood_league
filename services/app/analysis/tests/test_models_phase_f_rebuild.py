@@ -51,7 +51,7 @@ def test_sf_move_has_new_raw_and_derived_fields():
         analysis=ga, ply=1, san="e4", fen="—",
         cp_eval=30, cpl=0,
         arrow_uci_1="e2e4", arrow_uci_2=None, arrow_uci_3=None,
-        arrow_score_1=55.0, arrow_score_2=50.0, arrow_score_3=None,
+        arrow_cp_1=30.0, arrow_cp_2=12.0, arrow_cp_3=None,
         mate_in=None,
         move_win_delta=0.0,
         classification="Best",

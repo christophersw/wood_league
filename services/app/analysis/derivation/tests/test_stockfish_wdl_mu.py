@@ -69,7 +69,7 @@ def _move(**overrides):
         "ply": 1, "san": "e4", "fen": "x" * 30,
         "cp_eval": 30, "mate_in": None,
         "arrow_uci_1": "e7e5", "arrow_uci_2": "c7c5", "arrow_uci_3": "",
-        "arrow_score_1": 55.0, "arrow_score_2": 52.0, "arrow_score_3": None,
+        "arrow_cp_1": 30, "arrow_cp_2": 12, "arrow_cp_3": None,
         "pv_san_1": '["e5"]', "pv_san_2": '["c5"]', "pv_san_3": None,
         "wdl_win": 200, "wdl_draw": 700, "wdl_loss": 100,
         "wdl_win_1": 220, "wdl_draw_1": 700, "wdl_loss_1": 80,
@@ -176,7 +176,7 @@ def test_derive_sf_game_fallback_path_still_produces_accuracy():
         "worker_id": "w-1", "engine_depth": 20, "engine_name": "Stockfish 16",
         "moves": [
             {"ply": 1, "san": "e4", "fen": "x" * 30, "cp_eval": 30, "mate_in": None,
-             "arrow_uci_1": "e2e4", "arrow_score_1": 55.0, "arrow_score_2": 52.0},
+             "arrow_uci_1": "e2e4", "arrow_cp_1": 30, "arrow_cp_2": 12},
             {"ply": 2, "san": "e5", "fen": "x" * 30, "cp_eval": -10, "mate_in": None,
              "arrow_uci_1": "e7e5"},
         ],

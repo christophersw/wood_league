@@ -287,9 +287,6 @@ class JobCompleteTests(TestCase):
                     'arrow_uci_1': 'e2e4',
                     'arrow_uci_2': 'd2d4',
                     'arrow_uci_3': 'g1f3',
-                    'arrow_score_1': 55.1,
-                    'arrow_score_2': 54.8,
-                    'arrow_score_3': 53.0,
                     'pv_san_1': '["e4", "e5", "Nf3"]',
                     'pv_san_2': '["d4", "d5"]',
                     'pv_san_3': None,
@@ -313,9 +310,6 @@ class JobCompleteTests(TestCase):
         self.assertEqual(move.arrow_uci_1, 'e2e4')
         self.assertEqual(move.arrow_uci_2, 'd2d4')
         self.assertEqual(move.arrow_uci_3, 'g1f3')
-        self.assertAlmostEqual(move.arrow_score_1, 55.1, places=4)
-        self.assertAlmostEqual(move.arrow_score_2, 54.8, places=4)
-        self.assertAlmostEqual(move.arrow_score_3, 53.0, places=4)
         self.assertEqual(move.pv_san_1, '["e4", "e5", "Nf3"]')
         self.assertEqual(move.pv_san_2, '["d4", "d5"]')
         self.assertIsNone(move.pv_san_3)
@@ -371,9 +365,6 @@ class JobCompleteTests(TestCase):
                     'arrow_uci_1': 'e2e4',
                     'arrow_uci_2': '',
                     'arrow_uci_3': '',
-                    'arrow_score_1': None,
-                    'arrow_score_2': None,
-                    'arrow_score_3': None,
                     'pv_san_1': None,
                     'pv_san_2': None,
                     'pv_san_3': None,

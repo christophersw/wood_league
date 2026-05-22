@@ -97,7 +97,7 @@ _SF_RAW_MOVE = {
     "ply": 1, "san": "e4", "fen": "—",
     "cp_eval": 30, "mate_in": None,
     "arrow_uci_1": "e2e4", "arrow_uci_2": "d2d4", "arrow_uci_3": None,
-    "arrow_score_1": 55.0, "arrow_score_2": 53.0, "arrow_score_3": None,
+    "arrow_cp_1": 30, "arrow_cp_2": 12, "arrow_cp_3": None,
     "pv_san_1": "[\"e4\", \"e5\"]", "pv_san_2": None, "pv_san_3": None,
 }
 
@@ -131,6 +131,13 @@ def test_sf_rejects_pre_161_derived_game_fields():
 def test_sf_rejects_pre_161_derived_move_fields():
     """A SF move carrying pre-#161 derived fields (cpl, classification) is refused."""
     legacy_move = {**_SF_RAW_MOVE, "cpl": 5, "classification": "Best", "best_move": "e2e4"}
+    ser = StockfishCompleteSerializer(data=_sf_payload(moves=[legacy_move]))
+    assert not ser.is_valid()
+
+
+def test_sf_rejects_legacy_arrow_score_fields():
+    """A stale worker still emitting arrow_score_* (#197) must fail loud."""
+    legacy_move = {**_SF_RAW_MOVE, "arrow_score_1": 55.0}
     ser = StockfishCompleteSerializer(data=_sf_payload(moves=[legacy_move]))
     assert not ser.is_valid()
 

@@ -147,8 +147,8 @@ def _resolve_top_tier(
 
     Args:
         second_best_gap: cp gap between best and second-best legal moves
-            (None when MultiPV<2). Phase E supplies a sigmoid-derived gap
-            from the raw arrow-score Win% pair.
+            (None when MultiPV<2). #188 Phase D supplies a native cp gap from
+            the worker's candidate centipawns (arrow_cp_*).
         mover_win_pct: Mover-frame Win% before the move.
         is_capture_or_sacrifice: SEE result; Phase E always supplies False.
 
@@ -386,9 +386,6 @@ def _derive_one_move(
         "arrow_uci_1": move.get("arrow_uci_1") or "",
         "arrow_uci_2": move.get("arrow_uci_2"),
         "arrow_uci_3": move.get("arrow_uci_3"),
-        "arrow_score_1": move.get("arrow_score_1"),
-        "arrow_score_2": move.get("arrow_score_2"),
-        "arrow_score_3": move.get("arrow_score_3"),
         "pv_san_1": move.get("pv_san_1"),
         "pv_san_2": move.get("pv_san_2"),
         "pv_san_3": move.get("pv_san_3"),
@@ -506,7 +503,7 @@ def derive_sf_game(raw_payload: dict, game: Any) -> dict:  # noqa: ARG001
     before_white = 0
     before_white_mu = 0.5  # mu of the starting position (matches cp=0 assumption).
     # NPV is persisted as reproducibility metadata only — no derivation path
-    # reads it (the candidate gap stays cp-based via arrow scores).
+    # reads it (the candidate gap stays cp-based via arrow_cp_*).
     npv = raw_payload.get("normalize_to_pawn_value")
     all_win_pcts_white: list[float] = [_initial_win_pct_white()]
     for move in raw_payload["moves"]:
