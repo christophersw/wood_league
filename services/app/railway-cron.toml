@@ -6,12 +6,14 @@
 #   3. Set the cron schedule on the service (Railway UI: Settings → Cron Schedule)
 #      to `*/15 * * * *` (or whatever cadence you prefer).
 #   4. Share the same env vars as the web service (DATABASE_URL, CHESS_COM_USERNAMES,
-#      ANALYSIS_DEPTH, LC0_NODES, etc).
+#      ANALYSIS_DEPTH, LC0_NODES, etc). To enable auto-enqueue, also set
+#      AUTO_ENQUEUE_STOCKFISH / AUTO_ENQUEUE_LC0 (both default off).
 #
 # The cron service runs `sync_games`, which:
 #   - Acquires a Postgres advisory lock (cron-overlap protection).
 #   - Calls the existing run_sync.py to fetch Chess.com archives.
-#   - Auto-enqueues AnalysisJobs per the SiteSettings toggles in the admin UI.
+#   - Auto-enqueues AnalysisJobs when AUTO_ENQUEUE_STOCKFISH / AUTO_ENQUEUE_LC0
+#     env vars are set (issue #201; opt-in, both default off).
 
 [build]
 builder = "RAILPACK"
