@@ -1,13 +1,15 @@
 """
 Title: dashboard_helpers.py — Pure helpers for the worker dashboard
 Description:
-    Pure-function helpers consumed by both the legacy queues_summary view
-    and the consolidated /admin/dashboard/ partials. Includes percentile
+    Pure-function helpers consumed by the worker-dashboard HTMX partials
+    on the combined /admin/analysis/ page. Includes percentile
     calculation, per-engine throughput rollups, failure-row construction,
     worker-liveness classification, rate/ETA calculation, recent-game
     grouping, and game-link resolution.
 
 Changelog:
+    2026-05-22 (#200): Drop stale refs to the removed queues_summary view
+        and /admin/dashboard/ shell; partials now serve /admin/analysis/.
     2026-05-14 (#106): Initial extraction from views.py (#86) + new
         dashboard-specific helpers.
     2026-05-14 (#106): Added _rate_per_min and _eta_for for queues partial.
@@ -515,8 +517,9 @@ def _worker_recent_games(worker_id: str, limit: int = 10) -> list[dict[str, Any]
         limit: Maximum rows to return (default 10, newest first).
 
     Returns:
-        List of dicts, keys: ``game_label`` (``"#<id>"``), ``game_url``
-        (str | None — game analysis page when slug resolvable),
+        List of dicts, keys: ``game_label`` (``"#<id>"``),
+        ``game_label_short`` (``"#<id[:6]>"`` — truncated for display),
+        ``game_url`` (str | None — game analysis page when slug resolvable),
         ``engine``, ``duration_seconds`` (float | None), ``completed_at``
         (datetime).
     """
@@ -541,6 +544,7 @@ def _worker_recent_games(worker_id: str, limit: int = 10) -> list[dict[str, Any]
         )
         out.append({
             "game_label": f"#{job.game_id}",
+            "game_label_short": f"#{str(job.game_id)[:6]}",
             "game_url": url,
             "engine": job.engine,
             "duration_seconds": (

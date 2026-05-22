@@ -97,7 +97,7 @@
               <ul class="dash-recent-list">
                 {% for g in card.recent_games %}
                   <li>
-                    {% if g.game_url %}<a href="{{ g.game_url }}">{{ g.game_label }}</a>{% else %}{{ g.game_label }}{% endif %}
+                    {% if g.game_url %}<a href="{{ g.game_url }}" title="{{ g.game_label }}">{{ g.game_label_short }}</a>{% else %}<span title="{{ g.game_label }}">{{ g.game_label_short }}</span>{% endif %}
                     <span class="dash-recent-list__meta">{{ g.engine }} · {% if g.duration_seconds is not None %}{{ g.duration_seconds }}s{% else %}—{% endif %}</span>
                   </li>
                 {% endfor %}

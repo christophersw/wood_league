@@ -1,20 +1,14 @@
 """
 Title: partial_urls.py — Analysis HTMX partial URL patterns
 Description:
-    URL routing for HTMX partial views in the analysis module. Provides
-    endpoints for partial content updates in the analysis queue interface.
-
-    The ``analysis/queue/`` path now serves the overview-cards partial
-    (``_overview_cards.html``) used by the /analysis/ overview page. The old
-    ``_queue_partial.html`` rendering has been replaced (Task C1).
+    HTMX partial routes for the analysis module. The legacy
+    ``analysis/queue/`` overview-cards partial was removed in #200 along
+    with the queue pages; no analysis partials remain at present.
 
 Changelog:
+    2026-05-22 (#200): Remove analysis/queue/ overview_partial route.
     2026-05-10: Task C1 — repoint analysis/queue/ to overview_partial view.
-    2026-05-08: Added file header to meet documentation standards
 """
-from django.urls import path
-from . import views
+from django.urls import path  # noqa: F401  (kept for future partials)
 
-urlpatterns = [
-    path("analysis/queue/", views.overview_partial, name="analysis-queue-partial"),
-]
+urlpatterns: list = []

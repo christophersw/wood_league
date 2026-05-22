@@ -1,11 +1,13 @@
 """
-Title: views_dashboard.py — Worker dashboard views
+Title: views_dashboard.py — Worker dashboard partial views
 Description:
-    Hosts the consolidated /admin/dashboard/ shell view plus the six
-    HTMX-polled partials (banner, workers, queues, throughput, recent,
-    failures). Replaces the legacy /admin/diagnostics/ page.
+    Hosts the seven HTMX-polled dashboard partials (banner, workers,
+    queues, throughput, recent, failures, logs). These are polled by the
+    combined /admin/analysis/ overview page. The legacy dashboard shell
+    view was removed in #200.
 
 Changelog:
+    2026-05-22 (#200): Remove dashboard shell view; update description.
     2026-05-14 (#106): Initial wire-up — stub partials, no real data yet.
     2026-05-14 (#106): Banner + workers partials now render live data.
     2026-05-14 (#106): Queues + throughput partials now render live data.
@@ -47,24 +49,6 @@ def _aware(dt):
     if timezone.is_naive(dt):
         return timezone.make_aware(dt, timezone.get_current_timezone())
     return dt
-
-
-@staff_member_required
-def dashboard(request: HttpRequest) -> HttpResponse:
-    """Render the dashboard shell page.
-
-    The shell page contains HTMX wrappers that each poll a partial view
-    for live data. The shell itself carries no data — partials are the
-    sole source of truth so a slow query in one section never blocks
-    the rest of the page.
-
-    Args:
-        request: The incoming Django HTTP request.
-
-    Returns:
-        Rendered HTML response for ``analysis/dashboard.html``.
-    """
-    return render(request, "analysis/dashboard.html", {})
 
 
 @staff_member_required

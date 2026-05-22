@@ -1,9 +1,10 @@
 """
 Title: models.py — Site-wide singleton settings
-Description: Holds toggles that apply to the whole installation, currently the
-    auto-enqueue flags for new Chess.com games per analysis engine.
+Description: Holds site-wide singleton configuration. (Auto-enqueue toggles
+    moved to env settings in #201.)
 Changelog:
     2026-05-10: Initial — Task A1 of scrap-dispatchers plan.
+    2026-05-22: Remove auto_enqueue_* fields — now env-only (#201).
 """
 from __future__ import annotations
 
@@ -13,14 +14,6 @@ from django.db import models
 class SiteSettings(models.Model):
     """Singleton row of site-wide configuration. Always pk=1."""
 
-    auto_enqueue_stockfish = models.BooleanField(
-        default=True,
-        help_text="Auto-enqueue Stockfish AnalysisJob for newly ingested games.",
-    )
-    auto_enqueue_lc0 = models.BooleanField(
-        default=False,
-        help_text="Auto-enqueue Lc0 AnalysisJob for newly ingested games.",
-    )
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

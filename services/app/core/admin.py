@@ -1,9 +1,10 @@
 """
 Title: admin.py — Admin registration for SiteSettings singleton
-Description: Registers the SiteSettings model so admins can flip auto-enqueue
-    flags from the Django admin UI.
+Description: Registers the SiteSettings model in the Django admin UI.
+    (Auto-enqueue toggles moved to env settings in #201.)
 Changelog:
     2026-05-10: Initial — Task A1 of scrap-dispatchers plan.
+    2026-05-22: Remove auto_enqueue_* from list_display (#201).
 """
 from django.contrib import admin
 
@@ -14,7 +15,7 @@ from .models import SiteSettings
 class SiteSettingsAdmin(admin.ModelAdmin):
     """Admin for the singleton settings row; hides add when one already exists."""
 
-    list_display = ("__str__", "auto_enqueue_stockfish", "auto_enqueue_lc0", "updated_at")
+    list_display = ("__str__", "updated_at")
 
     def has_add_permission(self, request):
         """Allow add only if the singleton has not yet been created.

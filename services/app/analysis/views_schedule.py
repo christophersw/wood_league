@@ -1,11 +1,15 @@
 """
-Title: views_schedule.py — admin scheduling page (issue #155 B)
+Title: views_schedule.py — combined analysis + scheduling page (#200)
 Description:
     _admin_login_required page to manage RecurringAnalysisSchedule
     rules and one-off runs, plus "recent runs" / "future planned runs"
     tables and an HTMX cron preview. Produces pending AnalysisSchedule
     rows that Sub-project A's reconcile cron consumes.
+    The overview() view merges the worker dashboard (HTMX-polled) and
+    scheduling sections into a single page at /admin/analysis/.
 Changelog:
+    2026-05-22 (#200): Rename scheduling_page → overview; render to
+        analysis/overview.html; repoint all redirects to analysis:overview.
     2026-05-18: Initial — issue #155 Sub-project B.
 """
 from __future__ import annotations
@@ -94,13 +98,18 @@ def _render_page(request: HttpRequest,
         "future_rows": _future_rows(),
         "recent_rows": _recent_rows(),
     }
-    return render(request, "analysis/scheduling.html", ctx, status=status)
+    return render(request, "analysis/overview.html", ctx, status=status)
 
 
 @_admin_login_required
 @require_GET
-def scheduling_page(request: HttpRequest) -> HttpResponse:
-    """Render the scheduling admin page."""
+def overview(request: HttpRequest) -> HttpResponse:
+    """Render the combined analysis page (dashboard + scheduling).
+
+    The worker-dashboard sections are HTMX-polled partials, so this view
+    only supplies the scheduling context; the dashboard data loads via
+    HTMX after the shell renders.
+    """
     return _render_page(request, RecurringAnalysisScheduleForm())
 
 
@@ -111,7 +120,7 @@ def rule_create(request: HttpRequest) -> HttpResponse:
     form = RecurringAnalysisScheduleForm(request.POST)
     if form.is_valid():
         form.save()
-        return redirect("analysis:scheduling")
+        return redirect("analysis:overview")
     return _render_page(request, form, status=200)
 
 
@@ -123,7 +132,7 @@ def rule_edit(request: HttpRequest, pk: int) -> HttpResponse:
     form = RecurringAnalysisScheduleForm(request.POST, instance=rule)
     if form.is_valid():
         form.save()
-        return redirect("analysis:scheduling")
+        return redirect("analysis:overview")
     return _render_page(request, form, status=200)
 
 
@@ -132,7 +141,7 @@ def rule_edit(request: HttpRequest, pk: int) -> HttpResponse:
 def rule_delete(request: HttpRequest, pk: int) -> HttpResponse:
     """Delete a rule (history rows keep, FK SET_NULL)."""
     get_object_or_404(RecurringAnalysisSchedule, pk=pk).delete()
-    return redirect("analysis:scheduling")
+    return redirect("analysis:overview")
 
 
 @_admin_login_required
@@ -142,7 +151,7 @@ def rule_toggle(request: HttpRequest, pk: int) -> HttpResponse:
     rule = get_object_or_404(RecurringAnalysisSchedule, pk=pk)
     rule.enabled = not rule.enabled
     rule.save(update_fields=["enabled", "updated_at"])
-    return redirect("analysis:scheduling")
+    return redirect("analysis:overview")
 
 
 def _parse_max_jobs(raw: str | None) -> int | None:
@@ -185,7 +194,7 @@ def run_once(request: HttpRequest) -> HttpResponse:
         f"Run #{sched.pk} queued ({cap}). It will launch on the next "
         f"reconcile tick — watch the Future planned runs table.",
     )
-    return redirect("analysis:scheduling")
+    return redirect("analysis:overview")
 
 
 @_admin_login_required
@@ -203,7 +212,7 @@ def rerun(request: HttpRequest, pk: int) -> HttpResponse:
         f"Re-run #{sched.pk} queued from #{src.pk} ({cap}). It will "
         f"launch on the next reconcile tick.",
     )
-    return redirect("analysis:scheduling")
+    return redirect("analysis:overview")
 
 
 @_admin_login_required
