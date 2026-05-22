@@ -13,6 +13,7 @@ Changelog:
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from unittest.mock import MagicMock
 
 from app.ingest.sync_service import ChessComSyncService
 
@@ -71,3 +72,21 @@ def test_archive_older_year_out_of_scope() -> None:
 def test_archive_unparseable_defaults_in_scope() -> None:
     """An unparseable URL is fetched rather than silently dropped."""
     assert ChessComSyncService._archive_in_watermark_scope("garbage", _WATERMARK) is True
+
+
+def test_player_watermark_returns_scalar() -> None:
+    """The watermark is whatever the max(played_at) query returns."""
+    service = ChessComSyncService.__new__(ChessComSyncService)
+    session = MagicMock(name="session")
+    expected = datetime(2024, 6, 1, tzinfo=UTC)
+    session.scalar.return_value = expected
+    assert service._player_watermark(session, MagicMock(id=7)) == expected
+    assert session.scalar.called
+
+
+def test_player_watermark_none_when_no_games() -> None:
+    """A player with no games has no watermark."""
+    service = ChessComSyncService.__new__(ChessComSyncService)
+    session = MagicMock(name="session")
+    session.scalar.return_value = None
+    assert service._player_watermark(session, MagicMock(id=7)) is None

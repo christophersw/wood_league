@@ -21,7 +21,7 @@ import hashlib
 import io
 
 import chess.pgn
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.config import get_settings
 from app.ingest.chesscom_client import ChessComClient
@@ -127,6 +127,23 @@ class ChessComSyncService:
         except ValueError:
             return True
         return (year, month) >= (watermark.year, watermark.month)
+
+    def _player_watermark(self, session, player) -> datetime | None:
+        """Return the player's latest game time, or None if they have no games.
+
+        Args:
+            session: An active SQLAlchemy session.
+            player: The Player whose games define the watermark.
+
+        Returns:
+            datetime | None: max(Game.played_at) over games this player took
+            part in (joined via GameParticipant), or None when there are none.
+        """
+        return session.scalar(
+            select(func.max(Game.played_at))
+            .join(GameParticipant, GameParticipant.game_id == Game.id)
+            .where(GameParticipant.player_id == player.id)
+        )
 
     def sync_many(self, usernames: list[str]) -> list[SyncStats]:
         """Sync multiple players and return statistics for each."""
