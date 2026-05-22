@@ -555,6 +555,27 @@ def test_worker_recent_games_newest_first_limited():
     assert "engine" in rows[0] and "completed_at" in rows[0]
 
 
+@pytest.mark.django_db
+def test_worker_recent_games_short_label_truncates_id():
+    """game_label_short is '#' + first 6 chars of a long chess.com-style id."""
+    long_id = "1234567890abcdef"  # 16 chars, like a chess.com game id
+    game = Game.objects.create(
+        id=long_id,
+        slug=long_id,
+        played_at=timezone.now(),
+        time_control="600",
+    )
+    AnalysisJob.objects.create(
+        game=game, engine="stockfish", status=AnalysisJob.STATUS_COMPLETED,
+        worker_id="wr-short", duration_seconds=1.0,
+        completed_at=timezone.now(),
+    )
+    rows = _worker_recent_games("wr-short", limit=10)
+    assert rows[0]["game_label"] == "#1234567890abcdef"
+    assert rows[0]["game_label_short"] == "#123456"
+    assert len(rows[0]["game_label_short"]) == 7  # '#' + 6 chars
+
+
 def test_batch_billable_per_game_basic():
     """600s span / 4 games = 150.0 s/game."""
     start = timezone.now()

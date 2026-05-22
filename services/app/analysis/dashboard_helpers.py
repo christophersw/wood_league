@@ -515,8 +515,9 @@ def _worker_recent_games(worker_id: str, limit: int = 10) -> list[dict[str, Any]
         limit: Maximum rows to return (default 10, newest first).
 
     Returns:
-        List of dicts, keys: ``game_label`` (``"#<id>"``), ``game_url``
-        (str | None — game analysis page when slug resolvable),
+        List of dicts, keys: ``game_label`` (``"#<id>"``),
+        ``game_label_short`` (``"#<id[:6]>"`` — truncated for display),
+        ``game_url`` (str | None — game analysis page when slug resolvable),
         ``engine``, ``duration_seconds`` (float | None), ``completed_at``
         (datetime).
     """
@@ -541,6 +542,7 @@ def _worker_recent_games(worker_id: str, limit: int = 10) -> list[dict[str, Any]
         )
         out.append({
             "game_label": f"#{job.game_id}",
+            "game_label_short": f"#{str(job.game_id)[:6]}",
             "game_url": url,
             "engine": job.engine,
             "duration_seconds": (
