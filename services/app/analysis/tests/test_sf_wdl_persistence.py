@@ -1,14 +1,15 @@
 """
-Title: test_sf_wdl_persistence.py — #188 Phase B WDL persistence tests
+Title: test_sf_wdl_persistence.py — #188 Phase B + C WDL persistence tests
 Description:
     Round-trip tests verifying that SF WDL triples + NormalizeToPawnValue
     flow through derive_sf_game and complete_stockfish_job into the DB
-    verbatim. Phase B is purely passthrough — _adj columns stay null until
-    Phase C.
+    verbatim.  Phase B wired passthrough; Phase C populates _adj columns.
 
 Changelog:
     2026-05-21 (#188/B): Initial — TDD suite for Task B2 (passthrough) and
         Task B3 (persistence round-trip).
+    2026-05-21 (#188/C): Updated assertions for _adj population and added
+        new WDL-path / fallback-path persistence tests (Task C5).
 """
 from __future__ import annotations
 
@@ -107,13 +108,17 @@ def test_derive_sf_game_passes_wdl_through_verbatim() -> None:
     assert m["wdl_loss_3"] is None
 
 
-def test_derive_sf_game_wdl_adj_null_in_phase_b() -> None:
-    """Phase B: _adj WDL columns are null placeholders — Phase C populates them."""
+def test_derive_sf_game_wdl_adj_populated_in_phase_c() -> None:
+    """Phase C: _adj WDL columns are the White-frame mirror of the raw triple.
+
+    Ply 1 is a White move, so White-frame == mover-frame (identity).
+    """
     derived = derive_sf_game(_payload(), game=None)
     m = derived["moves"][0]
-    assert m["wdl_win_adj"] is None
-    assert m["wdl_draw_adj"] is None
-    assert m["wdl_loss_adj"] is None
+    # Ply 1 = White mover: adj triple is identical to the raw triple.
+    assert (m["wdl_win_adj"], m["wdl_draw_adj"], m["wdl_loss_adj"]) == (120, 850, 30)
+    # wdl_mu is non-null on the WDL path.
+    assert m["wdl_mu"] is not None
 
 
 def test_derive_sf_game_passes_npv_through() -> None:
@@ -177,8 +182,8 @@ def test_complete_stockfish_job_persists_wdl_and_npv() -> None:
     assert ga.normalize_to_pawn_value == 328
 
     move = MoveAnalysis.objects.get(analysis=ga, ply=1)
-    # Compare every WDL slot in one structural assertion. _adj columns stay
-    # null in Phase B (Phase C populates them).
+    # Phase C: raw triples stored verbatim; _adj = White-frame mirror.
+    # Ply 1 is a White move, so White-frame == mover-frame (identity).
     actual = (
         (move.wdl_win, move.wdl_draw, move.wdl_loss),
         (move.wdl_win_1, move.wdl_draw_1, move.wdl_loss_1),
@@ -191,7 +196,7 @@ def test_complete_stockfish_job_persists_wdl_and_npv() -> None:
         (120, 850, 30),
         (110, 860, 30),
         (None, None, None),
-        (None, None, None),
+        (120, 850, 30),  # Phase C: adj = identity (White-frame = mover-frame for ply 1).
     )
     assert actual == expected
 
@@ -233,3 +238,58 @@ def test_complete_stockfish_job_handles_missing_wdl_fields() -> None:
     assert move_row.wdl_draw is None
     assert move_row.wdl_loss is None
     assert move_row.wdl_win_adj is None
+
+
+# ── Task C5: Phase C derivation writes _adj non-null on WDL path ─────────
+
+
+@pytest.mark.django_db
+def test_complete_stockfish_job_populates_wdl_adj_on_wdl_path() -> None:
+    """Phase C: wdl_*_adj columns are non-null when the payload carries WDL.
+
+    Ply 1 is a White move, so White-frame == mover-frame (identity transform).
+    """
+    game = _make_game()
+    job = AnalysisJob.objects.create(
+        game=game,
+        status=AnalysisJob.STATUS_RUNNING,
+        worker_id="w-1",
+        engine="stockfish",
+        depth=20,
+    )
+    complete_stockfish_job(
+        job_id=job.id, worker_id="w-1", key_prefix=None, payload=_payload(),
+    )
+    move = MoveAnalysis.objects.get(analysis__game=game, ply=1)
+    # Raw played triple stored verbatim.
+    assert (move.wdl_win, move.wdl_draw, move.wdl_loss) == (120, 850, 30)
+    # _adj = White-frame mirror (ply 1, White mover → identity).
+    assert (move.wdl_win_adj, move.wdl_draw_adj, move.wdl_loss_adj) == (120, 850, 30)
+
+
+@pytest.mark.django_db
+def test_complete_stockfish_job_leaves_wdl_adj_null_on_fallback_path() -> None:
+    """Phase C: wdl_*_adj stays null when the payload lacks WDL (fallback path)."""
+    game = _make_game()
+    job = AnalysisJob.objects.create(
+        game=game,
+        status=AnalysisJob.STATUS_RUNNING,
+        worker_id="w-1",
+        engine="stockfish",
+        depth=20,
+    )
+    payload = _payload()
+    move_data = payload["moves"][0]
+    for key in list(move_data):
+        if key.startswith("wdl_"):
+            del move_data[key]
+    del payload["normalize_to_pawn_value"]
+
+    complete_stockfish_job(
+        job_id=job.id, worker_id="w-1", key_prefix=None, payload=payload,
+    )
+    move = MoveAnalysis.objects.get(analysis__game=game, ply=1)
+    assert move.wdl_win is None
+    assert move.wdl_win_adj is None
+    assert move.wdl_draw_adj is None
+    assert move.wdl_loss_adj is None
