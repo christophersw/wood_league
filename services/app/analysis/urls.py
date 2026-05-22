@@ -1,66 +1,45 @@
 """
-Title: urls.py — URL routing for analysis module views
+Title: urls.py — URL routing for the analysis module
 Description:
-    Defines URL patterns for the consolidated worker dashboard and the
-    per-engine queues management pages.
+    Routes for the combined /admin/analysis/ page (worker dashboard +
+    scheduling), its HTMX-polled dashboard partials, the scheduling
+    action endpoints, and the RunPod start hook.
 
 Changelog:
-    2026-05-22 (#200): Add analysis/ → overview; keep schedule/ alias.
+    2026-05-22 (#200): Collapse to a single /admin/analysis/ page. Remove
+        the queue pages, the legacy dashboard shell, the schedule shell
+        route, and the diagnostics redirect. Repath dashboard partials
+        under analysis/ (names unchanged).
     2026-05-18: Add /schedule/ routes (#155 B).
-    2026-05-14 (#106): Add /dashboard/ + 6 HTMX partial routes; convert
-        /diagnostics/ to a redirect to /dashboard/.
-    2026-05-14 (#101): Remove legacy /queues/<engine>/submit/ route.
-    2026-05-14 (#86): Add diagnostics/ route.
-    2026-05-11: Task 4 — rename URL family to /admin/queues/ (plural).
-    2026-05-08: Added file header.
+    2026-05-14 (#106): Add /dashboard/ + HTMX partial routes.
 """
 from django.urls import path
-from django.views.generic import RedirectView
 
-from . import views, views_dashboard, views_queue, views_schedule
+from . import views, views_dashboard, views_schedule
 
 app_name = "analysis"
 
 urlpatterns = [
-    path("queues/", views.queues_summary, name="queues_summary"),
-    path("queues/stockfish/", views_queue.queue_stockfish, name="queue_stockfish"),
-    path("queues/lc0/", views_queue.queue_lc0, name="queue_lc0"),
-    path("queues/<str:engine>/reorder/", views_queue.queue_reorder, name="queue_reorder"),
     path("runpod/start/", views.runpod_start_view, name="runpod_start"),
-
-    # Dashboard (consolidated worker observability).
-    path("dashboard/", views_dashboard.dashboard, name="dashboard"),
-    path("dashboard/banner/", views_dashboard.dashboard_banner, name="dash_banner"),
-    path("dashboard/workers/", views_dashboard.dashboard_workers, name="dash_workers"),
-    path("dashboard/queues/", views_dashboard.dashboard_queues, name="dash_queues"),
-    path("dashboard/throughput/", views_dashboard.dashboard_throughput, name="dash_throughput"),
-    path("dashboard/recent/", views_dashboard.dashboard_recent, name="dash_recent"),
-    path("dashboard/failures/", views_dashboard.dashboard_failures, name="dash_failures"),
-    path("dashboard/logs/", views_dashboard.dashboard_logs, name="dash_logs"),
 
     # Combined analysis page (dashboard + scheduling) — #200.
     path("analysis/", views_schedule.overview, name="overview"),
 
-    # Scheduling admin — recurring rules, one-off runs, HTMX preview.
-    # schedule/ is kept as a backwards-compatible alias until Task 4 removes it.
-    path("schedule/", views_schedule.overview, name="scheduling"),
-    path("schedule/rule/new/", views_schedule.rule_create,
-         name="rule_create"),
-    path("schedule/rule/<int:pk>/edit/", views_schedule.rule_edit,
-         name="rule_edit"),
-    path("schedule/rule/<int:pk>/delete/", views_schedule.rule_delete,
-         name="rule_delete"),
-    path("schedule/rule/<int:pk>/toggle/", views_schedule.rule_toggle,
-         name="rule_toggle"),
+    # Dashboard partials (HTMX-polled by the overview page).
+    path("analysis/banner/", views_dashboard.dashboard_banner, name="dash_banner"),
+    path("analysis/workers/", views_dashboard.dashboard_workers, name="dash_workers"),
+    path("analysis/queues/", views_dashboard.dashboard_queues, name="dash_queues"),
+    path("analysis/throughput/", views_dashboard.dashboard_throughput, name="dash_throughput"),
+    path("analysis/recent/", views_dashboard.dashboard_recent, name="dash_recent"),
+    path("analysis/failures/", views_dashboard.dashboard_failures, name="dash_failures"),
+    path("analysis/logs/", views_dashboard.dashboard_logs, name="dash_logs"),
+
+    # Scheduling actions (forms POST here; redirect to analysis:overview).
+    path("schedule/rule/new/", views_schedule.rule_create, name="rule_create"),
+    path("schedule/rule/<int:pk>/edit/", views_schedule.rule_edit, name="rule_edit"),
+    path("schedule/rule/<int:pk>/delete/", views_schedule.rule_delete, name="rule_delete"),
+    path("schedule/rule/<int:pk>/toggle/", views_schedule.rule_toggle, name="rule_toggle"),
     path("schedule/run-once/", views_schedule.run_once, name="run_once"),
     path("schedule/<int:pk>/rerun/", views_schedule.rerun, name="rerun"),
-    path("schedule/preview/", views_schedule.schedule_preview,
-         name="schedule_preview"),
-
-    # Legacy diagnostics URL — preserved as a redirect for bookmarks.
-    path(
-        "diagnostics/",
-        RedirectView.as_view(pattern_name="analysis:dashboard", permanent=False),
-        name="diagnostics",
-    ),
+    path("schedule/preview/", views_schedule.schedule_preview, name="schedule_preview"),
 ]
