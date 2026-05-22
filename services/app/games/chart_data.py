@@ -9,27 +9,27 @@ Changelog:
 """
 from __future__ import annotations
 
-from analysis.derivation.accuracy import win_pct
 from games.services_v2 import GameAnalysisDataV2
 
 
 def winpct_payload(data: GameAnalysisDataV2) -> dict:
     """Build the Win%-chart payload for both engines on a shared 0–100 axis.
 
-    SF Win% comes from the canonical Lichess sigmoid in
-    ``analysis.derivation.accuracy.win_pct`` — the same function the accuracy
-    and classification pipelines use, so the chart can never drift from the
-    rest of the SF math. LC0 Win% is just ``wdl_mu * 100`` (already a
-    White-frame expected score in [0, 1]).
-
-    See GitHub issue #188 for the planned switch to SF-native WDL via
-    ``UCI_ShowWDL``, which will remove the sigmoid from this code path
-    entirely.
+    Both engines read Win% from their stored White-frame WDL (#188): SF from
+    ``wdl_*_adj`` (frame-mirror identity), LC0 from ``wdl_mu``. No Lichess
+    sigmoid — SF and LC0 now speak the same units. SF moves without a WDL
+    triple (the missing-WDL fallback) drop from the chart rather than being
+    reconstructed from cp, mirroring how LC0 skips ``wdl_mu is None`` rows.
     """
     return {
         "sf": [
-            {"ply": m.ply, "winpct": win_pct(m.cp_eval), "san": m.san}
+            {
+                "ply": m.ply,
+                "winpct": ((m.wdl_win_adj + m.wdl_draw_adj / 2) / 1000.0) * 100.0,
+                "san": m.san,
+            }
             for m in data.sf_moves
+            if m.wdl_win_adj is not None and m.wdl_draw_adj is not None
         ],
         "lc0": [
             {"ply": m.ply, "winpct": (m.wdl_mu or 0.0) * 100.0, "san": m.san}

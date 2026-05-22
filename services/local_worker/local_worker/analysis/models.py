@@ -63,6 +63,11 @@ class StockfishMoveResult:
     wdl_win_3: Optional[int] = None
     wdl_draw_3: Optional[int] = None
     wdl_loss_3: Optional[int] = None
+    # Per-candidate White-frame centipawn evals (#188 Phase D). Native source
+    # for the app's classifier second-best gap; nullable per line.
+    arrow_cp_1: Optional[int] = None
+    arrow_cp_2: Optional[int] = None
+    arrow_cp_3: Optional[int] = None
 
 
 @dataclass

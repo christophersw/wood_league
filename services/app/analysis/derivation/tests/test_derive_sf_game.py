@@ -21,6 +21,7 @@ from analysis.derivation.stockfish import derive_sf_game
 def _raw_move(
     ply: int, *, cp_eval: int = 0, mate_in: int | None = None,
     arrow_score_1: float | None = None, arrow_score_2: float | None = None,
+    arrow_cp_1: float | None = None, arrow_cp_2: float | None = None,
     san: str = "—", fen: str = "—", arrow_uci_1: str = "e2e4",
 ) -> dict:
     """Build a minimal SF move entry matching the raw contract."""
@@ -30,6 +31,8 @@ def _raw_move(
         "arrow_uci_1": arrow_uci_1,
         "arrow_score_1": arrow_score_1,
         "arrow_score_2": arrow_score_2,
+        "arrow_cp_1": arrow_cp_1,
+        "arrow_cp_2": arrow_cp_2,
     }
 
 
@@ -98,13 +101,26 @@ def test_classification_uses_band_ladder() -> None:
     assert out["moves"][0]["classification"] == "Mistake"
 
 
-def test_classification_top_tier_with_arrow_score_gap() -> None:
-    """A CPL<10 move with a big arrow-score gap classifies as Great."""
-    # Mover-frame Win%: top candidate 90%, second 30% → cp gap > Great threshold.
+def test_classification_top_tier_with_candidate_cp_gap() -> None:
+    """A CPL<10 move with a big native candidate-cp gap classifies as Great."""
+    # White mover; candidate cps 200 vs 50 → mover-frame gap 150 > SF_GREAT_GAP (80).
     out = derive_sf_game(_payload([
-        _raw_move(1, cp_eval=10, arrow_score_1=90.0, arrow_score_2=30.0),
+        _raw_move(1, cp_eval=10, arrow_cp_1=200.0, arrow_cp_2=50.0),
     ]), None)
     assert out["moves"][0]["classification"] in {"Great", "Brilliant"}
+
+
+def test_classification_black_mover_candidate_cp_gap() -> None:
+    """Black-mover gap uses mover frame: more-negative White cp is the better line.
+
+    Regression for the #156-class frame hazard. Black mover, candidate White-frame
+    cps -200 (best for Black) vs -50 → mover-frame gap = 200 - 50 = 150 > Great.
+    """
+    out = derive_sf_game(_payload([
+        _raw_move(1, cp_eval=0),
+        _raw_move(2, cp_eval=-10, arrow_cp_1=-200.0, arrow_cp_2=-50.0),
+    ]), None)
+    assert out["moves"][1]["classification"] in {"Great", "Brilliant"}
 
 
 def test_counters_reflect_mover_side_severities() -> None:

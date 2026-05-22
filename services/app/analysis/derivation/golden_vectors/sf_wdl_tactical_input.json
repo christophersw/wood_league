@@ -30,7 +30,10 @@
       "wdl_loss_2": 30,
       "wdl_win_3": null,
       "wdl_draw_3": null,
-      "wdl_loss_3": null
+      "wdl_loss_3": null,
+      "arrow_cp_1": 35,
+      "arrow_cp_2": 20,
+      "arrow_cp_3": null
     },
     {
       "ply": 2,
@@ -58,7 +61,10 @@
       "wdl_loss_2": 200,
       "wdl_win_3": null,
       "wdl_draw_3": null,
-      "wdl_loss_3": null
+      "wdl_loss_3": null,
+      "arrow_cp_1": -150,
+      "arrow_cp_2": 40,
+      "arrow_cp_3": null
     },
     {
       "ply": 3,
@@ -86,7 +92,10 @@
       "wdl_loss_2": 50,
       "wdl_win_3": null,
       "wdl_draw_3": null,
-      "wdl_loss_3": null
+      "wdl_loss_3": null,
+      "arrow_cp_1": 380,
+      "arrow_cp_2": 360,
+      "arrow_cp_3": null
     },
     {
       "ply": 4,
@@ -114,7 +123,10 @@
       "wdl_loss_2": null,
       "wdl_win_3": null,
       "wdl_draw_3": null,
-      "wdl_loss_3": null
+      "wdl_loss_3": null,
+      "arrow_cp_1": 240,
+      "arrow_cp_2": 255,
+      "arrow_cp_3": null
     }
   ]
 }

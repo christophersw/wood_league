@@ -202,6 +202,10 @@ class MoveAnalysis(Base):
     wdl_win_adj: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     wdl_draw_adj: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     wdl_loss_adj: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # #188 Phase D: per-candidate White-frame centipawn evals (native gap source).
+    arrow_cp_1: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    arrow_cp_2: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    arrow_cp_3: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
     analysis: Mapped[GameAnalysis] = relationship(back_populates="moves")
 

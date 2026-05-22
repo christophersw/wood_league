@@ -347,6 +347,9 @@ def complete_stockfish_job(
                 wdl_win_adj=m["wdl_win_adj"],
                 wdl_draw_adj=m["wdl_draw_adj"],
                 wdl_loss_adj=m["wdl_loss_adj"],
+                arrow_cp_1=m["arrow_cp_1"],
+                arrow_cp_2=m["arrow_cp_2"],
+                arrow_cp_3=m["arrow_cp_3"],
             )
             for m in derived_moves
         ])

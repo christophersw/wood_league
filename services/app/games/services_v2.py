@@ -42,6 +42,12 @@ class SfMoveRow:
     pv_san_1: str | None
     pv_san_2: str | None
     pv_san_3: str | None
+    # #188: White-frame WDL triple (frame-mirror identity for SF). Null on the
+    # missing-WDL fallback path. Lets the Win% chart read SF symmetrically with
+    # LC0 instead of the cp sigmoid.
+    wdl_win_adj: int | None = None
+    wdl_draw_adj: int | None = None
+    wdl_loss_adj: int | None = None
 
 
 @dataclass
@@ -171,6 +177,8 @@ def _sf_rows(ga: GameAnalysis | None) -> list[SfMoveRow]:
             arrow_score_1=r.arrow_score_1, arrow_score_2=r.arrow_score_2,
             arrow_score_3=r.arrow_score_3,
             pv_san_1=r.pv_san_1, pv_san_2=r.pv_san_2, pv_san_3=r.pv_san_3,
+            wdl_win_adj=r.wdl_win_adj, wdl_draw_adj=r.wdl_draw_adj,
+            wdl_loss_adj=r.wdl_loss_adj,
         )
         for r in rows
     ]

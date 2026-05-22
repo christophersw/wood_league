@@ -117,6 +117,12 @@ class MoveAnalysis(models.Model):
     wdl_win_adj = models.IntegerField(null=True, blank=True)
     wdl_draw_adj = models.IntegerField(null=True, blank=True)
     wdl_loss_adj = models.IntegerField(null=True, blank=True)
+    # #188 Phase D: per-candidate White-frame centipawn evals. Native source
+    # for the classifier's second-best gap (replaces cp reconstruction from
+    # arrow_score Win%). Nullable per line.
+    arrow_cp_1 = models.FloatField(null=True, blank=True)
+    arrow_cp_2 = models.FloatField(null=True, blank=True)
+    arrow_cp_3 = models.FloatField(null=True, blank=True)
 
     class Meta:
         db_table = "move_analysis"
