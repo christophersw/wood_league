@@ -71,6 +71,37 @@ class ChessComSyncService:
         months_old = (now.year - archive_dt.year) * 12 + (now.month - archive_dt.month)
         return months_old <= limit
 
+    @staticmethod
+    def _to_epoch(moment: datetime) -> int:
+        """Convert a datetime to an integer Unix epoch, treating naive as UTC.
+
+        Args:
+            moment: A datetime. If naive (no tzinfo) it is interpreted as UTC,
+                matching how Game.played_at is stored.
+
+        Returns:
+            int: Seconds since the Unix epoch.
+        """
+        if moment.tzinfo is None:
+            moment = moment.replace(tzinfo=UTC)
+        return int(moment.timestamp())
+
+    @staticmethod
+    def _payload_is_new(payload: dict, watermark_epoch: int) -> bool:
+        """Return True if a game payload ends at or after the watermark epoch.
+
+        Args:
+            payload: A Chess.com game payload (uses its integer 'end_time').
+            watermark_epoch: The player's latest loaded game time as Unix epoch.
+
+        Returns:
+            bool: True when end_time >= watermark_epoch (process it); False when
+            strictly older (already loaded — skip). The boundary case is treated
+            as new so a genuinely new game sharing the watermark's exact second
+            is never dropped.
+        """
+        return int(payload.get("end_time", 0)) >= watermark_epoch
+
     def sync_many(self, usernames: list[str]) -> list[SyncStats]:
         """Sync multiple players and return statistics for each."""
         return [self.sync_player(username) for username in usernames]
