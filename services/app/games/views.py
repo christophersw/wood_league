@@ -23,6 +23,11 @@ Changelog:
     2026-05-21 (#186): Task 15 — drop dead helpers (_humanize_time_control, _details_string,
                       _opening_label, _queue_status, _build_eval_json, _build_wdl_json,
                       _build_pgn_moves_json) and OpeningBook import; stat_cards.py deleted.
+    2026-05-26 (#209): Task 7 — board_partial migrated from legacy (get_game_analysis +
+                      build_board_frames(data, ...)) to v2 pipeline (load_board_inputs +
+                      build_board_frames(pgn=..., sf_moves=..., lc0_moves=...)). The
+                      arrow_data_json sidecar context key is dropped; arrows are now
+                      embedded per-frame in frames_json.
 """
 
 import io as _io
@@ -42,7 +47,7 @@ from games.services import MoveRow, get_game_analysis
 from games.cards import build_lc0_card_context, build_sf_card_context
 from games.chart_data import lc0_wdl_payload, sf_cp_payload, winpct_payload
 from games.chip_data import chips_for_ply
-from games.services_v2 import get_game_analysis_v2
+from games.services_v2 import get_game_analysis_v2, load_board_inputs
 _ACTIVE_STATUSES = [
     AnalysisJob.STATUS_PENDING,
     AnalysisJob.STATUS_SUBMITTED,
@@ -195,6 +200,11 @@ def board_partial(request: HttpRequest, slug: str) -> HttpResponse:
     Generates all SVG frames server-side and embeds them as JSON in the
     response so client-side JS can animate without further requests.
 
+    Uses the v2 pipeline: load_board_inputs() yields (pgn, sf_moves, lc0_moves)
+    as typed dataclasses; build_board_frames() returns self-contained frame dicts
+    with arrows embedded per-frame.  The template reads arrows from
+    frames[ply].arrows — the legacy arrow_data_json sidecar is dropped.
+
     Params:
         request (HttpRequest): The HTTP request; reads ?orientation= GET param.
         slug (str): Game URL slug.
@@ -203,20 +213,24 @@ def board_partial(request: HttpRequest, slug: str) -> HttpResponse:
         Rendered _board_partial.html, or a minimal error partial if no data.
     """
     game = get_object_or_404(Game, slug=slug)
-    data = get_game_analysis(slug)
+    data = get_game_analysis_v2(slug)
 
     orientation = request.GET.get("orientation", "white")
     if orientation not in ("white", "black"):
         orientation = "white"
 
-    if data is None or not data.moves:
+    if data is None or not data.sf_moves:
         return render(request, "games/_board_error_partial.html", {"game": game})
 
-    board_data = build_board_frames(data, size=480, orientation=orientation)
+    pgn, sf_moves, lc0_moves = load_board_inputs(game)
+    board_data = build_board_frames(
+        pgn=pgn, sf_moves=sf_moves, lc0_moves=lc0_moves,
+        orientation=orientation, size=480,
+    )
 
-    # Build is_best_map: ply → True if the player's move matched SF best move
-    sf_by_ply = {row.ply: row for row in data.moves}
-    game_obj = _pgn.read_game(_io.StringIO(data.pgn))
+    # Build is_best_map: ply → True when the player's move matched SF best move.
+    sf_by_ply = {row.ply: row for row in sf_moves}
+    game_obj = _pgn.read_game(_io.StringIO(pgn))
     is_best_map: dict[int, bool] = {}
     if game_obj:
         _board = game_obj.board()
@@ -225,15 +239,15 @@ def board_partial(request: HttpRequest, slug: str) -> HttpResponse:
         for _ply_i, _move in enumerate(game_obj.mainline_moves(), start=1):
             _abs = _ply_i + _start
             _row = sf_by_ply.get(_abs) or sf_by_ply.get(_ply_i)
-            if _row and _row.arrow_uci:
-                is_best_map[_ply_i] = _move.uci() == _row.arrow_uci
+            if _row and _row.arrow_uci_1:
+                is_best_map[_ply_i] = _move.uci() == _row.arrow_uci_1
             _board.push(_move)
 
     return render(request, "games/_board_partial.html", {
         "slug": slug,
         "orientation": orientation,
         "frames_json": json.dumps(board_data["frames"]),
-        "arrow_data_json": json.dumps(board_data["arrows_by_ply"]),
+        # arrow_data_json dropped — arrows are now embedded per-frame.
         "san_list_json": json.dumps(board_data["san_list"]),
         "is_best_json": json.dumps(is_best_map),
         "total_frames": board_data["total_frames"],

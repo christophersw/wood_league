@@ -18,6 +18,11 @@ Description:
         dict {svg, arrows: [{engine, uci, tier, label, color, opacity, stroke_width}]}.
 
 Changelog:
+    2026-05-26 (#209): Task 7 atomic cutover — _v2_player_layout now emits the
+                       same flat-key contract as legacy _player_layout
+                       (top_player/top_sym/top_side/bottom_*). _build_frames_v2
+                       spreads those keys directly instead of nesting under
+                       player_layout.
     2026-05-26 (#209): _arrow_label drops engine prefix; SF arg is now mover-frame
                        cp delta (not absolute eval). Added _wdl_mu and
                        _lc0_candidate_delta_mu so LC0 arrows get per-candidate
@@ -367,28 +372,32 @@ def _v2_player_layout(pgn: str, orientation: str) -> dict:
     Reads the PGN headers White / Black for names (None if absent) and decides
     which side sits on top vs. bottom based on the requested orientation.
 
+    Returns the SAME flat-key contract as legacy ``_player_layout`` so the
+    template variable names are unchanged: top_player / top_sym / top_side and
+    bottom_player / bottom_sym / bottom_side.  Unicode pieces: ♟ for the side
+    at the top (far from viewer), ♙ for the side at the bottom (near viewer).
+
     Params:
         pgn (str):         The PGN string (may be empty).
         orientation (str): "white" or "black".
 
     Returns:
         Dict with keys:
-            top_side, bottom_side: "White" | "Black" — which side label is shown
-                on top/bottom of the board.
-            top_name, bottom_name: str | None — name from PGN header for that side.
+            top_player, bottom_player: str | None — name from PGN header.
+            top_sym, bottom_sym:       str — unicode chess piece for that side.
+            top_side, bottom_side:     "White" | "Black" — side label.
     """
     game = chess.pgn.read_game(io.StringIO(pgn or ""))
     white_name = game.headers.get("White") if game is not None else None
     black_name = game.headers.get("Black") if game is not None else None
-    if orientation == "black":
-        top_side, bottom_side = "White", "Black"
-        top_name, bottom_name = white_name, black_name
-    else:
-        top_side, bottom_side = "Black", "White"
-        top_name, bottom_name = black_name, white_name
+    flipped = orientation == "black"
     return {
-        "top_side": top_side, "bottom_side": bottom_side,
-        "top_name": top_name, "bottom_name": bottom_name,
+        "top_player":    black_name if not flipped else white_name,
+        "top_sym":       "♟" if not flipped else "♙",
+        "top_side":      "Black" if not flipped else "White",
+        "bottom_player": white_name if not flipped else black_name,
+        "bottom_sym":    "♙" if not flipped else "♟",
+        "bottom_side":   "White" if not flipped else "Black",
     }
 
 
@@ -428,12 +437,13 @@ def _build_frames_v2(
 
     Returns:
         dict with keys: frames, san_list, total_frames, overlay_geometry,
-        player_layout, has_sf, has_lc0.
+        top_player, top_sym, top_side, bottom_player, bottom_sym, bottom_side,
+        has_sf, has_lc0.
     """
     flipped = orientation == "black"
     game = chess.pgn.read_game(io.StringIO(pgn))
     overlay_geometry = _board_overlay_geometry(size)
-    player_layout = _v2_player_layout(pgn, orientation)
+    player_keys = _v2_player_layout(pgn, orientation)
 
     if game is None:
         board = chess.Board()
@@ -450,7 +460,7 @@ def _build_frames_v2(
             "san_list": [],
             "total_frames": 1,
             "overlay_geometry": overlay_geometry,
-            "player_layout": player_layout,
+            **player_keys,
             "has_sf": bool(sf_moves),
             "has_lc0": bool(lc0_moves),
         }
@@ -513,7 +523,7 @@ def _build_frames_v2(
         "san_list": san_list,
         "total_frames": len(frames),
         "overlay_geometry": overlay_geometry,
-        "player_layout": player_layout,
+        **player_keys,
         "has_sf": bool(sf_by_ply),
         "has_lc0": bool(lc0_by_ply),
     }
@@ -867,7 +877,7 @@ def build_board_frames(
             total_frames, top_player/bottom_player, has_sf, has_lc0,
             overlay_geometry.
         New path: dict with frames (list[dict]), san_list, total_frames,
-            overlay_geometry, has_sf, has_lc0.
+            overlay_geometry, top_player/bottom_player flat keys, has_sf, has_lc0.
     """
     if pgn is not None:
         return _build_frames_v2(

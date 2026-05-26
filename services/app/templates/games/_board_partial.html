@@ -2,8 +2,9 @@
 <div id="board-inner" style="display:flex;flex-direction:column;gap:0;">
 
   {# JSON data containers — read by JS below, not executed #}
+  {# board-frames-json: list[dict] — each entry is {svg, arrows, ply, san, last_move_uci, classification} #}
   <script type="application/json" id="board-frames-json">{{ frames_json|safe }}</script>
-  <script type="application/json" id="board-arrows-json">{{ arrow_data_json|safe }}</script>
+  {# board-arrows-json removed (Task 7, #209): arrows are now embedded per-frame above #}
   <script type="application/json" id="board-san-json">{{ san_list_json|safe }}</script>
   <script type="application/json" id="board-isbest-json">{{ is_best_json|safe }}</script>
 
@@ -77,7 +78,7 @@
   var SVG_NS = 'http://www.w3.org/2000/svg';
   var SAME_ORIGIN_ARROW_SPACING = 9;
   var frames = JSON.parse(document.getElementById('board-frames-json').textContent);
-  var arrowsByPly = JSON.parse(document.getElementById('board-arrows-json').textContent);
+  // arrowsByPly removed (Task 7, #209): arrows are now embedded in each frame dict.
   var boardOrientation = '{{ orientation }}';
   var overlayViewboxSize = parseFloat('{{ overlay_viewbox_size }}');
   var overlayBoardMargin = parseFloat('{{ overlay_board_margin }}');
@@ -278,8 +279,13 @@
    * @returns {SVGGElement|null}
    */
   function buildArrowElement(arrowData, ply, layoutOptions) {
-    var fromPoint = squareToPoint(arrowData.from_sq);
-    var toPoint = squareToPoint(arrowData.to_sq);
+    // v2 path: derive from_sq/to_sq from arrowData.uci (e.g. "e2e4" → "e2"/"e4").
+    var fromSq = arrowData.uci ? arrowData.uci.slice(0, 2) : (arrowData.from_sq || '');
+    var toSq = arrowData.uci ? arrowData.uci.slice(2, 4) : (arrowData.to_sq || '');
+    var moveUci = arrowData.uci || arrowData.move_uci || '';
+
+    var fromPoint = squareToPoint(fromSq);
+    var toPoint = squareToPoint(toSq);
     if (!fromPoint || !toPoint) {
       return null;
     }
@@ -295,23 +301,31 @@
       return null;
     }
 
+    // Compose a descriptive title from v2 fields (engine, tier, uci, label).
+    var engineDisplay = arrowData.engine === 'lc0' ? 'Lc0' : 'Stockfish';
+    var titleText = engineDisplay + ' #' + (arrowData.tier || 1) + ': ' + moveUci;
+    if (arrowData.label) {
+      titleText += ' (' + arrowData.label + ')';
+    }
+    var ariaLabel = arrowData.title || titleText;
+
     var group = document.createElementNS(SVG_NS, 'g');
     group.setAttribute('class', 'board-arrow-group');
     group.setAttribute('data-engine', arrowData.engine || '');
-    group.setAttribute('data-move-uci', arrowData.move_uci || '');
+    group.setAttribute('data-move-uci', moveUci);
     group.setAttribute('data-tier', String(arrowData.tier || 1));
     group.setAttribute('data-ply', String(ply));
     group.setAttribute('data-request-ply', String(
       typeof arrowData.request_ply === 'number' ? arrowData.request_ply : Math.max(0, ply - 1)
     ));
-    group.setAttribute('data-delta-text', arrowData.delta_text || '');
+    group.setAttribute('data-delta-text', arrowData.delta_text || arrowData.label || '');
     group.setAttribute('tabindex', '0');
     group.setAttribute('focusable', 'true');
     group.setAttribute('role', 'button');
-    group.setAttribute('aria-label', arrowData.title || 'Engine continuation');
+    group.setAttribute('aria-label', ariaLabel);
 
     var title = document.createElementNS(SVG_NS, 'title');
-    title.textContent = arrowData.title || 'Engine continuation';
+    title.textContent = ariaLabel;
     group.appendChild(title);
 
     var hitbox = document.createElementNS(SVG_NS, 'line');
@@ -423,7 +437,8 @@
     var layoutByIndex = {};
 
     arrowsForPly.forEach(function (arrowData, index) {
-      var originKey = arrowData.from_sq || ('arrow-' + index);
+      // v2 path: derive from_sq from uci; legacy fallback to from_sq.
+      var originKey = (arrowData.uci ? arrowData.uci.slice(0, 2) : arrowData.from_sq) || ('arrow-' + index);
       if (!originGroups[originKey]) {
         originGroups[originKey] = [];
       }
@@ -452,7 +467,8 @@
     arrowOverlay.setAttribute('viewBox', '0 0 ' + overlayViewboxSize + ' ' + overlayViewboxSize);
     arrowOverlay.innerHTML = '';
 
-    var arrowsForPly = arrowsByPly[String(ply)] || [];
+    // v2 path: arrows are embedded in the frame dict under frames[ply].arrows.
+    var arrowsForPly = (frames[ply] && frames[ply].arrows) || [];
     var arrowLayoutMap = buildArrowLayoutMap(arrowsForPly);
     arrowsForPly.forEach(function (arrowData, arrowIndex) {
       var arrowElement = buildArrowElement(arrowData, ply, arrowLayoutMap[arrowIndex]);
@@ -471,7 +487,9 @@
    */
   function renderPly(ply) {
     ply = Math.max(0, Math.min(totalFrames - 1, ply));
-    svgWrap.innerHTML = frames[ply];
+    // v2 path: frames[ply] is a dict {svg, arrows, ...}; extract the svg string.
+    var frameData = frames[ply];
+    svgWrap.innerHTML = (typeof frameData === 'object' && frameData !== null) ? (frameData.svg || '') : frameData;
     renderArrowOverlay(ply);
     slider.value = ply;
     if (ply === 0) {

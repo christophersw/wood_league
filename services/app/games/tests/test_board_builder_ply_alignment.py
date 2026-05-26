@@ -11,6 +11,8 @@ Description:
 Changelog:
     2026-05-21 (#186): Initial — ply-alignment regression test.
     2026-05-26 (#209): Add test_v2_frames_are_self_contained.
+    2026-05-26 (#209 Task 7): Update test_v2_result_has_player_layout_and_engine_flags
+                              to assert flat keys (not nested player_layout dict).
 """
 import pytest
 from games.board_builder import build_board_frames
@@ -143,7 +145,11 @@ def test_v2_result_has_overlay_geometry(simple_pgn_game):
 
 
 def test_v2_result_has_player_layout_and_engine_flags(simple_pgn_game):
-    """v2 build_board_frames exposes player_layout (top_side/bottom_side) and has_sf/has_lc0.
+    """v2 build_board_frames exposes flat player keys (top_side/bottom_side/etc) and has_sf/has_lc0.
+
+    After Task 7 (#209) the nested player_layout dict was replaced by the flat
+    legacy-compatible key contract: top_player, top_sym, top_side,
+    bottom_player, bottom_sym, bottom_side — all at the top level of the result.
 
     Parameters:
         simple_pgn_game: Fixture game exposing a parsable .pgn.
@@ -152,7 +158,8 @@ def test_v2_result_has_player_layout_and_engine_flags(simple_pgn_game):
     result = build_board_frames(
         pgn=simple_pgn_game.pgn, sf_moves=sf, lc0_moves=[], orientation="white", size=480,
     )
-    layout = result["player_layout"]
-    assert {"top_side", "bottom_side"} <= set(layout.keys())
+    # Flat keys at top level — no nested player_layout dict.
+    assert {"top_side", "bottom_side", "top_player", "bottom_player", "top_sym", "bottom_sym"} <= set(result.keys())
+    assert "player_layout" not in result, "player_layout nested dict should be gone after Task 7 cutover"
     assert result["has_sf"] is True
     assert result["has_lc0"] is False
