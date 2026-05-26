@@ -15,9 +15,14 @@ Description:
       New:    build_board_frames(pgn=…, sf_moves=…, lc0_moves=…, orientation=…)
         Accepts SfMoveRow / Lc0MoveRow dataclasses (from services_v2).
         Returns frames["frames"] as a list indexed by ply where each entry is a
-        dict {svg, arrows: [{engine, uci, tier, …}]}.
+        dict {svg, arrows: [{engine, uci, tier, label, color, opacity, stroke_width}]}.
 
 Changelog:
+    2026-05-26 (#209): _arrow_label drops engine prefix; SF arg is now mover-frame
+                       cp delta (not absolute eval). Added _wdl_mu and
+                       _lc0_candidate_delta_mu so LC0 arrows get per-candidate
+                       Win% deltas. _arrow_entries_from_row emits color, opacity,
+                       stroke_width on every arrow. (Task 2 + Task 2.5.)
     2026-05-21 (#186): Added new pgn/sf_moves/lc0_moves keyword-based entry point;
                        fixed ply-association bug — arrows now keyed by row.ply
                        instead of positional index; _build_tier_map and
@@ -453,7 +458,7 @@ def _build_frames_v2(
 _UNICODE_MINUS = "−"
 
 
-def _arrow_label(engine_key: str, score: float | None, delta_mu: float | None) -> str:
+def _arrow_label(engine_key: str, delta_cp: float | None, delta_mu: float | None) -> str:
     """
     Build a compact eval-only label for a v2-path arrow.
 
@@ -463,17 +468,21 @@ def _arrow_label(engine_key: str, score: float | None, delta_mu: float | None) -
     candidate Win% delta vs the played move in whole percentage points
     (e.g. "+12%" or "−7%").
 
+    Both args carry **deltas vs the played move**, not absolute evals. Passing an
+    absolute eval will format silently but mean the wrong thing — call sites must
+    compute the delta first.
+
     Params:
         engine_key (str):          "sf" or "lc0".
-        score      (float | None): For SF: the mover-relative cp delta
+        delta_cp   (float | None): For SF: the mover-relative cp delta
                                    (candidate cp − played cp) to render in pawns.
         delta_mu   (float | None): For LC0: (candidate_mu − played_mu).
 
     Returns:
         Formatted label string, or "" when the required value is absent.
     """
-    if engine_key == "sf" and score is not None:
-        pawns = score / 100.0
+    if engine_key == "sf" and delta_cp is not None:
+        pawns = delta_cp / 100.0
         sign = "+" if pawns >= 0 else _UNICODE_MINUS
         return f"{sign}{abs(pawns):.2f}"
     if engine_key == "lc0" and delta_mu is not None:
@@ -566,6 +575,8 @@ def _arrow_entries_from_row(engine_key: str, row: object, is_white_move: bool) -
         if not (uci and len(uci) >= 4):
             continue
 
+        # If cp/WDL inputs are missing, the arrow is still emitted (the JS draws
+        # it from the UCI alone) — label and opacity just fall back to "" / None.
         if engine_key == "sf":
             cand_cp = getattr(row, f"arrow_cp_{tier_index + 1}", None)
             played_cp = getattr(row, "cp_eval", None)

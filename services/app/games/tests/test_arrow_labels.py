@@ -75,6 +75,27 @@ def test_lc0_arrow_label_is_delta_vs_played(simple_pgn_game):
     assert "Lc0" not in arrow["label"]
 
 
+def test_lc0_arrow_label_negative_delta_uses_unicode_minus(simple_pgn_game):
+    """An LC0 candidate worse than the played move shows a unicode-minus signed delta.
+
+    Parameters:
+        simple_pgn_game: Fixture game exposing a parsable .pgn.
+    """
+    # played mu = (620 + 180/2)/1000 = 0.71; candidate1 mu = (500 + 200/2)/1000 = 0.60
+    # delta = -0.11 → "−11%" (unicode minus)
+    lc0 = [Lc0MoveRow(
+        ply=1, san="e4", fen="", wdl_win_adj=None, wdl_draw_adj=None, wdl_loss_adj=None,
+        wdl_mu=None, delta_mu=None, delta_d=None, base_severity="best", draw_character=None,
+        best_move="", arrow_uci_1="e2e4", arrow_uci_2=None, arrow_uci_3=None,
+        pv_san_1=None, pv_san_2=None, pv_san_3=None,
+        wdl_win=620, wdl_draw=180, wdl_loss=200,
+        wdl_win_1=500, wdl_draw_1=200, wdl_loss_1=300,
+    )]
+    frames = build_board_frames(pgn=simple_pgn_game.pgn, sf_moves=[], lc0_moves=lc0, orientation="white")
+    arrow = frames["frames"][1]["arrows"][0]
+    assert arrow["label"] == f"{_UNICODE_MINUS}11%", arrow
+
+
 def test_v2_arrow_entry_keeps_color_opacity_stroke(simple_pgn_game):
     """Color/opacity/stroke_width (from Task 2) survive the label-semantics rewrite.
 
