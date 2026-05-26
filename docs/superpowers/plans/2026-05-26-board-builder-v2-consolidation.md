@@ -708,26 +708,34 @@ git commit -m "$(printf '%s\n' \
 
 ## Task 8: Migrate `engine_line_partial` handler to v2
 
-**Files:**
-- Modify: `services/app/games/views.py` (engine-line partial handler at `:463` + `_engine_line_bot_label` + `_engine_line_player_meta`)
+Per the Task 1 audit (`docs/superpowers/notes/2026-05-26-209-cutover-audit.md`): on `main` (this branch's base), the only engine-line code is `engine_line_partial` (~views.py:277) and the `_engine_row_for_request` helper (views.py:97). The `_engine_line_bot_label` / `_engine_line_player_meta` helpers mentioned earlier in the spec are #208 additions and do **not** exist on this branch — drop any instruction to re-type them. The only v1→v2 attribute rename relevant on this branch is `data.moves` → `data.sf_moves` inside `_engine_row_for_request` (line 97).
 
-- [ ] **Step 1: Run the existing engine-line characterization tests against current code**
+**Files:**
+- Modify: `services/app/games/views.py` (`_engine_row_for_request` at line 97 + `engine_line_partial` around line 277)
+
+- [ ] **Step 1: Run the existing engine-line tests (or skip if none)**
 
 ```bash
 pytest games/tests/ -v -k engine_line
 ```
 
-Expected: PASS (these tests were green in #208's wake; if they're not green here, fix the regression introduced in Task 7 before continuing).
+Expected: PASS, or "no tests ran" if no `engine_line` tests live on `main`. (The #208-side characterization tests do not exist on this branch.)
 
-- [ ] **Step 2: Swap the loader call**
+- [ ] **Step 2: Swap the loader call in `engine_line_partial`**
 
-In `games/views.py`, in the engine-line partial handler (the function containing line 463):
+In `games/views.py`, in the function containing the engine-line partial handler (~line 277), replace `data = get_game_analysis(slug)` with `data = get_game_analysis_v2(slug)`. Keep the surrounding `if data is None: ...` 404 guard as-is.
 
-Replace `data = get_game_analysis(slug)` with `data = get_game_analysis_v2(slug)`. If the next line is `if data is None: ...`, leave it (semantics match). Re-type the parameter annotation on `_engine_line_bot_label` and `_engine_line_player_meta` from `GameAnalysisData` to `GameAnalysisDataV2`.
+- [ ] **Step 3: Rewrite `_engine_row_for_request` for the v2 attribute name**
 
-- [ ] **Step 3: Verify against Task 1 audit findings**
+In `games/views.py:97`, the function selects move rows based on the requested engine. The current v1 body reads `data.moves` for Stockfish. v2 renames this to `data.sf_moves`. Make exactly that substitution:
 
-Re-read `docs/superpowers/notes/2026-05-26-209-cutover-audit.md` § "Engine-line attributes". If any attribute that handler reads is **not** populated on `GameAnalysisDataV2` per the audit, extend `_apply_sf_summary` or `_apply_lc0_summary` in `services_v2.py` to populate it from the model — copy the v1 logic in `services.py` for that attribute, do not use `getattr` defaults.
+```python
+# In _engine_row_for_request (services/app/games/views.py:97)
+# v1:  rows = data.moves if engine == "sf" else data.lc0_moves
+# v2:  rows = data.sf_moves if engine == "sf" else data.lc0_moves
+```
+
+Re-type the parameter annotation on `_engine_row_for_request` from `GameAnalysisData` / `MoveRow` to `GameAnalysisDataV2` / `SfMoveRow` (and `Lc0MoveRow` if the function returns either union). Read the function body to confirm whether it returns `MoveRow | None` (legacy) or needs splitting into engine-typed branches — keep the change minimal; only do what mypy demands.
 
 - [ ] **Step 4: Run engine-line tests**
 

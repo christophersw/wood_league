@@ -36,6 +36,8 @@ templates/games/_board_partial.html:336:    shaft.setAttribute('stroke-width', s
 
 ## Engine-line attributes
 
+**Functions present on `main` (this branch's base):** `engine_line_partial` (views.py:~277) and `_engine_row_for_request` (views.py:97). The plan also references `_engine_line_bot_label` and `_engine_line_player_meta` — those were added on `issue/208-restyle-game-analysis-page` and **do not exist on main**. Task 8's helper-re-type instructions are therefore moot on this branch; only the loader-call swap inside `engine_line_partial` applies. When #208 later rebases on top of #209, the rebase will replay those helpers and they'll need v2 types then — that's #208's problem to handle.
+
 **V1 attributes read by engine_line_partial & _engine_row_for_request (views.py:277, 97):**
 - `data.moves` (Stockfish move rows; read at views.py:277, 97)
 - `data.lc0_moves` (LC0 move rows; read at views.py:97)
@@ -56,4 +58,4 @@ templates/games/_board_partial.html:336:    shaft.setAttribute('stroke-width', s
 
 - **Risk 4 (services.py deletion):** ✅ Safe. Only three documented consumers.
 - **Risk 3 (arrow dict keys):** ⚠️ Keep `stroke_width` in arrow dict.
-- **Risk 1 (v2 readiness):** ✅ All v1-read attributes available in v2.
+- **Risk 1 (v2 readiness):** ⚠️ Attribute rename required in Task 8: `data.moves` → `data.sf_moves` inside `_engine_row_for_request` (views.py:97). `data.lc0_moves` and `data.pgn` carry over unchanged. The plan's `_engine_line_bot_label` / `_engine_line_player_meta` re-type steps do not apply on this branch (those helpers live on `issue/208-…`, not on `main`).
