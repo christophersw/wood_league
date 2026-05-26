@@ -341,4 +341,4 @@ Gate per-commit: ruff, mypy, bandit -ll on edited `.py` files, `pytest games/`. 
 None at design time. Implementation phase will resolve:
 
 - Exact `WoodLeagueMoveAnnotations` symbol/title values (read at implementation start, mirrored into `ANNOTATIONS`).
-- Where the JS-side `window.WoodLeagueMoveAnnotations` is currently defined (the consolidation needs to replace that definition; if it lives outside the shell template, we relocate the `json_script` accordingly).
+- ~~Where the JS-side `window.WoodLeagueMoveAnnotations` is currently defined~~ — **Resolved 2026-05-26:** never actually defined anywhere in the codebase. `pgnTable.js:29` and `charts/sfCp.js:18` consume it with `{}` fallbacks, so annotation badges have been silently absent the whole time. The implementation creates the JS object net-new via `json_script` in `analysis.html`'s `extra_js` block. The new payload also includes a `colors` key (classification → CSS variable name) to feed `sfCp.js`'s existing `WoodLeagueMoveAnnotations.colors` consumer; `sfCp.js` itself is not modified here.
