@@ -86,35 +86,43 @@ def test_arrow_at_ply_matches_source_ply(simple_pgn_game):
     assert not any(a["engine"] == "lc0" for a in ply1["arrows"])
 
 
-def test_v2_frames_are_self_contained(simple_pgn_game):
-    """Every v2 frame carries svg, ply, san, last_move_uci, classification.
+_SELF_CONTAINED_SF_ROW = SfMoveRow(
+    ply=1, san="e4", fen="", cp_eval=20.0, mate_in=None, cpl=0.0,
+    move_win_delta=0.0, classification="best", best_move="",
+    arrow_uci_1=None, arrow_uci_2=None, arrow_uci_3=None,
+    arrow_cp_1=None, arrow_cp_2=None, arrow_cp_3=None,
+    pv_san_1=None, pv_san_2=None, pv_san_3=None,
+)
 
-    Ply-0 (start position) must have None for san, last_move_uci, and
-    classification. Ply-1 (first move) must carry the SAN, UCI, and
-    classification sourced from the matching SF row.
+
+def _build_self_contained_frames(pgn):
+    """Render v2 frames for the start-position + ply-1 self-contained-frame tests."""
+    return build_board_frames(
+        pgn=pgn, sf_moves=[_SELF_CONTAINED_SF_ROW], lc0_moves=[], orientation="white",
+    )["frames"]
+
+
+def test_v2_start_frame_has_no_move_metadata(simple_pgn_game):
+    """Ply-0 (start position) carries None for san/last_move_uci/classification.
 
     Parameters:
         simple_pgn_game: Fixture game exposing a parsable .pgn.
     """
-    sf = [SfMoveRow(
-        ply=1, san="e4", fen="", cp_eval=20.0, mate_in=None, cpl=0.0,
-        move_win_delta=0.0, classification="best", best_move="",
-        arrow_uci_1=None, arrow_uci_2=None, arrow_uci_3=None,
-        arrow_cp_1=None, arrow_cp_2=None, arrow_cp_3=None,
-        pv_san_1=None, pv_san_2=None, pv_san_3=None,
-    )]
-    frames = build_board_frames(
-        pgn=simple_pgn_game.pgn, sf_moves=sf, lc0_moves=[], orientation="white",
-    )["frames"]
-    # Ply 0 = start position; san and last_move_uci must be None there.
-    assert frames[0]["ply"] == 0
-    assert frames[0]["san"] is None
-    assert frames[0]["last_move_uci"] is None
-    assert frames[0]["classification"] is None
-    assert isinstance(frames[0]["svg"], str) and frames[0]["svg"].startswith("<svg")
-    # Ply 1 = first move; san + last_move_uci + classification populated from SF.
-    assert frames[1]["ply"] == 1
-    assert frames[1]["san"] == "e4"
-    assert frames[1]["last_move_uci"] == "e2e4"
-    assert frames[1]["classification"] == "best"
+    frames = _build_self_contained_frames(simple_pgn_game.pgn)
+    start = frames[0]
+    assert start == {**start, "ply": 0, "san": None, "last_move_uci": None, "classification": None}
+    assert isinstance(start["svg"], str) and start["svg"].startswith("<svg")
+
+
+def test_v2_ply1_frame_carries_move_metadata(simple_pgn_game):
+    """Ply-1 (first move) carries SAN, UCI, and classification sourced from the SF row.
+
+    Parameters:
+        simple_pgn_game: Fixture game exposing a parsable .pgn.
+    """
+    frames = _build_self_contained_frames(simple_pgn_game.pgn)
+    ply1 = frames[1]
+    expected = {"ply": 1, "san": "e4", "last_move_uci": "e2e4", "classification": "best"}
+    assert ply1 == {**ply1, **expected}
+    assert isinstance(ply1["svg"], str) and ply1["svg"].startswith("<svg")
     assert isinstance(frames[1]["svg"], str) and frames[1]["svg"].startswith("<svg")
