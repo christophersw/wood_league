@@ -43,11 +43,16 @@ from django.shortcuts import get_object_or_404, render
 from analysis.models import AnalysisJob
 from games.board_builder import board_colors_for_move_classification, build_board_frames
 from games.models import Game
-from games.services import MoveRow, get_game_analysis
 from games.cards import build_lc0_card_context, build_sf_card_context
 from games.chart_data import lc0_wdl_payload, sf_cp_payload, winpct_payload
 from games.chip_data import chips_for_ply
-from games.services_v2 import get_game_analysis_v2, load_board_inputs
+from games.services_v2 import (
+    GameAnalysisDataV2,
+    Lc0MoveRow,
+    SfMoveRow,
+    get_game_analysis_v2,
+    load_board_inputs,
+)
 _ACTIVE_STATUSES = [
     AnalysisJob.STATUS_PENDING,
     AnalysisJob.STATUS_SUBMITTED,
@@ -84,22 +89,22 @@ def _parse_pv_san_moves(raw_pv_san: str | None) -> list[str]:
 
 
 def _engine_row_for_request(
-    data,
+    data: GameAnalysisDataV2,
     engine: str,
     analysis_ply: int,
-) -> MoveRow | None:
+) -> SfMoveRow | Lc0MoveRow | None:
     """
     Return the engine-analysis row that corresponds to the selected move ply.
 
     Params:
-        data (GameAnalysisData): Assembled game analysis data.
+        data (GameAnalysisDataV2): Assembled v2 game analysis data.
         engine (str): "sf" or "lc0".
         analysis_ply (int): Absolute ply of the move being explored.
 
     Returns:
-        Matching MoveRow, or None when unavailable.
+        Matching SfMoveRow or Lc0MoveRow, or None when unavailable.
     """
-    move_rows = data.moves if engine == "sf" else (data.lc0_moves or [])
+    move_rows = data.sf_moves if engine == "sf" else (data.lc0_moves or [])
     for row in move_rows:
         if row.ply == analysis_ply:
             return row
@@ -107,7 +112,7 @@ def _engine_row_for_request(
 
 
 def _continuation_san_moves_from_row(
-    move_row: MoveRow | None,
+    move_row: SfMoveRow | Lc0MoveRow | None,
     tier: int,
     clicked_move_san: str,
 ) -> list[str]:
@@ -115,7 +120,7 @@ def _continuation_san_moves_from_row(
     Return stored continuation SAN moves for the selected engine tier.
 
     Params:
-        move_row (MoveRow | None): Analysis row for the explored move.
+        move_row (SfMoveRow | Lc0MoveRow | None): Analysis row for the explored move.
         tier (int): Suggested move rank (1-3).
         clicked_move_san (str): SAN for the clicked move in the source position.
 
@@ -286,9 +291,9 @@ def engine_line_partial(request: HttpRequest, slug: str) -> HttpResponse:
         or error partial if unable to reconstruct position or find continuation data.
     """
     game = get_object_or_404(Game, slug=slug)
-    data = get_game_analysis(slug)
+    data = get_game_analysis_v2(slug)
 
-    if data is None or not data.moves or not data.pgn:
+    if data is None or not data.sf_moves or not data.pgn:
         return render(request, "games/_board_error_partial.html", {"game": game})
 
     try:
