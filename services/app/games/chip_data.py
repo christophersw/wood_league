@@ -29,7 +29,20 @@ def _css_label(label: str) -> str:
 
 
 def _chip(kind: str, label: str | None, title: str) -> dict | None:
-    """Build one chip dict, or None when ``label`` is empty/None."""
+    """Build one chip dict, or None when ``label`` is empty/None.
+
+    ``source`` is the display engine name ("SF" for Stockfish, "LC0" for either
+    Leela severity or draw-character), used for the inline prefix label.
+
+    Params:
+        kind (str): Engine/category key — "sf", "lc0_base", or "lc0_draw".
+        label (str | None): DB label string; returns None when empty or None.
+        title (str): Tooltip/title string for the chip.
+
+    Returns:
+        dict with keys ``kind``, ``label``, ``css_label``, ``title``, ``source``;
+        or None when ``label`` is falsy.
+    """
     if not label:
         return None
     return {
@@ -37,6 +50,7 @@ def _chip(kind: str, label: str | None, title: str) -> dict | None:
         "label": label,
         "css_label": _css_label(label),
         "title": title,
+        "source": "SF" if kind == "sf" else "LC0",
     }
 
 
@@ -54,7 +68,7 @@ def chips_for_ply(data: GameAnalysisDataV2, ply: int) -> list[dict]:
 
     Returns:
         List of chip dicts (possibly empty). Each dict has keys ``kind``,
-        ``label``, ``css_label``, ``title``.
+        ``label``, ``css_label``, ``title``, ``source``.
     """
     sf_row = next((m for m in data.sf_moves if m.ply == ply), None)
     lc0_row = next((m for m in data.lc0_moves if m.ply == ply), None)

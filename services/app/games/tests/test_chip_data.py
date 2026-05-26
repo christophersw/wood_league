@@ -28,3 +28,11 @@ def test_chips_empty_for_unknown_ply(new_schema_game_factory):
     """chips_for_ply returns [] when no engine data exists for the requested ply."""
     data = get_game_analysis_v2(new_schema_game_factory().slug)
     assert chips_for_ply(data, ply=9999) == []
+
+
+def test_chips_carry_engine_source():
+    """Each chip dict exposes a human engine source: SF for Stockfish, LC0 for Leela."""
+    from games.chip_data import _chip
+    assert _chip("sf", "Blunder", "t")["source"] == "SF"
+    assert _chip("lc0_base", "Mistake", "t")["source"] == "LC0"
+    assert _chip("lc0_draw", "Simplification", "t")["source"] == "LC0"

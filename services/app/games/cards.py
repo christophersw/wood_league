@@ -70,6 +70,32 @@ def _avg(values: list) -> float | None:
     return fmean(nums) if nums else None
 
 
+# Per-side game outcome chips, keyed by PGN result. Each value is
+# (white_outcome, black_outcome); kind drives the colour modifier in the card.
+# Unknown/ongoing results ("*") map to (None, None) so nothing is shown.
+_WIN = {"label": "Winner", "kind": "win"}
+_LOSS = {"label": "Loser", "kind": "loss"}
+_DRAW = {"label": "Drew", "kind": "draw"}
+_OUTCOME_BY_RESULT = {
+    "1-0": (_WIN, _LOSS),
+    "0-1": (_LOSS, _WIN),
+    "1/2-1/2": (_DRAW, _DRAW),
+}
+
+
+def outcome_labels(result: str) -> tuple[dict | None, dict | None]:
+    """Map a PGN result string to (white_outcome, black_outcome) chips.
+
+    Params:
+        result (str): PGN result, e.g. "1-0", "0-1", "1/2-1/2", or "*".
+
+    Returns:
+        tuple[dict | None, dict | None]: Per-side {"label", "kind"} dicts, or
+        (None, None) for an unknown/ongoing result.
+    """
+    return _OUTCOME_BY_RESULT.get(result, (None, None))
+
+
 def build_sf_card_context(data: GameAnalysisDataV2) -> dict:
     """Build the template context dict for the Stockfish stat card.
 
@@ -92,7 +118,10 @@ def build_sf_card_context(data: GameAnalysisDataV2) -> dict:
     """
     white_moves = [m for m in data.sf_moves if m.ply % 2 == 1]
     black_moves = [m for m in data.sf_moves if m.ply % 2 == 0]
+    white_outcome, black_outcome = outcome_labels(data.result)
     return {
+        "white_outcome": white_outcome,
+        "black_outcome": black_outcome,
         "white_accuracy": data.sf_white_accuracy,
         "black_accuracy": data.sf_black_accuracy,
         "white_acpl": data.sf_white_acpl,
@@ -222,7 +251,10 @@ def build_lc0_card_context(data: GameAnalysisDataV2) -> dict:
     """
     white = _lc0_side_counts([m for m in data.lc0_moves if m.ply % 2 == 1])
     black = _lc0_side_counts([m for m in data.lc0_moves if m.ply % 2 == 0])
+    white_outcome, black_outcome = outcome_labels(data.result)
     return {
+        "white_outcome": white_outcome,
+        "black_outcome": black_outcome,
         "lc0_white_accuracy": data.lc0_white_accuracy,
         "lc0_black_accuracy": data.lc0_black_accuracy,
         "wdl": {

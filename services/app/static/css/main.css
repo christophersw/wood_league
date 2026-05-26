@@ -1199,4 +1199,294 @@
 
   .dub-bar      { align-items: center; gap: 0.75rem; padding-block: 0.25rem; display: flex; }
   .dub-bar-fill { height: 1rem; background: var(--color-forest); }
+
+  /* ── Game-analysis stat cards (SF + LC0) ─────────────────────────────────
+     Shared "Du Bois plate" card components used by templates/games/partials/
+     _card_sf.html and _card_lc0.html (#208). All colours via :root tokens. */
+
+  /* Plate frame */
+  .wc-card {
+    background: var(--color-cream);
+    border: 1.5px solid color-mix(in srgb, var(--color-peat) 22%, transparent);
+    border-top: 3px solid var(--color-ebony);
+    border-radius: 0;
+    padding: 1.05rem 1.2rem;
+  }
+  .wc-card__head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-ebony) 18%, transparent);
+    padding-bottom: 0.5rem; margin-bottom: 0.9rem;
+  }
+  .wc-card__head h3 {
+    margin: 0; font-family: var(--font-display); font-size: 1.05rem; font-weight: 700;
+    letter-spacing: 0.05em; text-transform: uppercase; color: var(--color-forest);
+  }
+  .wc-card__side { margin-bottom: 1.15rem; }
+  .wc-card__side:last-child { margin-bottom: 0; }
+  .wc-card__side-title {
+    font-family: var(--font-mono); font-size: 0.6rem; font-weight: 500;
+    letter-spacing: 0.1em; text-transform: uppercase; color: var(--color-peat);
+    margin-bottom: 0.5rem;
+  }
+
+  /* Game-outcome chip appended to the side title (Winner / Loser / Drew) */
+  .card-outcome { font-weight: 700; }
+  .card-outcome--win  { color: var(--color-forest); }
+  .card-outcome--loss { color: var(--color-vermilion); }
+  .card-outcome--draw { color: var(--color-slate); }
+
+  /* Run-info (ⓘ): hover/focus popover */
+  .card-info { position: relative; cursor: help; font-family: var(--font-mono); font-size: 0.7rem; color: var(--color-peat); }
+  .card-info-pop { width: 200px; right: 0; top: calc(100% + 8px); }
+  .card-info:hover .card-info-pop, .card-info:focus-within .card-info-pop { opacity: 1; visibility: visible; }
+  .card-info-pop dl { display: grid; grid-template-columns: auto 1fr; gap: 0.15rem 0.75rem; margin: 0; }
+  .card-info-pop dt { font-family: var(--font-mono); font-size: 0.62rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--color-peat); }
+  .card-info-pop dd { margin: 0; font-family: var(--font-serif); font-size: 0.82rem; color: var(--color-ebony); }
+
+  /* Stat tiles */
+  .card-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; margin-bottom: 0.7rem; }
+  .card-tiles--2 { grid-template-columns: repeat(2, 1fr); }
+  .card-tile {
+    position: relative;
+    border: 1.25px solid color-mix(in srgb, var(--color-peat) 22%, transparent);
+    border-top: 2px solid var(--color-forest);
+    background: var(--color-parchment); padding: 0.4rem 0.5rem 0.45rem; cursor: help;
+  }
+  .card-tile__k {
+    display: block; font-family: var(--font-mono); font-size: 0.54rem; letter-spacing: 0.07em;
+    text-transform: uppercase; color: var(--color-peat); line-height: 1.2;
+    margin-bottom: 0.15rem; padding-bottom: 0.12rem;
+    border-bottom: 1px dotted color-mix(in srgb, var(--color-peat) 45%, transparent);
+  }
+  .card-tile__v {
+    font-family: var(--font-serif); font-size: 1.05rem; font-weight: 600;
+    color: var(--color-ebony); font-variant-numeric: tabular-nums;
+  }
+
+  /* Popover shared by tile tooltips + bar legend */
+  .card-pop {
+    position: absolute; z-index: 20; background: var(--color-cream);
+    border: 1.25px solid color-mix(in srgb, var(--color-peat) 35%, transparent);
+    border-top: 3px solid var(--color-ebony); padding: 0.6rem 0.7rem;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.16);
+    opacity: 0; visibility: hidden; transition: opacity 0.13s; pointer-events: none;
+  }
+  .card-pop h4 {
+    margin: 0 0 0.3rem; font-family: var(--font-display); font-size: 0.78rem; font-weight: 700;
+    letter-spacing: 0.03em; text-transform: uppercase; color: var(--color-forest);
+  }
+  .card-pop p { margin: 0; font-family: var(--font-serif); font-size: 0.82rem; line-height: 1.45; color: var(--color-ebony); }
+  .card-pop .calc {
+    display: block; margin-top: 0.4rem; font-family: var(--font-mono); font-size: 0.62rem;
+    letter-spacing: 0.03em; color: var(--color-peat);
+  }
+
+  /* Tile tooltip placement: edge-aware by position, robust for 2 or 3 tiles */
+  .card-tip { width: 220px; left: 0; right: auto; bottom: calc(100% + 8px); }
+  .card-tile:not(:first-child):not(:last-child) .card-tip { left: 50%; right: auto; transform: translateX(-50%); }
+  .card-tile:last-child .card-tip { left: auto; right: 0; }
+  .card-tile:hover .card-tip, .card-tile:focus-within .card-tip { opacity: 1; visibility: visible; }
+
+  /* Move-quality bar (glyph + count per segment) */
+  .card-qwrap { position: relative; }
+  .card-qcap {
+    display: flex; align-items: center; gap: 0.3rem; margin-bottom: 0.25rem;
+    font-family: var(--font-mono); font-size: 0.54rem; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--color-slate);
+  }
+  .card-qcap .hint {
+    color: var(--color-peat); cursor: help;
+    border-bottom: 1px dotted color-mix(in srgb, var(--color-peat) 45%, transparent);
+  }
+  .card-qbar { display: flex; gap: 2px; height: 34px; border-radius: 1px; overflow: hidden; cursor: help; }
+  .card-qbar .seg {
+    display: flex; align-items: center; justify-content: center; gap: 0.3rem;
+    min-width: 2.6rem; font-family: var(--font-mono); color: #fff;
+  }
+  /* Light-background bands need dark text for contrast */
+  .card-qbar .seg.move-annotation-great,
+  .card-qbar .seg.move-annotation-excellent,
+  .card-qbar .seg.move-annotation-good,
+  .card-qbar .seg.move-annotation-inaccuracy { color: #2b2410; }
+  .card-qbar .seg .g { font-size: 0.8rem; font-weight: 600; }
+  .card-qbar .seg .c { font-size: 0.78rem; font-weight: 500; opacity: 0.92; font-variant-numeric: tabular-nums; }
+  .card-qbar__empty {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    background: var(--color-band-empty); color: var(--color-peat);
+    font-family: var(--font-mono); font-size: 0.62rem;
+  }
+
+  /* Bar legend popover: spans the bar width, opens above */
+  .card-legend { left: 0; right: 0; bottom: calc(100% + 8px); }
+  .card-qwrap:hover .card-legend, .card-qwrap:focus-within .card-legend { opacity: 1; visibility: visible; }
+  .card-legend .lrow {
+    display: grid; grid-template-columns: 14px 1.6rem 1fr; gap: 0.5rem; align-items: start;
+    margin-bottom: 0.32rem;
+  }
+  .card-legend .lrow:last-child { margin-bottom: 0; }
+  .card-legend .sw { width: 14px; height: 14px; border-radius: 2px; margin-top: 0.12rem; }
+  .card-legend .lg { font-family: var(--font-mono); font-size: 0.8rem; font-weight: 600; color: var(--color-ebony); }
+  .card-legend .lt { font-family: var(--font-serif); font-size: 0.78rem; line-height: 1.3; color: var(--color-ebony); }
+  .card-legend .lt b { font-weight: 600; }
+  .card-legend .lt span { color: var(--color-peat); }
+
+  /* Whole-game average winning-chances bar (LC0), shown once at card top from
+     White's perspective: near-white = White wins, grey = draw, ebony = Black. */
+  .card-gwc { display: flex; gap: 2px; height: 32px; border-radius: 1px; overflow: hidden; cursor: help; }
+  .card-gwc .seg {
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--font-mono); font-size: 0.72rem; font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .gwc-white { background: var(--color-near-white); color: var(--color-ebony); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-peat) 30%, transparent); }
+  .gwc-draw  { background: var(--color-slate); color: var(--color-cream); }
+  .gwc-black { background: var(--color-ebony); color: var(--color-near-white); }
+  /* Legend that opens below its bar (for bars near the top of the card) */
+  .card-legend--down { top: calc(100% + 8px); bottom: auto; }
+  /* Actual game result: gold cap on the winning (or draw) segment */
+  .gwc-actual { box-shadow: inset 0 3px 0 0 var(--color-gold); }
+  .gwc-white.gwc-actual { box-shadow: inset 0 3px 0 0 var(--color-gold), inset 0 0 0 1px color-mix(in srgb, var(--color-peat) 30%, transparent); }
+
+  /* Draw-character dot chips (LC0, subordinate) */
+  .card-chiprow { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+  /* Subordinate look WITHOUT container opacity, so the chips' hover tooltips
+     (descendants) stay fully opaque rather than inheriting a faded parent. */
+  .card-chiprow--muted .card-dchip { color: var(--color-peat); }
+  .card-chiprow--muted .card-dchip .dot { opacity: 0.7; }
+  .card-dchip {
+    position: relative; cursor: help;
+    display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.18rem 0.5rem;
+    border: 1.25px solid color-mix(in srgb, var(--color-peat) 28%, transparent);
+    background: var(--color-parchment); font-family: var(--font-mono); font-size: 0.64rem;
+    color: var(--color-ebony); white-space: nowrap;
+  }
+  .card-dchip .dot { width: 9px; height: 9px; border-radius: 2px; flex: none; }
+  .card-dchip .n { font-weight: 600; font-variant-numeric: tabular-nums; }
+  /* Draw-character chip hover/focus description popover */
+  .card-dchip-tip { width: 200px; left: 0; bottom: calc(100% + 6px); white-space: normal;
+    font-family: var(--font-serif); font-size: 0.78rem; line-height: 1.4; color: var(--color-ebony); }
+  .card-dchip:hover .card-dchip-tip, .card-dchip:focus-within .card-dchip-tip { opacity: 1; visibility: visible; }
+  .card-dchip-tip .t {
+    display: block; font-family: var(--font-display); font-size: 0.72rem; font-weight: 700;
+    letter-spacing: 0.03em; text-transform: uppercase; color: var(--color-forest); margin-bottom: 0.2rem;
+  }
+  .dc-missed_win { background: var(--color-vermilion-bright); }
+  .dc-losing_blunder { background: var(--color-ember); }
+  .dc-risky { background: var(--color-saffron); }
+  .dc-simplification { background: var(--color-emerald); }
+
+  /* Shared move-quality palette (cards' bars, move chips, pgnTable.js) */
+  .move-annotation-brilliant { background: var(--color-teal); }
+  .move-annotation-best      { background: var(--color-emerald); }
+  .move-annotation-great     { background: var(--color-leaf); }
+  .move-annotation-excellent { background: var(--color-leaf); }
+  .move-annotation-good      { background: var(--color-leaf); }
+  .move-annotation-inaccuracy{ background: var(--color-saffron); }
+  .move-annotation-mistake   { background: var(--color-ember); }
+  .move-annotation-blunder   { background: var(--color-vermilion-bright); }
+
+  /* ── Move-quality chips (#208; moved from games/moveChips.css) ──────────────
+     Sharp "form-2" tiles inside the THIS MOVE plate: parchment background with a
+     band-coloured top rule. The band colour comes from the .move-annotation-*
+     palette above, re-mapped here onto the chip's top border. */
+  .move-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    align-items: center;
+    min-height: 2rem;
+    padding: 0.55rem 0.75rem 0.65rem;
+  }
+  .move-chips__empty {
+    font-family: var(--font-mono, 'DM Mono', monospace);
+    font-size: 0.75rem;
+    color: var(--color-peat, #5C4A2A);
+    opacity: 0.6;
+  }
+  .move-chip__source {
+    font-family: var(--font-mono, 'DM Mono', monospace);
+    font-size: 0.55rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--color-rust, #8B3A2A);
+    margin-left: 0.35rem;
+  }
+  .move-chip__source:first-child { margin-left: 0; }
+  .move-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.2rem 0.6rem 0.15rem;
+    border-radius: 0;
+    font-family: var(--font-mono, 'DM Mono', monospace);
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+    cursor: default;
+    color: var(--color-ebony, #1A1410);
+    background: var(--color-parchment, #F5F0E8);
+    border: 1px solid color-mix(in srgb, var(--color-peat) 25%, transparent);
+    border-top: 2.5px solid var(--color-band, #C9B998);
+  }
+  .move-chip.move-annotation-brilliant  { border-top-color: var(--color-teal); }
+  .move-chip.move-annotation-best       { border-top-color: var(--color-emerald); }
+  .move-chip.move-annotation-great      { border-top-color: var(--color-leaf); }
+  .move-chip.move-annotation-excellent  { border-top-color: var(--color-leaf); }
+  .move-chip.move-annotation-good       { border-top-color: var(--color-leaf); }
+  .move-chip.move-annotation-inaccuracy { border-top-color: var(--color-saffron); }
+  .move-chip.move-annotation-mistake    { border-top-color: var(--color-ember); }
+  .move-chip.move-annotation-blunder    { border-top-color: var(--color-vermilion-bright); }
+  .move-chip.move-annotation-simplification { border-top-color: var(--color-emerald); }
+  .move-chip.move-annotation-risky          { border-top-color: var(--color-saffron); }
+  .move-chip.move-annotation-losing_blunder { border-top-color: var(--color-ember); }
+  .move-chip.move-annotation-missed_win     { border-top-color: var(--color-vermilion-bright); }
+  .move-chip[class*="move-annotation-"] { background: var(--color-parchment, #F5F0E8); }
+  .move-chip--sf,
+  .move-chip--lc0_base { /* primary — full weight, no modifier */ }
+  .move-chip--lc0_draw {
+    opacity: 0.5;
+    font-weight: 600;
+    font-size: 0.66rem;
+    border-top-width: 1.5px;
+  }
+
+  /* ── Engine-arrow toggle chips (#208) ──────────────────────────────────────
+     Sharp Du Bois toggles in the POSITION header. ON via :has(input:checked):
+     engine-colour top-rule + dot; OFF: muted + dashed. Best-only is a filter. */
+  .arrow-toggles { display: flex; gap: 0.35rem; align-items: center; flex-wrap: wrap; }
+  .arrow-tg {
+    position: relative;
+    display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.18rem 0.5rem;
+    cursor: pointer; font-family: var(--font-mono); font-size: 0.58rem; font-weight: 700;
+    letter-spacing: 0.06em; text-transform: uppercase; border-radius: 0;
+    color: var(--color-ebony); background: var(--color-parchment);
+    border: 1px dashed color-mix(in srgb, var(--color-peat) 28%, transparent); opacity: 0.45;
+  }
+  .arrow-tg input { position: absolute; opacity: 0; width: 0; height: 0; }
+  .arrow-tg:focus-within { outline: 2px solid var(--color-forest); outline-offset: 1px; }
+  .arrow-tg__dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--color-peat); }
+  .arrow-tg__box { width: 0.66rem; height: 0.66rem; border: 1.5px solid var(--color-ebony);
+    display: inline-flex; align-items: center; justify-content: center; font-size: 0.5rem; line-height: 1; }
+  .arrow-tg--sf:has(input:checked) { opacity: 1; border-style: solid; border-top: 2.5px solid var(--color-tobacco); }
+  .arrow-tg--sf:has(input:checked) .arrow-tg__dot { background: var(--color-tobacco); }
+  .arrow-tg--lc0:has(input:checked) { opacity: 1; border-style: solid; border-top: 2.5px solid var(--color-denim); }
+  .arrow-tg--lc0:has(input:checked) .arrow-tg__dot { background: var(--color-denim); }
+  .arrow-tg--best:has(input:checked) { opacity: 1; border-style: solid; border-top: 2.5px solid var(--color-gold); }
+  .arrow-tg--best:has(input:checked) .arrow-tg__box::after { content: "✓"; }
+
+  /* ── THIS MOVE card (#208) ─────────────────────────────────────────────── */
+  .this-move { display: flex; gap: 1rem; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; }
+  .this-move__main { flex: 1; min-width: 240px; }
+  .this-move__ident { font-family: var(--font-serif); font-size: 1rem; font-weight: 600; color: var(--color-ebony); margin: 0 0 0.5rem; }
+  .this-move__side { font-family: var(--font-mono); font-size: 0.62rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--color-rust); margin-left: 0.4rem; }
+  .this-move__lbl { font-family: var(--font-mono); font-size: 0.55rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--color-peat); margin: 0 0 0.4rem; }
+  .this-move__lbl--c { text-align: center; }
+  .this-move__empty { font-family: var(--font-mono); font-size: 0.75rem; color: var(--color-peat); opacity: 0.7; padding: 0.4rem 0 0.2rem; }
+  .scorechips { display: flex; gap: 0.5rem; }
+  .scorechip { display: flex; flex-direction: column; align-items: center; min-width: 64px; background: var(--color-parchment); border: 1px solid color-mix(in srgb, var(--color-peat) 25%, transparent); }
+  .scorechip__k { font-family: var(--font-mono); font-size: 0.5rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--color-parchment); width: 100%; text-align: center; padding: 1px 0; }
+  .scorechip--sf .scorechip__k { background: var(--color-tobacco); }
+  .scorechip--lc0 .scorechip__k { background: var(--color-denim); }
+  .scorechip__v { font-family: var(--font-serif); font-size: 1.05rem; font-weight: 700; color: var(--color-ebony); padding: 2px 8px 4px; font-variant-numeric: tabular-nums; }
+  .scorechip__v.bad { color: var(--color-vermilion-bright); }
 }

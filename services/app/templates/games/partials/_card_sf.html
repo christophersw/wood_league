@@ -1,90 +1,136 @@
 {% load static %}
-<style>
-  /* All colors via :root tokens in static/css/main.css. */
-  .wc-card { background: var(--color-bone); border: 1px solid var(--color-card-border-soft); border-radius: 8px; padding: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,.07); }
-  .wc-card__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: .75rem; }
-  .wc-card__head h3 { margin: 0; font-size: 1rem; font-weight: 600; color: var(--color-card-title); }
-  .wc-card__side { margin-bottom: 1rem; }
-  .wc-card__side:last-child { margin-bottom: 0; }
-  .wc-card__side-title { font-weight: 600; font-size: .85rem; color: var(--color-card-subtitle); margin-bottom: .4rem; }
-  .metric { display: flex; justify-content: space-between; font-size: .85rem; padding: .15rem 0; }
-  .metric span:last-child { font-weight: 600; color: var(--color-card-title); }
-  .card-info-tooltip { display: inline-block; }
-  .card-info-tooltip summary { cursor: pointer; list-style: none; font-size: .8rem; color: var(--color-card-muted); }
-  .card-info-tooltip summary::-webkit-details-marker { display: none; }
-  .card-info-tooltip[open] { position: relative; }
-  .card-info-tooltip dl { position: absolute; right: 0; top: 1.4rem; z-index: 10; background: var(--color-tooltip-bg); border: 1px solid var(--color-card-border-soft); border-radius: 6px; padding: .5rem .75rem; font-size: .78rem; min-width: 180px; display: grid; grid-template-columns: auto 1fr; gap: .1rem .75rem; margin: 0; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
-  .card-info-tooltip dt { color: var(--color-card-muted); }
-  .card-info-tooltip dd { margin: 0; color: var(--color-card-title); }
-  .sf-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; margin-top: .35rem; }
-  .sf-bar__seg { height: 100%; }
-  .move-annotation-brilliant { background: var(--color-teal); }
-  .move-annotation-best      { background: var(--color-emerald); }
-  .move-annotation-great     { background: var(--color-leaf); }
-  .move-annotation-excellent { background: var(--color-leaf); }
-  .move-annotation-good      { background: var(--color-leaf); }
-  .move-annotation-inaccuracy{ background: var(--color-saffron); }
-  .move-annotation-mistake   { background: var(--color-ember); }
-  .move-annotation-blunder   { background: var(--color-vermilion-bright); }
-</style>
+{# Title: _card_sf.html — Stockfish stat card (Du Bois plate) #}
+{# Description: #}
+{#     HTMX partial rendering the Stockfish analysis card in the site-wide #}
+{#     "Du Bois plate" language: cream plate with an ebony top rule, Playfair #}
+{#     uppercase title, per-side stat tiles with hover/focus tooltips, a tall #}
+{#     labelled move-quality bar (glyph + count per segment) with a hover/focus #}
+{#     legend, an outcome chip in each side title, and a hover run-info (ⓘ). #}
+{#     All card styles are shared via the .wc-card / .card-* / .move-annotation-* #}
+{#     rules in static/css/main.css (also used by _card_lc0.html). #}
+{# Changelog: #}
+{#     2026-05-22 (#208): Du Bois plate restyle — tiles, tooltips, labelled bar. #}
+{#     2026-05-22 (#208): Extract shared card CSS to main.css; use card-* names. #}
 
 <section class="wc-card wc-card--sf" aria-label="Stockfish analysis">
   <header class="wc-card__head">
     <h3>Stockfish</h3>
-    <details class="card-info-tooltip">
-      <summary aria-label="Stockfish run info">ⓘ</summary>
-      <dl>
-        <dt>Depth</dt><dd>{{ tooltip_meta.engine_depth|default:"—" }}</dd>
-        <dt>Analyzed</dt><dd>{{ tooltip_meta.analyzed_at|default:"—" }}</dd>
-      </dl>
-    </details>
+    <span class="card-info" tabindex="0" aria-label="Stockfish run info">ⓘ
+      <div class="card-pop card-info-pop">
+        <h4>Run info</h4>
+        <dl>
+          <dt>Depth</dt><dd>{{ tooltip_meta.engine_depth|default:"—" }}</dd>
+          <dt>Analyzed</dt><dd>{{ tooltip_meta.analyzed_at|default:"—" }}</dd>
+        </dl>
+      </div>
+    </span>
   </header>
 
-  {# White side #}
+  {# ── White side ───────────────────────────────────────────────────────── #}
   <div class="wc-card__side">
-    <div class="wc-card__side-title">{{ side_labels.0.1 }} (White)</div>
-    <div class="metric"><span>Accuracy</span><span>{% if white_accuracy %}{{ white_accuracy|floatformat:1 }}%{% else %}—{% endif %}</span></div>
-    <div class="metric"><span>ACPL</span><span>{% if white_acpl %}{{ white_acpl|floatformat:1 }}{% else %}—{% endif %}</span></div>
-    <div class="metric"><span>Avg Win% drop</span><span>{% if avg_win_drop_white %}{{ avg_win_drop_white|floatformat:2 }}{% else %}—{% endif %}</span></div>
-    <div class="sf-bar" aria-label="White move classification distribution" title="White: classification breakdown">
-      {% with wc=classification_counts.white total_w=classification_counts.white.brilliant|add:classification_counts.white.best|add:classification_counts.white.great|add:classification_counts.white.excellent|add:classification_counts.white.good|add:classification_counts.white.inaccuracy|add:classification_counts.white.mistake|add:classification_counts.white.blunder %}
-      {% if total_w %}
-        {% if wc.brilliant %}<div class="sf-bar__seg move-annotation-brilliant" style="flex:{{ wc.brilliant }}" title="Brilliant: {{ wc.brilliant }}"></div>{% endif %}
-        {% if wc.best %}<div class="sf-bar__seg move-annotation-best" style="flex:{{ wc.best }}" title="Best: {{ wc.best }}"></div>{% endif %}
-        {% if wc.great %}<div class="sf-bar__seg move-annotation-great" style="flex:{{ wc.great }}" title="Great: {{ wc.great }}"></div>{% endif %}
-        {% if wc.excellent %}<div class="sf-bar__seg move-annotation-excellent" style="flex:{{ wc.excellent }}" title="Excellent: {{ wc.excellent }}"></div>{% endif %}
-        {% if wc.good %}<div class="sf-bar__seg move-annotation-good" style="flex:{{ wc.good }}" title="Good: {{ wc.good }}"></div>{% endif %}
-        {% if wc.inaccuracy %}<div class="sf-bar__seg move-annotation-inaccuracy" style="flex:{{ wc.inaccuracy }}" title="Inaccuracy: {{ wc.inaccuracy }}"></div>{% endif %}
-        {% if wc.mistake %}<div class="sf-bar__seg move-annotation-mistake" style="flex:{{ wc.mistake }}" title="Mistake: {{ wc.mistake }}"></div>{% endif %}
-        {% if wc.blunder %}<div class="sf-bar__seg move-annotation-blunder" style="flex:{{ wc.blunder }}" title="Blunder: {{ wc.blunder }}"></div>{% endif %}
-      {% else %}
-        <div class="sf-bar__seg" style="flex:1;background:var(--color-band-empty);" title="No classification data"></div>
-      {% endif %}
-      {% endwith %}
+    <div class="wc-card__side-title">{{ side_labels.0.1 }} · White{% if white_outcome %} · <span class="card-outcome card-outcome--{{ white_outcome.kind }}">{{ white_outcome.label }}</span>{% endif %}</div>
+
+    <div class="card-tiles">
+      <div class="card-tile" tabindex="0">
+        <span class="card-tile__k">Accuracy</span>
+        <span class="card-tile__v">{% if white_accuracy %}{{ white_accuracy|floatformat:1 }}%{% else %}—{% endif %}</span>
+        <div class="card-pop card-tip"><h4>Accuracy</h4><p>How closely this player's moves matched the engine's best, on a 0–100% scale.</p><span class="calc">From per-move winning-chance drops; one big mistake hurts more than several small ones.</span></div>
+      </div>
+      <div class="card-tile" tabindex="0">
+        <span class="card-tile__k">ACPL</span>
+        <span class="card-tile__v">{% if white_acpl %}{{ white_acpl|floatformat:1 }}{% else %}—{% endif %}</span>
+        <div class="card-pop card-tip"><h4>ACPL</h4><p>Average centipawn loss — the typical evaluation given up per move versus the engine's best (100 = one pawn).</p><span class="calc">Average of every move's centipawn loss. Lower is better; 0 = engine-perfect.</span></div>
+      </div>
+      <div class="card-tile" tabindex="0">
+        <span class="card-tile__k">Win% drop</span>
+        <span class="card-tile__v">{% if avg_win_drop_white %}{{ avg_win_drop_white|floatformat:2 }}{% else %}—{% endif %}</span>
+        <div class="card-pop card-tip"><h4>Avg Win% Drop</h4><p>The average percentage-point fall in this player's winning chances per move.</p><span class="calc">Engine eval → win-probability curve, then averaged. Lower is better.</span></div>
+      </div>
+    </div>
+
+    <div class="card-qwrap">
+      <div class="card-qcap">Move quality <span class="hint" tabindex="0">— what's this?</span></div>
+      <div class="card-qbar" aria-label="White move classification distribution">
+        {% with wc=classification_counts.white total_w=classification_counts.white.brilliant|add:classification_counts.white.best|add:classification_counts.white.great|add:classification_counts.white.excellent|add:classification_counts.white.good|add:classification_counts.white.inaccuracy|add:classification_counts.white.mistake|add:classification_counts.white.blunder %}
+        {% if total_w %}
+          {% if wc.brilliant %}<div class="seg move-annotation-brilliant" style="flex:{{ wc.brilliant }}" title="Brilliant: {{ wc.brilliant }}"><span class="g">!!</span><span class="c">{{ wc.brilliant }}</span></div>{% endif %}
+          {% if wc.best %}<div class="seg move-annotation-best" style="flex:{{ wc.best }}" title="Best: {{ wc.best }}"><span class="c">{{ wc.best }}</span></div>{% endif %}
+          {% if wc.great %}<div class="seg move-annotation-great" style="flex:{{ wc.great }}" title="Great: {{ wc.great }}"><span class="g">!</span><span class="c">{{ wc.great }}</span></div>{% endif %}
+          {% if wc.excellent %}<div class="seg move-annotation-excellent" style="flex:{{ wc.excellent }}" title="Excellent: {{ wc.excellent }}"><span class="c">{{ wc.excellent }}</span></div>{% endif %}
+          {% if wc.good %}<div class="seg move-annotation-good" style="flex:{{ wc.good }}" title="Good: {{ wc.good }}"><span class="c">{{ wc.good }}</span></div>{% endif %}
+          {% if wc.inaccuracy %}<div class="seg move-annotation-inaccuracy" style="flex:{{ wc.inaccuracy }}" title="Inaccuracy: {{ wc.inaccuracy }}"><span class="g">?!</span><span class="c">{{ wc.inaccuracy }}</span></div>{% endif %}
+          {% if wc.mistake %}<div class="seg move-annotation-mistake" style="flex:{{ wc.mistake }}" title="Mistake: {{ wc.mistake }}"><span class="g">?</span><span class="c">{{ wc.mistake }}</span></div>{% endif %}
+          {% if wc.blunder %}<div class="seg move-annotation-blunder" style="flex:{{ wc.blunder }}" title="Blunder: {{ wc.blunder }}"><span class="g">??</span><span class="c">{{ wc.blunder }}</span></div>{% endif %}
+        {% else %}
+          <div class="card-qbar__empty" title="No classification data">No classification data</div>
+        {% endif %}
+        {% endwith %}
+      </div>
+
+      <div class="card-pop card-legend">
+        <h4>Move quality key</h4>
+        <div class="lrow"><span class="sw" style="background:var(--color-teal)"></span><span class="lg">!!</span><span class="lt"><b>Brilliant</b> — <span>near-best, a bold sacrifice in a tense spot</span></span></div>
+        <div class="lrow"><span class="sw" style="background:var(--color-emerald)"></span><span class="lg">·</span><span class="lt"><b>Best</b> — <span>matches the engine's top move</span></span></div>
+        <div class="lrow"><span class="sw" style="background:var(--color-leaf)"></span><span class="lg">!</span><span class="lt"><b>Great</b> — <span>near-best and clearly beats the runner-up</span></span></div>
+        <div class="lrow"><span class="sw" style="background:var(--color-leaf)"></span><span class="lg">·</span><span class="lt"><b>Excellent</b> — <span>only a little given up (10–50cp)</span></span></div>
+        <div class="lrow"><span class="sw" style="background:var(--color-saffron)"></span><span class="lg">?!</span><span class="lt"><b>Inaccuracy</b> — <span>small edge lost (50–100cp)</span></span></div>
+        <div class="lrow"><span class="sw" style="background:var(--color-ember)"></span><span class="lg">?</span><span class="lt"><b>Mistake</b> — <span>meaningful edge lost (100–300cp)</span></span></div>
+        <div class="lrow"><span class="sw" style="background:var(--color-vermilion-bright)"></span><span class="lg">??</span><span class="lt"><b>Blunder</b> — <span>serious error (300cp+)</span></span></div>
+      </div>
     </div>
   </div>
 
-  {# Black side #}
+  {# ── Black side ───────────────────────────────────────────────────────── #}
   <div class="wc-card__side">
-    <div class="wc-card__side-title">{{ side_labels.1.1 }} (Black)</div>
-    <div class="metric"><span>Accuracy</span><span>{% if black_accuracy %}{{ black_accuracy|floatformat:1 }}%{% else %}—{% endif %}</span></div>
-    <div class="metric"><span>ACPL</span><span>{% if black_acpl %}{{ black_acpl|floatformat:1 }}{% else %}—{% endif %}</span></div>
-    <div class="metric"><span>Avg Win% drop</span><span>{% if avg_win_drop_black %}{{ avg_win_drop_black|floatformat:2 }}{% else %}—{% endif %}</span></div>
-    <div class="sf-bar" aria-label="Black move classification distribution" title="Black: classification breakdown">
-      {% with bc=classification_counts.black total_b=classification_counts.black.brilliant|add:classification_counts.black.best|add:classification_counts.black.great|add:classification_counts.black.excellent|add:classification_counts.black.good|add:classification_counts.black.inaccuracy|add:classification_counts.black.mistake|add:classification_counts.black.blunder %}
-      {% if total_b %}
-        {% if bc.brilliant %}<div class="sf-bar__seg move-annotation-brilliant" style="flex:{{ bc.brilliant }}" title="Brilliant: {{ bc.brilliant }}"></div>{% endif %}
-        {% if bc.best %}<div class="sf-bar__seg move-annotation-best" style="flex:{{ bc.best }}" title="Best: {{ bc.best }}"></div>{% endif %}
-        {% if bc.great %}<div class="sf-bar__seg move-annotation-great" style="flex:{{ bc.great }}" title="Great: {{ bc.great }}"></div>{% endif %}
-        {% if bc.excellent %}<div class="sf-bar__seg move-annotation-excellent" style="flex:{{ bc.excellent }}" title="Excellent: {{ bc.excellent }}"></div>{% endif %}
-        {% if bc.good %}<div class="sf-bar__seg move-annotation-good" style="flex:{{ bc.good }}" title="Good: {{ bc.good }}"></div>{% endif %}
-        {% if bc.inaccuracy %}<div class="sf-bar__seg move-annotation-inaccuracy" style="flex:{{ bc.inaccuracy }}" title="Inaccuracy: {{ bc.inaccuracy }}"></div>{% endif %}
-        {% if bc.mistake %}<div class="sf-bar__seg move-annotation-mistake" style="flex:{{ bc.mistake }}" title="Mistake: {{ bc.mistake }}"></div>{% endif %}
-        {% if bc.blunder %}<div class="sf-bar__seg move-annotation-blunder" style="flex:{{ bc.blunder }}" title="Blunder: {{ bc.blunder }}"></div>{% endif %}
-      {% else %}
-        <div class="sf-bar__seg" style="flex:1;background:var(--color-band-empty);" title="No classification data"></div>
-      {% endif %}
-      {% endwith %}
+    <div class="wc-card__side-title">{{ side_labels.1.1 }} · Black{% if black_outcome %} · <span class="card-outcome card-outcome--{{ black_outcome.kind }}">{{ black_outcome.label }}</span>{% endif %}</div>
+
+    <div class="card-tiles">
+      <div class="card-tile" tabindex="0">
+        <span class="card-tile__k">Accuracy</span>
+        <span class="card-tile__v">{% if black_accuracy %}{{ black_accuracy|floatformat:1 }}%{% else %}—{% endif %}</span>
+        <div class="card-pop card-tip"><h4>Accuracy</h4><p>How closely this player's moves matched the engine's best, on a 0–100% scale.</p><span class="calc">From per-move winning-chance drops; one big mistake hurts more than several small ones.</span></div>
+      </div>
+      <div class="card-tile" tabindex="0">
+        <span class="card-tile__k">ACPL</span>
+        <span class="card-tile__v">{% if black_acpl %}{{ black_acpl|floatformat:1 }}{% else %}—{% endif %}</span>
+        <div class="card-pop card-tip"><h4>ACPL</h4><p>Average centipawn loss — the typical evaluation given up per move versus the engine's best (100 = one pawn).</p><span class="calc">Average of every move's centipawn loss. Lower is better; 0 = engine-perfect.</span></div>
+      </div>
+      <div class="card-tile" tabindex="0">
+        <span class="card-tile__k">Win% drop</span>
+        <span class="card-tile__v">{% if avg_win_drop_black %}{{ avg_win_drop_black|floatformat:2 }}{% else %}—{% endif %}</span>
+        <div class="card-pop card-tip"><h4>Avg Win% Drop</h4><p>The average percentage-point fall in this player's winning chances per move.</p><span class="calc">Engine eval → win-probability curve, then averaged. Lower is better.</span></div>
+      </div>
+    </div>
+
+    <div class="card-qwrap">
+      <div class="card-qcap">Move quality <span class="hint" tabindex="0">— what's this?</span></div>
+      <div class="card-qbar" aria-label="Black move classification distribution">
+        {% with bc=classification_counts.black total_b=classification_counts.black.brilliant|add:classification_counts.black.best|add:classification_counts.black.great|add:classification_counts.black.excellent|add:classification_counts.black.good|add:classification_counts.black.inaccuracy|add:classification_counts.black.mistake|add:classification_counts.black.blunder %}
+        {% if total_b %}
+          {% if bc.brilliant %}<div class="seg move-annotation-brilliant" style="flex:{{ bc.brilliant }}" title="Brilliant: {{ bc.brilliant }}"><span class="g">!!</span><span class="c">{{ bc.brilliant }}</span></div>{% endif %}
+          {% if bc.best %}<div class="seg move-annotation-best" style="flex:{{ bc.best }}" title="Best: {{ bc.best }}"><span class="c">{{ bc.best }}</span></div>{% endif %}
+          {% if bc.great %}<div class="seg move-annotation-great" style="flex:{{ bc.great }}" title="Great: {{ bc.great }}"><span class="g">!</span><span class="c">{{ bc.great }}</span></div>{% endif %}
+          {% if bc.excellent %}<div class="seg move-annotation-excellent" style="flex:{{ bc.excellent }}" title="Excellent: {{ bc.excellent }}"><span class="c">{{ bc.excellent }}</span></div>{% endif %}
+          {% if bc.good %}<div class="seg move-annotation-good" style="flex:{{ bc.good }}" title="Good: {{ bc.good }}"><span class="c">{{ bc.good }}</span></div>{% endif %}
+          {% if bc.inaccuracy %}<div class="seg move-annotation-inaccuracy" style="flex:{{ bc.inaccuracy }}" title="Inaccuracy: {{ bc.inaccuracy }}"><span class="g">?!</span><span class="c">{{ bc.inaccuracy }}</span></div>{% endif %}
+          {% if bc.mistake %}<div class="seg move-annotation-mistake" style="flex:{{ bc.mistake }}" title="Mistake: {{ bc.mistake }}"><span class="g">?</span><span class="c">{{ bc.mistake }}</span></div>{% endif %}
+          {% if bc.blunder %}<div class="seg move-annotation-blunder" style="flex:{{ bc.blunder }}" title="Blunder: {{ bc.blunder }}"><span class="g">??</span><span class="c">{{ bc.blunder }}</span></div>{% endif %}
+        {% else %}
+          <div class="card-qbar__empty" title="No classification data">No classification data</div>
+        {% endif %}
+        {% endwith %}
+      </div>
+
+      <div class="card-pop card-legend">
+        <h4>Move quality key</h4>
+        <div class="lrow"><span class="sw" style="background:var(--color-teal)"></span><span class="lg">!!</span><span class="lt"><b>Brilliant</b> — <span>near-best, a bold sacrifice in a tense spot</span></span></div>
+        <div class="lrow"><span class="sw" style="background:var(--color-emerald)"></span><span class="lg">·</span><span class="lt"><b>Best</b> — <span>matches the engine's top move</span></span></div>
+        <div class="lrow"><span class="sw" style="background:var(--color-leaf)"></span><span class="lg">!</span><span class="lt"><b>Great</b> — <span>near-best and clearly beats the runner-up</span></span></div>
+        <div class="lrow"><span class="sw" style="background:var(--color-leaf)"></span><span class="lg">·</span><span class="lt"><b>Excellent</b> — <span>only a little given up (10–50cp)</span></span></div>
+        <div class="lrow"><span class="sw" style="background:var(--color-saffron)"></span><span class="lg">?!</span><span class="lt"><b>Inaccuracy</b> — <span>small edge lost (50–100cp)</span></span></div>
+        <div class="lrow"><span class="sw" style="background:var(--color-ember)"></span><span class="lg">?</span><span class="lt"><b>Mistake</b> — <span>meaningful edge lost (100–300cp)</span></span></div>
+        <div class="lrow"><span class="sw" style="background:var(--color-vermilion-bright)"></span><span class="lg">??</span><span class="lt"><b>Blunder</b> — <span>serious error (300cp+)</span></span></div>
+      </div>
     </div>
   </div>
 </section>
