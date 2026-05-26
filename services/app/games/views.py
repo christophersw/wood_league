@@ -228,7 +228,7 @@ def board_partial(request: HttpRequest, slug: str) -> HttpResponse:
     if orientation not in ("white", "black"):
         orientation = "white"
 
-    if data is None or (not data.sf_moves and not data.lc0_moves):
+    if _v2_data_lacks_engine_rows(data):
         return render(request, "games/_board_error_partial.html", {"game": game})
 
     pgn, sf_moves, lc0_moves = load_board_inputs(game)
@@ -258,6 +258,21 @@ def board_partial(request: HttpRequest, slug: str) -> HttpResponse:
     })
 
 
+def _v2_data_lacks_engine_rows(data) -> bool:
+    """True when v2 analysis data is None or carries no rows for either engine.
+
+    Centralises the "show the error partial" guard so the SF-or-LC0 admission
+    rule lives in one place instead of being duplicated across handlers.
+
+    Params:
+        data: GameAnalysisDataV2 instance or None (from get_game_analysis_v2).
+
+    Returns:
+        True if the data cannot drive a board render (None or both engines empty).
+    """
+    return data is None or (not data.sf_moves and not data.lc0_moves)
+
+
 def engine_line_partial(request: HttpRequest, slug: str) -> HttpResponse:
     """
     HTMX partial: render an engine line continuation board.
@@ -280,7 +295,7 @@ def engine_line_partial(request: HttpRequest, slug: str) -> HttpResponse:
     game = get_object_or_404(Game, slug=slug)
     data = get_game_analysis_v2(slug)
 
-    if data is None or (not data.sf_moves and not data.lc0_moves) or not data.pgn:
+    if _v2_data_lacks_engine_rows(data) or not data.pgn:
         return render(request, "games/_board_error_partial.html", {"game": game})
 
     try:
