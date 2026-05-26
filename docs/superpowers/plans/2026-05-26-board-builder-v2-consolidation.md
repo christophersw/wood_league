@@ -188,6 +188,331 @@ git commit -m "$(printf '%s\n' \
 
 ---
 
+## Task 2.5: Port #208 WDL helpers + delta-vs-played label math
+
+The spec assumed `main` already carried the per-candidate WDL helpers and the delta-vs-played label semantics from #208. It does not — those live on `issue/208-restyle-game-analysis-page`. Without them, the cutover would emit absolute SF evals and a single repeated `delta_mu` for every LC0 tier (meaningless as a comparison label). Port the helpers and rewrite `_arrow_label` semantics so the cutover delivers the labels the spec promises.
+
+**Files:**
+- Modify: `services/app/games/services_v2.py` — `Lc0MoveRow` dataclass + `_lc0_rows` loader
+- Modify: `services/app/games/board_builder.py` — add `_wdl_mu` + `_lc0_candidate_delta_mu`; change `_arrow_label` semantics (drop engine prefix; SF arg becomes delta); rewrite the label math inside `_arrow_entries_from_row` (the function Task 2 just extended)
+- Modify: `services/app/games/tests/test_arrow_labels.py` — replace the two existing absolute-eval tests with delta-vs-played assertions; add the LC0 per-candidate WDL test
+
+- [ ] **Step 1: Verify the model has the raw + per-candidate WDL columns**
+
+```bash
+source /Users/christopherwebster/Projects/wood_league/.venv/bin/activate
+cd /Users/christopherwebster/Projects/wood_league/.claude/worktrees/issue+209-board-builder-v2/services/app
+grep -n "wdl_win\|wdl_draw\|wdl_loss\|class Lc0MoveAnalysis" analysis/models.py | head -30
+```
+
+Expected: `Lc0MoveAnalysis` has `wdl_win/draw/loss`, `wdl_win/draw/loss_1`, `_2`, `_3`, and `_adj` flavours. (The earlier #209 cutover audit and DB inspection confirmed all 51,231 rows populate these.) If any are missing, **stop and report** — the model migration would have to come first.
+
+- [ ] **Step 2: Write the failing tests**
+
+Replace the body of `services/app/games/tests/test_arrow_labels.py` with:
+
+```python
+"""
+Title: test_arrow_labels.py — Tests for board arrow label generation
+Description:
+    Verifies that arrows emitted by build_board_frames carry a human-readable
+    `label` field: delta-vs-played for both engines. SF shows the mover-relative
+    cp delta (candidate cp − played cp) in pawns. LC0 shows the candidate
+    expected-score mu delta vs the played mu in win%. The engine is conveyed by
+    arrow colour, not by a text prefix.
+
+Changelog:
+    2026-05-26 (#209 Task 2.5): Port #208 delta-vs-played semantics to this branch.
+"""
+import pytest
+from games.board_builder import build_board_frames, _UNICODE_MINUS
+from games.services_v2 import SfMoveRow, Lc0MoveRow
+
+pytestmark = pytest.mark.django_db
+
+
+def test_sf_arrow_label_is_delta_vs_played(simple_pgn_game):
+    """SF arrow label is the candidate's mover-relative cp delta vs the played move, in pawns.
+
+    Parameters:
+        simple_pgn_game: Fixture game exposing a parsable .pgn.
+    """
+    sf = [SfMoveRow(
+        ply=1, san="e4", fen="", cp_eval=20.0, mate_in=None, cpl=0.0, move_win_delta=0.0,
+        classification="best", best_move="", arrow_uci_1="e2e4", arrow_uci_2=None, arrow_uci_3=None,
+        arrow_cp_1=65.0, arrow_cp_2=None, arrow_cp_3=None,
+        pv_san_1=None, pv_san_2=None, pv_san_3=None,
+    )]
+    frames = build_board_frames(pgn=simple_pgn_game.pgn, sf_moves=sf, lc0_moves=[], orientation="white")
+    arrow = frames["frames"][1]["arrows"][0]
+    # ply 1 = White's move; delta = (65 − 20)/100 = +0.45. No "SF " prefix.
+    assert arrow["label"] == "+0.45", arrow
+
+
+def test_sf_arrow_label_negative_delta_uses_unicode_minus(simple_pgn_game):
+    """A candidate worse than the played move shows a unicode-minus signed delta.
+
+    Parameters:
+        simple_pgn_game: Fixture game exposing a parsable .pgn.
+    """
+    sf = [SfMoveRow(
+        ply=1, san="e4", fen="", cp_eval=65.0, mate_in=None, cpl=0.0, move_win_delta=0.0,
+        classification="best", best_move="", arrow_uci_1="e2e4", arrow_uci_2=None, arrow_uci_3=None,
+        arrow_cp_1=20.0, arrow_cp_2=None, arrow_cp_3=None,
+        pv_san_1=None, pv_san_2=None, pv_san_3=None,
+    )]
+    frames = build_board_frames(pgn=simple_pgn_game.pgn, sf_moves=sf, lc0_moves=[], orientation="white")
+    arrow = frames["frames"][1]["arrows"][0]
+    assert arrow["label"] == f"{_UNICODE_MINUS}0.45", arrow
+
+
+def test_lc0_arrow_label_is_delta_vs_played(simple_pgn_game):
+    """LC0 arrow label is the candidate's mover-relative win% delta vs the played move.
+
+    Parameters:
+        simple_pgn_game: Fixture game exposing a parsable .pgn.
+    """
+    # played mu = (500 + 200/2)/1000 = 0.60; candidate1 mu = (620 + 180/2)/1000 = 0.71
+    # delta = +0.11 → "+11%"
+    lc0 = [Lc0MoveRow(
+        ply=1, san="e4", fen="", wdl_win_adj=None, wdl_draw_adj=None, wdl_loss_adj=None,
+        wdl_mu=None, delta_mu=None, delta_d=None, base_severity="best", draw_character=None,
+        best_move="", arrow_uci_1="e2e4", arrow_uci_2=None, arrow_uci_3=None,
+        pv_san_1=None, pv_san_2=None, pv_san_3=None,
+        wdl_win=500, wdl_draw=200, wdl_loss=300,
+        wdl_win_1=620, wdl_draw_1=180, wdl_loss_1=200,
+    )]
+    frames = build_board_frames(pgn=simple_pgn_game.pgn, sf_moves=[], lc0_moves=lc0, orientation="white")
+    arrow = frames["frames"][1]["arrows"][0]
+    assert arrow["label"] == "+11%", arrow
+    assert "Lc0" not in arrow["label"]
+
+
+def test_v2_arrow_entry_keeps_color_opacity_stroke(simple_pgn_game):
+    """Color/opacity/stroke_width (from Task 2) survive the label-semantics rewrite.
+
+    Parameters:
+        simple_pgn_game: Fixture game exposing a parsable .pgn.
+    """
+    sf = [SfMoveRow(
+        ply=1, san="e4", fen="", cp_eval=20.0, mate_in=None, cpl=0.0, move_win_delta=0.0,
+        classification="best", best_move="", arrow_uci_1="e2e4", arrow_uci_2=None, arrow_uci_3=None,
+        arrow_cp_1=65.0, arrow_cp_2=None, arrow_cp_3=None,
+        pv_san_1=None, pv_san_2=None, pv_san_3=None,
+    )]
+    frames = build_board_frames(pgn=simple_pgn_game.pgn, sf_moves=sf, lc0_moves=[], orientation="white")
+    arrow = frames["frames"][1]["arrows"][0]
+    assert isinstance(arrow["color"], str) and arrow["color"].startswith("#"), arrow
+    assert 0.42 <= arrow["opacity"] <= 0.98, arrow
+    assert arrow["stroke_width"] == 7, arrow
+```
+
+This file replaces the two existing tests (`test_sf_arrow_has_signed_pawn_label`, `test_lc0_arrow_has_signed_winpct_label`) which assert the old `"SF +0.65"`/`"Lc0 +5%"` format. Those formats are wrong per the spec; the new format is the contract going forward.
+
+- [ ] **Step 3: Run tests to verify they fail**
+
+```bash
+pytest games/tests/test_arrow_labels.py -v
+```
+
+Expected: at least three FAILs. SF tests fail because labels still carry `"SF "` prefix and emit absolute eval not delta. LC0 test fails with `Lc0MoveRow` constructor error (`wdl_win` not a field).
+
+- [ ] **Step 4: Extend `Lc0MoveRow` with raw + per-candidate WDL fields**
+
+In `services/app/games/services_v2.py`, locate the `Lc0MoveRow` dataclass. Append twelve fields, all with `int | None = None` defaults so existing call sites don't break:
+
+```python
+@dataclass(frozen=True)
+class Lc0MoveRow:
+    # ... existing fields ...
+
+    # Raw mover-frame played-move WDL triple (#161 worker).
+    wdl_win:  int | None = None
+    wdl_draw: int | None = None
+    wdl_loss: int | None = None
+
+    # Per-candidate mover-frame WDL triples for arrow tiers 1, 2, 3.
+    wdl_win_1:  int | None = None
+    wdl_draw_1: int | None = None
+    wdl_loss_1: int | None = None
+    wdl_win_2:  int | None = None
+    wdl_draw_2: int | None = None
+    wdl_loss_2: int | None = None
+    wdl_win_3:  int | None = None
+    wdl_draw_3: int | None = None
+    wdl_loss_3: int | None = None
+```
+
+Read the existing `Lc0MoveRow` definition first to confirm the dataclass decorator + the position to append fields (after all existing fields, before any `__post_init__`).
+
+- [ ] **Step 5: Update `_lc0_rows` loader to populate the new fields**
+
+In `services/app/games/services_v2.py`, find the `_lc0_rows(lga)` function (search for `def _lc0_rows`). Inside the per-row construction (where `Lc0MoveRow(...)` is built), add the twelve new field assignments reading from the model row `r`:
+
+```python
+Lc0MoveRow(
+    # ... existing kwargs ...
+    wdl_win=r.wdl_win, wdl_draw=r.wdl_draw, wdl_loss=r.wdl_loss,
+    wdl_win_1=r.wdl_win_1, wdl_draw_1=r.wdl_draw_1, wdl_loss_1=r.wdl_loss_1,
+    wdl_win_2=r.wdl_win_2, wdl_draw_2=r.wdl_draw_2, wdl_loss_2=r.wdl_loss_2,
+    wdl_win_3=r.wdl_win_3, wdl_draw_3=r.wdl_draw_3, wdl_loss_3=r.wdl_loss_3,
+)
+```
+
+- [ ] **Step 6: Add `_wdl_mu` and `_lc0_candidate_delta_mu` helpers**
+
+In `services/app/games/board_builder.py`, add after `_arrow_label`:
+
+```python
+def _wdl_mu(win: int | None, draw: int | None, loss: int | None) -> float | None:
+    """Expected-score fraction (0..1) from a milli-unit WDL triple, or None.
+
+    Params:
+        win  (int | None): Win count (milli-units, mover frame).
+        draw (int | None): Draw count (milli-units, mover frame).
+        loss (int | None): Loss count (milli-units, mover frame).
+
+    Returns:
+        (win + draw/2) / (win + draw + loss), or None when any input is None or
+        the total is non-positive.
+    """
+    if win is None or draw is None or loss is None:
+        return None
+    total = win + draw + loss
+    if total <= 0:
+        return None
+    return (win + (draw / 2.0)) / total
+
+
+def _lc0_candidate_delta_mu(row: object, tier: int) -> float | None:
+    """Candidate-tier expected-score delta vs the played move (mover frame), or None.
+
+    Uses the raw per-candidate WDL (``wdl_*_{tier}``) and the raw played WDL
+    (``wdl_win/draw/loss``), both mover-frame, so a candidate better for the
+    mover reads positive.
+
+    Params:
+        row  (object): Lc0MoveRow with raw played + per-candidate WDL triples.
+        tier (int):    1, 2, or 3.
+
+    Returns:
+        candidate_mu − played_mu, or None when either is unavailable.
+    """
+    cand = _wdl_mu(
+        getattr(row, f"wdl_win_{tier}", None),
+        getattr(row, f"wdl_draw_{tier}", None),
+        getattr(row, f"wdl_loss_{tier}", None),
+    )
+    played = _wdl_mu(
+        getattr(row, "wdl_win", None),
+        getattr(row, "wdl_draw", None),
+        getattr(row, "wdl_loss", None),
+    )
+    if cand is None or played is None:
+        return None
+    return cand - played
+```
+
+- [ ] **Step 7: Change `_arrow_label` semantics (drop engine prefix; SF arg is delta)**
+
+Replace `_arrow_label` in `services/app/games/board_builder.py` with:
+
+```python
+def _arrow_label(engine_key: str, score: float | None, delta_mu: float | None) -> str:
+    """
+    Build a compact eval-only label for a v2-path arrow.
+
+    The arrow tag conveys the engine by colour, so the label is eval text with no
+    engine prefix: SF shows the candidate's mover-relative cp delta vs the played
+    move in pawns to two decimals (e.g. "+0.34" or "−0.10"); LC0 shows the per-
+    candidate Win% delta vs the played move in whole percentage points
+    (e.g. "+12%" or "−7%").
+
+    Params:
+        engine_key (str):          "sf" or "lc0".
+        score      (float | None): For SF: the mover-relative cp delta
+                                   (candidate cp − played cp) to render in pawns.
+        delta_mu   (float | None): For LC0: (candidate_mu − played_mu).
+
+    Returns:
+        Formatted label string, or "" when the required value is absent.
+    """
+    if engine_key == "sf" and score is not None:
+        pawns = score / 100.0
+        sign = "+" if pawns >= 0 else _UNICODE_MINUS
+        return f"{sign}{abs(pawns):.2f}"
+    if engine_key == "lc0" and delta_mu is not None:
+        delta_pct = delta_mu * 100.0
+        sign = "+" if delta_pct >= 0 else _UNICODE_MINUS
+        return f"{sign}{abs(delta_pct):.0f}%"
+    return ""
+```
+
+- [ ] **Step 8: Rewrite the label math inside `_arrow_entries_from_row`**
+
+Open `_arrow_entries_from_row` in `board_builder.py` (Task 2 already added the color/opacity/stroke_width plumbing — keep that intact). Replace the SF and LC0 *label-computation* lines so SF passes a delta to `_arrow_label` and LC0 calls `_lc0_candidate_delta_mu` per tier:
+
+```python
+# In the for-tier loop, replace the SF branch's label computation:
+if engine_key == "sf":
+    cand_cp = getattr(row, f"arrow_cp_{tier_index + 1}", None)
+    played_cp = getattr(row, "cp_eval", None)
+    label = ""
+    delta_for_opacity: float | None = None
+    if cand_cp is not None and played_cp is not None:
+        # arrow_cp_* and cp_eval are both white-frame (#197); flip to mover-frame
+        # so the delta sign matches what the side-to-move sees.
+        delta_mover = _mover_relative_score(cand_cp - played_cp, is_white_move)
+        label = _arrow_label("sf", delta_mover, None)
+        delta_for_opacity = delta_mover
+else:
+    delta_mu = _lc0_candidate_delta_mu(row, tier_index + 1)
+    label = _arrow_label("lc0", None, delta_mu)
+    # Scale mu delta (0..1 unit) into cp-equivalent for opacity shading.
+    delta_for_opacity = (delta_mu * 100.0) if delta_mu is not None else None
+```
+
+Delete the module-level `delta_mu = getattr(row, "delta_mu", None)` and `played_mover_cp = _mover_relative_score(played_cp, is_white_move)` that Task 2's implementer added — they were workarounds for the missing helpers and are now obsolete. The function body should compute per-tier deltas inside the loop only.
+
+Update the docstring on `_arrow_entries_from_row` to make explicit that SF passes the delta (not absolute eval) and LC0 uses per-candidate WDL.
+
+- [ ] **Step 9: Run tests; fix until green**
+
+```bash
+pytest games/tests/test_arrow_labels.py -v
+```
+
+Expected: all four tests PASS.
+
+- [ ] **Step 10: Full games-suite + bandit**
+
+```bash
+pytest games/tests/ -v
+bandit -ll games/board_builder.py games/services_v2.py
+```
+
+Expected: full suite PASS, bandit clean. If any other test in the suite asserts old `"SF +"`/`"Lc0 +"` label format, update it to the new format and note it in the commit message.
+
+- [ ] **Step 11: Verify branch + commit**
+
+```bash
+git -C /Users/christopherwebster/Projects/wood_league/.claude/worktrees/issue+209-board-builder-v2 branch --show-current
+git add games/services_v2.py games/board_builder.py games/tests/test_arrow_labels.py
+git commit -m "$(printf '%s\n' \
+  'feat(#209): port #208 WDL helpers + delta-vs-played label math' \
+  '' \
+  '_wdl_mu and _lc0_candidate_delta_mu added; Lc0MoveRow gains raw + per-' \
+  'candidate WDL fields populated by _lc0_rows. _arrow_label drops the engine' \
+  'prefix; SF arg is now the mover-relative delta (cand − played), not the' \
+  'absolute eval. _arrow_entries_from_row computes per-tier deltas inside the' \
+  'loop so each candidate gets its own label, not the played-move delta_mu' \
+  'repeated three times.' \
+  '' \
+  'Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>')"
+```
+
+---
+
 ## Task 3: Self-contained v2 frames (`svg`, `ply`, `san`, `last_move_uci`, `classification`)
 
 Today the v2 frame-building loop emits frames that have `arrows` but not the full set the spec requires. Extend the loop so each frame is self-describing.
