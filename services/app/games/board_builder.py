@@ -32,6 +32,11 @@ Changelog:
                        (top_player/top_sym/top_side/bottom_*). _build_frames_v2
                        spreads those keys directly instead of nesting under
                        player_layout.
+    2026-05-26 (#210): Reverted Task 7 flat-key spread: _build_frames_v2 now
+                       returns player_layout as a nested dict (Option C) so the
+                       runtime shape matches the spec contract. Downstream
+                       consumers (views.py board_partial) read from
+                       player_layout.top_* / player_layout.bottom_*.
     2026-05-26 (#209): _arrow_label drops engine prefix; SF arg is now mover-frame
                        cp delta (not absolute eval). Added _wdl_mu and
                        _lc0_candidate_delta_mu so LC0 arrows get per-candidate
@@ -174,11 +179,8 @@ def _v2_player_layout(pgn: str, orientation: str) -> dict:
 
     Reads the PGN headers White / Black for names (None if absent) and decides
     which side sits on top vs. bottom based on the requested orientation.
-
-    Returns the SAME flat-key contract as legacy ``_player_layout`` so the
-    template variable names are unchanged: top_player / top_sym / top_side and
-    bottom_player / bottom_sym / bottom_side.  Unicode pieces: ♟ for the side
-    at the top (far from viewer), ♙ for the side at the bottom (near viewer).
+    Unicode pieces: ♟ for the side at the top (far from viewer), ♙ for the
+    side at the bottom (near viewer).
 
     Params:
         pgn (str):         The PGN string (may be empty).
@@ -240,7 +242,7 @@ def _build_frames_v2(
 
     Returns:
         dict with keys: frames, san_list, total_frames, overlay_geometry,
-        top_player, top_sym, top_side, bottom_player, bottom_sym, bottom_side,
+        player_layout (nested dict with top_player/top_sym/top_side/bottom_*),
         has_sf, has_lc0.
     """
     flipped = orientation == "black"
@@ -263,7 +265,7 @@ def _build_frames_v2(
             "san_list": [],
             "total_frames": 1,
             "overlay_geometry": overlay_geometry,
-            **player_keys,
+            "player_layout": player_keys,
             "has_sf": bool(sf_moves),
             "has_lc0": bool(lc0_moves),
         }
@@ -326,7 +328,7 @@ def _build_frames_v2(
         "san_list": san_list,
         "total_frames": len(frames),
         "overlay_geometry": overlay_geometry,
-        **player_keys,
+        "player_layout": player_keys,
         "has_sf": bool(sf_by_ply),
         "has_lc0": bool(lc0_by_ply),
     }
@@ -505,9 +507,10 @@ def build_board_frames(
         size (int):             Rendered board pixel size (default 480).
 
     Returns:
-        dict: {frames, overlay_geometry, top_player, top_sym, top_side,
-               bottom_player, bottom_sym, bottom_side, has_sf, has_lc0,
-               san_list, total_frames}.
+        dict: {frames, overlay_geometry, player_layout, has_sf, has_lc0,
+               san_list, total_frames}.  player_layout is a nested dict with
+               keys top_player, top_sym, top_side, bottom_player, bottom_sym,
+               bottom_side.
     """
     if not isinstance(pgn, str):
         raise TypeError(

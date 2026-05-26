@@ -224,7 +224,7 @@ def board_partial(request: HttpRequest, slug: str) -> HttpResponse:
     if orientation not in ("white", "black"):
         orientation = "white"
 
-    if data is None or not data.sf_moves:
+    if data is None:
         return render(request, "games/_board_error_partial.html", {"game": game})
 
     pgn, sf_moves, lc0_moves = load_board_inputs(game)
@@ -256,12 +256,12 @@ def board_partial(request: HttpRequest, slug: str) -> HttpResponse:
         "san_list_json": json.dumps(board_data["san_list"]),
         "is_best_json": json.dumps(is_best_map),
         "total_frames": board_data["total_frames"],
-        "top_player": board_data["top_player"],
-        "top_sym": board_data["top_sym"],
-        "top_side": board_data["top_side"],
-        "bottom_player": board_data["bottom_player"],
-        "bottom_sym": board_data["bottom_sym"],
-        "bottom_side": board_data["bottom_side"],
+        "top_player": board_data["player_layout"]["top_player"],
+        "top_sym": board_data["player_layout"]["top_sym"],
+        "top_side": board_data["player_layout"]["top_side"],
+        "bottom_player": board_data["player_layout"]["bottom_player"],
+        "bottom_sym": board_data["player_layout"]["bottom_sym"],
+        "bottom_side": board_data["player_layout"]["bottom_side"],
         "has_sf": board_data["has_sf"],
         "has_lc0": board_data["has_lc0"],
         "overlay_viewbox_size": board_data["overlay_geometry"]["viewbox_size"],
@@ -293,7 +293,7 @@ def engine_line_partial(request: HttpRequest, slug: str) -> HttpResponse:
     game = get_object_or_404(Game, slug=slug)
     data = get_game_analysis_v2(slug)
 
-    if data is None or not data.sf_moves or not data.pgn:
+    if data is None or not data.pgn:
         return render(request, "games/_board_error_partial.html", {"game": game})
 
     try:

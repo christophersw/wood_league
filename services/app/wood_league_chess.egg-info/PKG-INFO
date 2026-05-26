@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: wood-league-chess
-Version: 2.0.0
+Version: 2.1.0
 Summary: Club chess analytics — Django + Tailwind + HTMX
 Requires-Python: <3.14,>=3.13
 Description-Content-Type: text/markdown
@@ -24,8 +24,11 @@ Requires-Dist: psycopg[binary]>=3.2.0
 Requires-Dist: passlib[bcrypt]>=1.7.4
 Requires-Dist: pydantic-settings>=2.8.0
 Requires-Dist: requests>=2.32.2
+Requires-Dist: httpx>=0.27.0
+Requires-Dist: croniter>=2.0.0
 Requires-Dist: tqdm>=4.66.0
 Requires-Dist: runpod>=1.7.0
+Requires-Dist: boto3>=1.34
 
 # Wood League Chess (`wood_league_app`)
 

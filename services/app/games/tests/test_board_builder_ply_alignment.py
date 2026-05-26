@@ -145,11 +145,10 @@ def test_v2_result_has_overlay_geometry(simple_pgn_game):
 
 
 def test_v2_result_has_player_layout_and_engine_flags(simple_pgn_game):
-    """v2 build_board_frames exposes flat player keys (top_side/bottom_side/etc) and has_sf/has_lc0.
+    """v2 build_board_frames exposes a nested player_layout dict and has_sf/has_lc0.
 
-    After Task 7 (#209) the nested player_layout dict was replaced by the flat
-    legacy-compatible key contract: top_player, top_sym, top_side,
-    bottom_player, bottom_sym, bottom_side — all at the top level of the result.
+    The result carries a ``player_layout`` dict (not flat top-level keys) with
+    keys: top_player, top_sym, top_side, bottom_player, bottom_sym, bottom_side.
 
     Parameters:
         simple_pgn_game: Fixture game exposing a parsable .pgn.
@@ -158,8 +157,11 @@ def test_v2_result_has_player_layout_and_engine_flags(simple_pgn_game):
     result = build_board_frames(
         pgn=simple_pgn_game.pgn, sf_moves=sf, lc0_moves=[], orientation="white", size=480,
     )
-    # Flat keys at top level — no nested player_layout dict.
-    assert {"top_side", "bottom_side", "top_player", "bottom_player", "top_sym", "bottom_sym"} <= set(result.keys())
-    assert "player_layout" not in result, "player_layout nested dict should be gone after Task 7 cutover"
+    # Nested player_layout dict — not spread at top level.
+    assert "player_layout" in result, "player_layout nested dict must be present"
+    layout = result["player_layout"]
+    assert {"top_side", "bottom_side", "top_player", "bottom_player", "top_sym", "bottom_sym"} <= set(layout.keys())
+    for flat_key in ("top_side", "bottom_side", "top_player", "bottom_player", "top_sym", "bottom_sym"):
+        assert flat_key not in result, f"flat key '{flat_key}' should not appear at top level"
     assert result["has_sf"] is True
     assert result["has_lc0"] is False
