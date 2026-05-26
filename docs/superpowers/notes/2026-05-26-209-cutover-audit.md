@@ -36,28 +36,19 @@ templates/games/_board_partial.html:336:    shaft.setAttribute('stroke-width', s
 
 ## Engine-line attributes
 
-**V1 code that reads from data object (games/views.py & games/board_builder.py):**
-- `data.pgn` (views.py:219, 306; board_builder.py:662)
-- `data.moves` (views.py:97, 212, 218; board_builder.py:565)
-- `data.lc0_moves` (views.py:97; board_builder.py:567)
-- `data.has_sf` (board_builder.py:671)
-- `data.has_lc0` (board_builder.py:671)
-- `data.white` (views.py:467; board_builder.py:545)
-- `data.black` (views.py:467; board_builder.py:545)
+**V1 attributes read by engine_line_partial & _engine_row_for_request (views.py:277, 97):**
+- `data.moves` (Stockfish move rows; read at views.py:277, 97)
+- `data.lc0_moves` (LC0 move rows; read at views.py:97)
+- `data.pgn` (game PGN string; read at views.py:277)
 
-**V2 GameAnalysisDataV2 attributes & properties:**
-- `pgn` ✅ (line 89)
-- `sf_moves` ✅ (line 98)
-- `lc0_moves` ✅ (line 112)
-- `has_sf` ✅ property (line 126)
-- `has_lc0` ✅ property (line 131)
-- `white` ✅ (line 84)
-- `black` ✅ (line 85)
+**V2 GameAnalysisDataV2 equivalents:**
+| v1 attribute | v2 attribute | Notes |
+|---|---|---|
+| `data.moves` | `data.sf_moves` | Rename from generic `moves` to explicit `sf_moves` |
+| `data.lc0_moves` | `data.lc0_moves` | No rename |
+| `data.pgn` | `data.pgn` | No rename |
 
-**Cross-reference with appliers (_apply_sf_summary, _apply_lc0_summary):**
-- v1 `engine_depth` (services.py:74) → v2 `sf_engine_depth` (services_v2.py:109, applied line 240)
-
-**Verdict:** ✅ All v1-read attributes are present in v2. No v1-only attributes detected. The v2 dataclass is structurally complete for cutover.
+**Verdict:** ⚠️ Attribute rename required in Task 8: `data.moves` → `data.sf_moves`. The engine-line handler's `_engine_row_for_request` function (line 97) directly reads `data.moves` for Stockfish rows and `data.lc0_moves` for LC0 rows. Re-typing alone is insufficient; line 97 must rewrite the move-row accessor to use `sf_moves` when engine=="sf".
 
 ---
 
