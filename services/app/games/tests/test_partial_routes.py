@@ -4,7 +4,7 @@ Description:
     Parametrized tests verify that all seven new analysis partial routes
     resolve and return 200 for new-schema games. Legacy games return 404.
     Also contains content-level assertions for the Win%, SF cp, and LC0 WDL
-    chart partials.
+    chart partials, and the PGN moves-strip chip shape (#212).
 
 Changelog:
     2026-05-21 (#186): Initial — stub routes scaffolding.
@@ -12,6 +12,7 @@ Changelog:
     2026-05-21 (#186): Task 10 — add SF cp partial content assertions.
     2026-05-21 (#186): Task 11 — add LC0 WDL partial content assertions.
     2026-05-25 (#208): Task 2 — add THIS MOVE identity + score-delta test.
+    2026-05-26 (#212): Task 4 — add five moves-strip characterization tests.
 """
 import pytest
 from django.urls import reverse
@@ -155,8 +156,11 @@ def test_this_move_partial_has_identity_and_score_deltas(client, new_schema_game
     assert "+4%" in body
 
 
-def test_pgn_partial_renders_table_and_js(client, new_schema_game_factory):
-    """PGN partial must embed id="pgn-table" and reference pgnTable.js.
+def test_pgn_partial_renders_strip_and_js(client, new_schema_game_factory):
+    """PGN partial must embed id="pgn-moves" (the chip strip) and reference pgnTable.js.
+
+    Converted from test_pgn_partial_renders_table_and_js for #212 — the old
+    <details>+<table> shape is replaced by the inline chip strip.
 
     Params:
         client: Django test client fixture.
@@ -167,5 +171,117 @@ def test_pgn_partial_renders_table_and_js(client, new_schema_game_factory):
     resp = client.get(f"/_partials/games/{game.slug}/pgn/")
     body = resp.content.decode()
     assert resp.status_code == 200
-    assert 'id="pgn-table"' in body      # table element present
+    assert 'id="pgn-moves"' in body      # strip nav element present
     assert "pgnTable.js" in body          # static JS reference
+    assert 'id="pgn-table"' not in body  # old table shape gone
+    assert "pgn-tbody" not in body        # old tbody gone
+
+
+# --- Moves-strip partial tests (#212) ---
+
+
+def test_pgn_strip_renders_one_chip_per_move(client, new_schema_game_factory):
+    """The new-schema 4-ply fixture produces 4 .moves-mv chips with data-ply 1..4.
+
+    Params:
+        client: Django test client fixture.
+        new_schema_game_factory: Factory fixture producing a new-schema game.
+    """
+    game = new_schema_game_factory()
+    resp = client.get(reverse("games_pgn_partial", args=[game.slug]))
+    assert resp.status_code == 200
+    body = resp.content.decode()
+    for ply in (1, 2, 3, 4):
+        assert f'data-ply="{ply}"' in body, f"chip data-ply={ply} missing"
+    # Strip-shape sanity checks.
+    assert 'id="pgn-moves"' in body
+    assert 'class="moves-strip"' in body
+    # Old table shape must be gone.
+    assert "<details" not in body
+    assert "pgn-tbody" not in body
+
+
+def test_pgn_strip_emits_annotation_for_classified_moves(client, new_schema_game_factory):
+    """A row classified 'inaccuracy' produces a move-annotation-inaccuracy span.
+
+    The new-schema fixture classifies ply 4 as 'inaccuracy' (SF moves_data in conftest.py).
+
+    Params:
+        client: Django test client fixture.
+        new_schema_game_factory: Factory fixture producing a new-schema game.
+    """
+    game = new_schema_game_factory()
+    resp = client.get(reverse("games_pgn_partial", args=[game.slug]))
+    body = resp.content.decode()
+    assert "move-annotation-inaccuracy" in body
+    assert ">?!<" in body  # canonical symbol from move_annotations.ANNOTATIONS
+
+
+def test_pgn_strip_omits_annotation_for_unclassified_moves(client, new_schema_game_factory):
+    """A row classified 'best' (no badge) produces no move-annotation span for that ply.
+
+    The fixture has classifications best/best/great/inaccuracy at plies 1/2/3/4.
+    best and excellent and good carry no symbol so only plies 3 (great="!") and
+    4 (inaccuracy="?!") produce annotation spans — exactly 2.
+
+    Params:
+        client: Django test client fixture.
+        new_schema_game_factory: Factory fixture producing a new-schema game.
+    """
+    game = new_schema_game_factory()
+    resp = client.get(reverse("games_pgn_partial", args=[game.slug]))
+    body = resp.content.decode()
+    # Plies 1 and 2 are "best" — no annotation span. Plies 3 (great) and 4
+    # (inaccuracy) each emit one span. Total = 2.
+    assert body.count('class="move-annotation') == 2
+
+
+def test_pgn_strip_renders_empty_placeholder_when_no_moves(client, simple_pgn_game):
+    """A game with no new-schema analysis returns 404 from the pgn_partial view.
+
+    The view calls _load_or_404 which raises Http404 when get_game_analysis_v2
+    returns None (no new-schema analysis exists for this game).
+
+    Params:
+        client: Django test client fixture.
+        simple_pgn_game: Fixture producing a game with no analysis rows.
+    """
+    # simple_pgn_game has no SF/LC0 analysis rows, so _load_or_404 raises Http404.
+    resp = client.get(reverse("games_pgn_partial", args=[simple_pgn_game.slug]))
+    assert resp.status_code == 404
+
+
+def test_pgn_strip_uses_ellipsis_prefix_for_leading_black_move(client, new_schema_game_factory):
+    """A PGN whose first move is Black's renders the move-number prefix with an ellipsis.
+
+    When game.pgn is replaced with a mid-position PGN that starts on Black's turn,
+    the view still has analysis (new-schema) but walks the modified game.pgn field.
+    The first move chip should use the '1...' or '1…' form rather than '1.'.
+
+    Note: the view reads data.pgn from get_game_analysis_v2, which returns the
+    game model's pgn field — so saving a new pgn to the game instance is enough.
+
+    Params:
+        client: Django test client fixture.
+        new_schema_game_factory: Factory fixture producing a new-schema game.
+    """
+    game = new_schema_game_factory()
+    game.pgn = (
+        '[Event "Mid-position"]\n'
+        '[Site "?"]\n'
+        '[Date "2026.01.01"]\n'
+        '[Round "1"]\n'
+        '[White "Alice"]\n'
+        '[Black "Bob"]\n'
+        '[Result "*"]\n'
+        '[SetUp "1"]\n'
+        '[FEN "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1"]\n'
+        '\n1... e5 *'
+    )
+    game.save()
+    resp = client.get(reverse("games_pgn_partial", args=[game.slug]))
+    assert resp.status_code == 200
+    body = resp.content.decode()
+    assert 'class="moves-mv"' in body
+    # The first (and only) move-number span must use the ellipsis form.
+    assert "1…" in body or "1..." in body

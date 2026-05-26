@@ -1,30 +1,26 @@
 {% load static %}
-{# Title: _pgn_table.html — PGN move-list partial #}
+{# Title: _pgn_table.html — Main-board moves strip partial #}
 {# Description: #}
-{#     HTMX partial rendering the collapsible PGN move table.  The JS payload #}
-{#     (pgn-moves-data) is read by pgnTable.js which builds rows and subscribes #}
-{#     to WoodLeagueAnalysis for active-ply highlighting and click-to-set-ply. #}
+{#     HTMX partial rendering the always-visible inline moves strip shown #}
+{#     directly under the main game board. Each move is a focusable button #}
+{#     (.moves-mv) carrying its absolute ply in data-ply and a server-rendered #}
+{#     classification annotation badge via _move_annotation.html. Clicking a #}
+{#     chip calls WoodLeagueAnalysis.setPly() via the pgnTable.js delegated #}
+{#     click handler; the active chip is highlighted and scrolled into view #}
+{#     as the user steps through the game. #}
+{# Context: #}
+{#     pgn_moves (list[dict]) — each entry: {ply, move_number, color, san, classification} #}
 {# Changelog: #}
-{#     2026-05-21 (#186): Task 14 — lift from inline analysis.html into partial. #}
+{#     2026-05-26 (#212): replaced <details>Moves</details> + two-column table #}
+{#                       with an inline chip strip; relocated slot under main board. #}
+{#     2026-05-21 (#186): Task 14 — lifted from inline analysis.html into partial. #}
 
-{{ pgn_moves|json_script:"pgn-moves-data" }}
-
-<details id="pgn-panel" class="move-list-panel">
-  <summary class="move-list-summary">Moves</summary>
-  <div class="move-list-body">
-    <div id="pgn-table-wrap" class="move-list-wrap">
-      <table id="pgn-table" class="move-list-table">
-        <thead>
-          <tr>
-            <th class="move-list-number-header"></th>
-            <th>White</th>
-            <th>Black</th>
-          </tr>
-        </thead>
-        <tbody id="pgn-tbody"></tbody>
-      </table>
-    </div>
-  </div>
-</details>
+<nav id="pgn-moves" class="moves-strip" aria-label="Game moves">
+  {% for move in pgn_moves %}
+    {% if move.color == "white" %}<span class="moves-num">{{ move.move_number }}.</span>{% elif forloop.first %}<span class="moves-num">{{ move.move_number }}…</span>{% endif %}<button type="button" class="moves-mv" data-ply="{{ move.ply }}"><span class="moves-san">{{ move.san }}</span>{% include "games/partials/_move_annotation.html" with classification=move.classification %}</button>
+  {% empty %}
+    <span class="moves-empty">No moves recorded.</span>
+  {% endfor %}
+</nav>
 
 <script src="{% static 'games/pgnTable.js' %}"></script>
