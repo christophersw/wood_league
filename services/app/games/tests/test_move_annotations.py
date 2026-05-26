@@ -11,6 +11,7 @@ Changelog:
 """
 import pytest
 from django.template import Context, Template
+from django.template.loader import render_to_string
 
 from games.move_annotations import ANNOTATIONS, symbol, title
 
@@ -125,3 +126,44 @@ def test_move_annotation_title_filter_falls_back_to_classification():
     """Unknown classification → renders the input unchanged."""
     out = _render("{{ cls|move_annotation_title }}", {"cls": "future-class"})
     assert out == "future-class"
+
+
+# --- Include rendering tests ---
+
+
+def test_move_annotation_include_renders_badge_for_classified_move():
+    """The include emits a move-annotation span with the right class for a classified move."""
+    out = render_to_string(
+        "games/partials/_move_annotation.html",
+        {"classification": "blunder"},
+    )
+    assert 'class="move-annotation move-annotation-blunder"' in out
+    assert ">??<" in out
+    assert 'title="Blunder"' in out
+
+
+def test_move_annotation_include_renders_nothing_for_unbadged_move():
+    """No symbol → no badge element at all (best/excellent/good have no symbol)."""
+    out = render_to_string(
+        "games/partials/_move_annotation.html",
+        {"classification": "best"},
+    )
+    assert "move-annotation" not in out
+
+
+def test_move_annotation_include_renders_nothing_for_none():
+    """None classification → no badge element."""
+    out = render_to_string(
+        "games/partials/_move_annotation.html",
+        {"classification": None},
+    )
+    assert out.strip() == ""
+
+
+def test_move_annotation_include_lowercases_class_suffix():
+    """Mixed-case classification produces a lowercase CSS class suffix."""
+    out = render_to_string(
+        "games/partials/_move_annotation.html",
+        {"classification": "Blunder"},
+    )
+    assert "move-annotation-blunder" in out

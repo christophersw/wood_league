@@ -1,0 +1,16 @@
+{# Title: _move_annotation.html — Move-quality classification badge #}
+{# Description: #}
+{#     Tiny include that renders a small <span class="move-annotation #}
+{#     move-annotation-{classification}"> badge carrying the canonical #}
+{#     symbol for the classification, or nothing when the classification #}
+{#     is None, unknown, or carries no symbol (best/excellent/good). #}
+{# #}
+{#     Used by the main-board moves strip; safe to reuse anywhere a #}
+{#     classification-keyed badge is wanted. The symbol/title come from #}
+{#     games.move_annotations via the games_extras filters. #}
+{# #}
+{# Context: #}
+{#     classification (str | None) — SF move classification label. #}
+{# Changelog: #}
+{#     2026-05-26 (#212): Initial — backs the moves strip. #}
+{% load games_extras %}{% with sym=classification|move_annotation_symbol %}{% if sym %}<span class="move-annotation move-annotation-{{ classification|lower }}" title="{{ classification|move_annotation_title }}">{{ sym }}</span>{% endif %}{% endwith %}
