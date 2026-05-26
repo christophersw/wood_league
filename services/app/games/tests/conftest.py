@@ -13,6 +13,10 @@ Description:
 Changelog:
     2026-05-21 (#186): Initial — legacy_game_factory, legacy_sf_game_factory,
                        new_schema_game_factory for services_v2 tests.
+    2026-05-26 (#209): PR #210 L2 — _make_lc0_move_row now sets per-candidate WDL
+                       triples (wdl_win/draw/loss _1/_2/_3) equal to the played triple
+                       so _lc0_candidate_delta_mu returns 0.0 (non-None) for all
+                       factory-built fixtures, exercising the LC0 arrow label path.
 """
 from datetime import datetime, timezone
 from uuid import uuid4
@@ -115,6 +119,12 @@ def _make_lc0_move_row(lga, ply, san, win_adj, draw_adj, loss_adj, mu, dmu, base
         arrow_uci_1="e2e4" if ply == 1 else "e7e5" if ply == 2 else "g1f3" if ply == 3 else "b8c6",
         best_move="e2e4" if ply == 1 else "e7e5",
         pv_san_1=san,
+        # Per-candidate WDL defaults — equal to played triple so _lc0_candidate_delta_mu
+        # returns 0.0 (non-None) and arrow labels are exercised. Tests needing real
+        # deltas should override these.
+        wdl_win_1=win_adj, wdl_draw_1=draw_adj, wdl_loss_1=loss_adj,
+        wdl_win_2=win_adj, wdl_draw_2=draw_adj, wdl_loss_2=loss_adj,
+        wdl_win_3=win_adj, wdl_draw_3=draw_adj, wdl_loss_3=loss_adj,
     )
 
 

@@ -23,6 +23,15 @@ Changelog:
     2026-05-21 (#186): Task 15 — drop dead helpers (_humanize_time_control, _details_string,
                       _opening_label, _queue_status, _build_eval_json, _build_wdl_json,
                       _build_pgn_moves_json) and OpeningBook import; stat_cards.py deleted.
+    2026-05-26 (#209): Task 7 — board_partial migrated from legacy (get_game_analysis +
+                      build_board_frames(data, ...)) to v2 pipeline (load_board_inputs +
+                      build_board_frames(pgn=..., sf_moves=..., lc0_moves=...)). The
+                      arrow_data_json sidecar context key is dropped; arrows are now
+                      embedded per-frame in frames_json.
+    2026-05-26 (#209): PR #210 M1 — board_partial and engine_line_partial gate changed to
+                      allow LC0-only games through (either engine present is sufficient).
+    2026-05-26 (#209): PR #210 M2/M3 — drop dead is_best_map block, is_best_json context
+                      key, and board-san-json script tag; SAN is in frames[ply].san.
 """
 
 import io as _io
@@ -38,11 +47,16 @@ from django.shortcuts import get_object_or_404, render
 from analysis.models import AnalysisJob
 from games.board_builder import board_colors_for_move_classification, build_board_frames
 from games.models import Game
-from games.services import MoveRow, get_game_analysis
 from games.cards import build_lc0_card_context, build_sf_card_context
 from games.chart_data import lc0_wdl_payload, sf_cp_payload, winpct_payload
 from games.chip_data import chips_for_ply
-from games.services_v2 import get_game_analysis_v2
+from games.services_v2 import (
+    GameAnalysisDataV2,
+    Lc0MoveRow,
+    SfMoveRow,
+    get_game_analysis_v2,
+    load_board_inputs,
+)
 _ACTIVE_STATUSES = [
     AnalysisJob.STATUS_PENDING,
     AnalysisJob.STATUS_SUBMITTED,
@@ -79,22 +93,22 @@ def _parse_pv_san_moves(raw_pv_san: str | None) -> list[str]:
 
 
 def _engine_row_for_request(
-    data,
+    data: GameAnalysisDataV2,
     engine: str,
     analysis_ply: int,
-) -> MoveRow | None:
+) -> SfMoveRow | Lc0MoveRow | None:
     """
     Return the engine-analysis row that corresponds to the selected move ply.
 
     Params:
-        data (GameAnalysisData): Assembled game analysis data.
+        data (GameAnalysisDataV2): Assembled v2 game analysis data.
         engine (str): "sf" or "lc0".
         analysis_ply (int): Absolute ply of the move being explored.
 
     Returns:
-        Matching MoveRow, or None when unavailable.
+        Matching SfMoveRow or Lc0MoveRow, or None when unavailable.
     """
-    move_rows = data.moves if engine == "sf" else (data.lc0_moves or [])
+    move_rows = data.sf_moves if engine == "sf" else (data.lc0_moves or [])
     for row in move_rows:
         if row.ply == analysis_ply:
             return row
@@ -102,7 +116,7 @@ def _engine_row_for_request(
 
 
 def _continuation_san_moves_from_row(
-    move_row: MoveRow | None,
+    move_row: SfMoveRow | Lc0MoveRow | None,
     tier: int,
     clicked_move_san: str,
 ) -> list[str]:
@@ -110,7 +124,7 @@ def _continuation_san_moves_from_row(
     Return stored continuation SAN moves for the selected engine tier.
 
     Params:
-        move_row (MoveRow | None): Analysis row for the explored move.
+        move_row (SfMoveRow | Lc0MoveRow | None): Analysis row for the explored move.
         tier (int): Suggested move rank (1-3).
         clicked_move_san (str): SAN for the clicked move in the source position.
 
@@ -195,6 +209,11 @@ def board_partial(request: HttpRequest, slug: str) -> HttpResponse:
     Generates all SVG frames server-side and embeds them as JSON in the
     response so client-side JS can animate without further requests.
 
+    Uses the v2 pipeline: load_board_inputs() yields (pgn, sf_moves, lc0_moves)
+    as typed dataclasses; build_board_frames() returns self-contained frame dicts
+    with arrows embedded per-frame.  The template reads arrows from
+    frames[ply].arrows — the legacy arrow_data_json sidecar is dropped.
+
     Params:
         request (HttpRequest): The HTTP request; reads ?orientation= GET param.
         slug (str): Game URL slug.
@@ -203,39 +222,26 @@ def board_partial(request: HttpRequest, slug: str) -> HttpResponse:
         Rendered _board_partial.html, or a minimal error partial if no data.
     """
     game = get_object_or_404(Game, slug=slug)
-    data = get_game_analysis(slug)
+    data = get_game_analysis_v2(slug)
 
     orientation = request.GET.get("orientation", "white")
     if orientation not in ("white", "black"):
         orientation = "white"
 
-    if data is None or not data.moves:
+    if _v2_data_lacks_engine_rows(data):
         return render(request, "games/_board_error_partial.html", {"game": game})
 
-    board_data = build_board_frames(data, size=480, orientation=orientation)
-
-    # Build is_best_map: ply → True if the player's move matched SF best move
-    sf_by_ply = {row.ply: row for row in data.moves}
-    game_obj = _pgn.read_game(_io.StringIO(data.pgn))
-    is_best_map: dict[int, bool] = {}
-    if game_obj:
-        _board = game_obj.board()
-        _start = _board.ply()
-        _board = game_obj.board()
-        for _ply_i, _move in enumerate(game_obj.mainline_moves(), start=1):
-            _abs = _ply_i + _start
-            _row = sf_by_ply.get(_abs) or sf_by_ply.get(_ply_i)
-            if _row and _row.arrow_uci:
-                is_best_map[_ply_i] = _move.uci() == _row.arrow_uci
-            _board.push(_move)
+    pgn, sf_moves, lc0_moves = load_board_inputs(game)
+    board_data = build_board_frames(
+        pgn=pgn, sf_moves=sf_moves, lc0_moves=lc0_moves,
+        orientation=orientation, size=480,
+    )
 
     return render(request, "games/_board_partial.html", {
         "slug": slug,
         "orientation": orientation,
         "frames_json": json.dumps(board_data["frames"]),
-        "arrow_data_json": json.dumps(board_data["arrows_by_ply"]),
-        "san_list_json": json.dumps(board_data["san_list"]),
-        "is_best_json": json.dumps(is_best_map),
+        # arrow_data_json dropped — arrows are now embedded per-frame.
         "total_frames": board_data["total_frames"],
         "top_player": board_data["top_player"],
         "top_sym": board_data["top_sym"],
@@ -250,6 +256,21 @@ def board_partial(request: HttpRequest, slug: str) -> HttpResponse:
         "overlay_square_size": board_data["overlay_geometry"]["square_size"],
         "no_arrows": False,
     })
+
+
+def _v2_data_lacks_engine_rows(data) -> bool:
+    """True when v2 analysis data is None or carries no rows for either engine.
+
+    Centralises the "show the error partial" guard so the SF-or-LC0 admission
+    rule lives in one place instead of being duplicated across handlers.
+
+    Params:
+        data: GameAnalysisDataV2 instance or None (from get_game_analysis_v2).
+
+    Returns:
+        True if the data cannot drive a board render (None or both engines empty).
+    """
+    return data is None or (not data.sf_moves and not data.lc0_moves)
 
 
 def engine_line_partial(request: HttpRequest, slug: str) -> HttpResponse:
@@ -272,9 +293,9 @@ def engine_line_partial(request: HttpRequest, slug: str) -> HttpResponse:
         or error partial if unable to reconstruct position or find continuation data.
     """
     game = get_object_or_404(Game, slug=slug)
-    data = get_game_analysis(slug)
+    data = get_game_analysis_v2(slug)
 
-    if data is None or not data.moves or not data.pgn:
+    if _v2_data_lacks_engine_rows(data) or not data.pgn:
         return render(request, "games/_board_error_partial.html", {"game": game})
 
     try:
