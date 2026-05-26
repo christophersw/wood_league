@@ -126,3 +126,33 @@ def test_v2_ply1_frame_carries_move_metadata(simple_pgn_game):
     assert ply1 == {**ply1, **expected}
     assert isinstance(ply1["svg"], str) and ply1["svg"].startswith("<svg")
     assert isinstance(frames[1]["svg"], str) and frames[1]["svg"].startswith("<svg")
+
+
+def test_v2_result_has_overlay_geometry(simple_pgn_game):
+    """v2 build_board_frames exposes the overlay-geometry dict the JS reads.
+
+    Parameters:
+        simple_pgn_game: Fixture game exposing a parsable .pgn.
+    """
+    sf = [_SELF_CONTAINED_SF_ROW]
+    result = build_board_frames(
+        pgn=simple_pgn_game.pgn, sf_moves=sf, lc0_moves=[], orientation="white", size=480,
+    )
+    geom = result["overlay_geometry"]
+    assert {"viewbox_size", "board_margin", "square_size"} <= set(geom.keys())
+
+
+def test_v2_result_has_player_layout_and_engine_flags(simple_pgn_game):
+    """v2 build_board_frames exposes player_layout (top_side/bottom_side) and has_sf/has_lc0.
+
+    Parameters:
+        simple_pgn_game: Fixture game exposing a parsable .pgn.
+    """
+    sf = [_SELF_CONTAINED_SF_ROW]
+    result = build_board_frames(
+        pgn=simple_pgn_game.pgn, sf_moves=sf, lc0_moves=[], orientation="white", size=480,
+    )
+    layout = result["player_layout"]
+    assert {"top_side", "bottom_side"} <= set(layout.keys())
+    assert result["has_sf"] is True
+    assert result["has_lc0"] is False

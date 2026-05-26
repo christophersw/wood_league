@@ -360,6 +360,38 @@ def board_colors_for_move_classification(classification: str | None) -> dict[str
     }
 
 
+def _v2_player_layout(pgn: str, orientation: str) -> dict:
+    """
+    Compute the top/bottom-side player layout for a v2 board render.
+
+    Reads the PGN headers White / Black for names (None if absent) and decides
+    which side sits on top vs. bottom based on the requested orientation.
+
+    Params:
+        pgn (str):         The PGN string (may be empty).
+        orientation (str): "white" or "black".
+
+    Returns:
+        Dict with keys:
+            top_side, bottom_side: "White" | "Black" — which side label is shown
+                on top/bottom of the board.
+            top_name, bottom_name: str | None — name from PGN header for that side.
+    """
+    game = chess.pgn.read_game(io.StringIO(pgn or ""))
+    white_name = game.headers.get("White") if game is not None else None
+    black_name = game.headers.get("Black") if game is not None else None
+    if orientation == "black":
+        top_side, bottom_side = "White", "Black"
+        top_name, bottom_name = white_name, black_name
+    else:
+        top_side, bottom_side = "Black", "White"
+        top_name, bottom_name = black_name, white_name
+    return {
+        "top_side": top_side, "bottom_side": bottom_side,
+        "top_name": top_name, "bottom_name": bottom_name,
+    }
+
+
 def _build_frames_v2(
     pgn: str,
     sf_moves: list,
@@ -396,11 +428,12 @@ def _build_frames_v2(
 
     Returns:
         dict with keys: frames, san_list, total_frames, overlay_geometry,
-        has_sf, has_lc0.
+        player_layout, has_sf, has_lc0.
     """
     flipped = orientation == "black"
     game = chess.pgn.read_game(io.StringIO(pgn))
     overlay_geometry = _board_overlay_geometry(size)
+    player_layout = _v2_player_layout(pgn, orientation)
 
     if game is None:
         board = chess.Board()
@@ -417,6 +450,7 @@ def _build_frames_v2(
             "san_list": [],
             "total_frames": 1,
             "overlay_geometry": overlay_geometry,
+            "player_layout": player_layout,
             "has_sf": bool(sf_moves),
             "has_lc0": bool(lc0_moves),
         }
@@ -479,6 +513,7 @@ def _build_frames_v2(
         "san_list": san_list,
         "total_frames": len(frames),
         "overlay_geometry": overlay_geometry,
+        "player_layout": player_layout,
         "has_sf": bool(sf_by_ply),
         "has_lc0": bool(lc0_by_ply),
     }
