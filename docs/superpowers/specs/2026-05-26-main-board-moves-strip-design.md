@@ -61,7 +61,7 @@ Position card
 {#     the pgnTable.js delegated click handler; the active chip is highlighted #}
 {#     and scrolled into view as the user steps through the game. #}
 {# Changelog: #}
-{#     2026-05-26 (#new): replace <details>Moves</details> + two-column table #}
+{#     2026-05-26 (#212): replace <details>Moves</details> + two-column table #}
 {#                       with inline strip; relocate slot under main board. #}
 {% load static %}
 
@@ -170,7 +170,7 @@ Remove the old slot at line 103:
  *   WoodLeagueAnalysis ply-state bus, and keeps the active chip visible.
  *
  * Changelog:
- *   2026-05-26 (#new): rewritten — server-rendered chip strip replaces the
+ *   2026-05-26 (#212): rewritten — server-rendered chip strip replaces the
  *                     two-column table; no DOM construction in JS.
  *   2026-05-21 (#186): Task 14 — lifted from inline analysis.html.
  */
