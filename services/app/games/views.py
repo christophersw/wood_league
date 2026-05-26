@@ -28,6 +28,10 @@ Changelog:
                       build_board_frames(pgn=..., sf_moves=..., lc0_moves=...)). The
                       arrow_data_json sidecar context key is dropped; arrows are now
                       embedded per-frame in frames_json.
+    2026-05-26 (#209): PR #210 M1 — board_partial and engine_line_partial gate changed to
+                      allow LC0-only games through (either engine present is sufficient).
+    2026-05-26 (#209): PR #210 M2/M3 — drop dead is_best_map block, is_best_json context
+                      key, and board-san-json script tag; SAN is in frames[ply].san.
 """
 
 import io as _io
@@ -224,7 +228,7 @@ def board_partial(request: HttpRequest, slug: str) -> HttpResponse:
     if orientation not in ("white", "black"):
         orientation = "white"
 
-    if data is None or not data.sf_moves:
+    if data is None or (not data.sf_moves and not data.lc0_moves):
         return render(request, "games/_board_error_partial.html", {"game": game})
 
     pgn, sf_moves, lc0_moves = load_board_inputs(game)
@@ -233,28 +237,11 @@ def board_partial(request: HttpRequest, slug: str) -> HttpResponse:
         orientation=orientation, size=480,
     )
 
-    # Build is_best_map: ply → True when the player's move matched SF best move.
-    sf_by_ply = {row.ply: row for row in sf_moves}
-    game_obj = _pgn.read_game(_io.StringIO(pgn))
-    is_best_map: dict[int, bool] = {}
-    if game_obj:
-        _board = game_obj.board()
-        _start = _board.ply()
-        _board = game_obj.board()
-        for _ply_i, _move in enumerate(game_obj.mainline_moves(), start=1):
-            _abs = _ply_i + _start
-            _row = sf_by_ply.get(_abs) or sf_by_ply.get(_ply_i)
-            if _row and _row.arrow_uci_1:
-                is_best_map[_ply_i] = _move.uci() == _row.arrow_uci_1
-            _board.push(_move)
-
     return render(request, "games/_board_partial.html", {
         "slug": slug,
         "orientation": orientation,
         "frames_json": json.dumps(board_data["frames"]),
         # arrow_data_json dropped — arrows are now embedded per-frame.
-        "san_list_json": json.dumps(board_data["san_list"]),
-        "is_best_json": json.dumps(is_best_map),
         "total_frames": board_data["total_frames"],
         "top_player": board_data["top_player"],
         "top_sym": board_data["top_sym"],
@@ -293,7 +280,7 @@ def engine_line_partial(request: HttpRequest, slug: str) -> HttpResponse:
     game = get_object_or_404(Game, slug=slug)
     data = get_game_analysis_v2(slug)
 
-    if data is None or not data.sf_moves or not data.pgn:
+    if data is None or (not data.sf_moves and not data.lc0_moves) or not data.pgn:
         return render(request, "games/_board_error_partial.html", {"game": game})
 
     try:

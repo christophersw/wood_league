@@ -20,6 +20,9 @@ Changelog:
     2026-05-26 (#209 Task 6): Initial — proves the v2 cutover delivers arrow
         labels end-to-end on the rendered HTTP response. Prevents a repeat of
         the #208 LC0-labels regression.
+    2026-05-26 (#209 PR #210 M1): Add LC0-only regression test — board_partial
+        must return 200 with a board-frames-json block when only LC0 analysis
+        exists (no SF), not the error partial.
 """
 import json
 import re
@@ -34,6 +37,95 @@ pytestmark = pytest.mark.django_db
 # ---------------------------------------------------------------------------
 # Fixture helpers
 # ---------------------------------------------------------------------------
+
+def _make_lc0_only_game():
+    """Create a Game with LC0 analysis only (no SF analysis attached).
+
+    Used to verify that board_partial and engine_line_partial do NOT return
+    the error partial when SF data is absent but LC0 data is present.
+
+    Returns:
+        Game: The saved game with only LC0 analysis attached.
+    """
+    from datetime import datetime, timezone
+    from uuid import uuid4
+    from games.models import Game
+    from analysis.models import Lc0GameAnalysis, Lc0MoveAnalysis
+
+    slug = uuid4().hex[:12]
+    pgn = (
+        '[Event "Test"]\n'
+        '[Site "?"]\n'
+        '[Date "2026.01.01"]\n'
+        '[Round "1"]\n'
+        '[White "Alice"]\n'
+        '[Black "Bob"]\n'
+        '[Result "*"]\n'
+        '[TimeControl "300+0"]\n'
+        "\n"
+        "1. e4 e5 2. Nf3 Nc6 *"
+    )
+    game = Game.objects.create(
+        id=slug,
+        slug=slug,
+        played_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        time_control="300+0",
+        white_username="Alice",
+        black_username="Bob",
+        white_rating=1500,
+        black_rating=1500,
+        result_pgn="1-0",
+        pgn=pgn,
+    )
+    fens = [
+        "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+        "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2",
+        "rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2",
+        "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3",
+    ]
+    lga = Lc0GameAnalysis.objects.create(
+        game=game,
+        analyzed_at=datetime(2026, 1, 2, tzinfo=timezone.utc),
+        engine_nodes=800,
+        network_name="BT4-1024x15x32h-swa-6147500",
+        white_win_prob=0.58,
+        white_draw_prob=0.30,
+        white_loss_prob=0.12,
+        black_win_prob=0.42,
+        black_draw_prob=0.30,
+        black_loss_prob=0.28,
+        draw_rate_reference=0.30,
+        wdl_calibration_elo=1500,
+        contempt=0,
+        white_accuracy=87.5,
+        black_accuracy=84.2,
+    )
+    Lc0MoveAnalysis.objects.create(
+        analysis=lga,
+        ply=1,
+        san="e4",
+        fen=fens[1],
+        wdl_win=530,
+        wdl_draw=290,
+        wdl_loss=180,
+        wdl_win_1=620,
+        wdl_draw_1=220,
+        wdl_loss_1=160,
+        wdl_win_adj=530,
+        wdl_draw_adj=290,
+        wdl_loss_adj=180,
+        wdl_mu=0.669,
+        delta_mu=-0.031,
+        delta_d=0.005,
+        base_severity="best",
+        draw_character="balanced",
+        arrow_uci_1="e2e4",
+        best_move="e2e4",
+        pv_san_1="e4",
+    )
+    return game
+
 
 def _make_fully_analysed_game():
     """Create a Game with SF + LC0 analysis including per-candidate WDL fields.
@@ -183,6 +275,22 @@ def fully_analysed_game(db):
         Game: Saved game instance with SF + LC0 analysis attached.
     """
     return _make_fully_analysed_game()
+
+
+@pytest.fixture
+def lc0_only_game(db):
+    """Fixture: game with LC0 analysis only — no SF analysis attached.
+
+    Used to verify M1 (PR #210): board_partial must not return the error
+    partial when SF data is absent but LC0 data is present.
+
+    Parameters:
+        db: Django pytest database fixture.
+
+    Returns:
+        Game: Saved game instance with only LC0 analysis attached.
+    """
+    return _make_lc0_only_game()
 
 
 @pytest.fixture
@@ -339,4 +447,28 @@ def test_board_partial_renders_sf_arrow_labels(auth_client, fully_analysed_game)
     assert all(a.get("label") for a in sf_arrows), (
         "some SF arrows have empty labels — check that arrow_cp_1 != cp_eval "
         "in the fixture and that _arrow_label is wired into the view/template"
+    )
+
+
+def test_board_partial_lc0_only_game_returns_200_with_frames(auth_client, lc0_only_game):
+    """LC0-only game (no SF analysis) renders board-frames-json, not the error partial.
+
+    Regression test for PR #210 M1: before the fix, board_partial gated on
+    ``not data.sf_moves`` alone — returning the error partial even when LC0
+    data existed. The fix requires (not sf_moves AND not lc0_moves) so
+    either-engine-present is sufficient.
+
+    Parameters:
+        auth_client: Authenticated Django test client.
+        lc0_only_game: Fixture game with LC0 analysis only (no SF).
+    """
+    url = reverse("games_board_partial", kwargs={"slug": lc0_only_game.slug})
+    response = auth_client.get(url)
+    assert response.status_code == 200, (
+        f"expected 200 from board_partial for LC0-only game, got {response.status_code}"
+    )
+    html = response.content.decode()
+    assert 'id="board-frames-json"' in html, (
+        "board-frames-json script block missing — board_partial returned error "
+        "partial instead of board for LC0-only game (M1 regression)"
     )
