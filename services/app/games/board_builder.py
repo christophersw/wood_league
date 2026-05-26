@@ -455,19 +455,19 @@ _UNICODE_MINUS = "−"
 
 def _arrow_label(engine_key: str, score: float | None, delta_mu: float | None) -> str:
     """
-    Build a compact human-readable label for a v2-path arrow.
+    Build a compact eval-only label for a v2-path arrow.
 
-    For SF arrows the label shows the engine name and the candidate score in
-    pawns with two decimal places (e.g. "SF +0.34" or "SF −0.10").  For LC0
-    arrows it shows the Win% delta relative to the played move expressed as
-    whole percentage points (e.g. "Lc0 +12%" or "Lc0 −7%").
+    The arrow tag conveys the engine by colour, so the label is eval text with no
+    engine prefix: SF shows the candidate's mover-relative cp delta vs the played
+    move in pawns to two decimals (e.g. "+0.34" or "−0.10"); LC0 shows the per-
+    candidate Win% delta vs the played move in whole percentage points
+    (e.g. "+12%" or "−7%").
 
     Params:
         engine_key (str):          "sf" or "lc0".
-        score      (float | None): For SF: candidate cp (arrow_cp_*) in the
-                                   mover frame. Unused for LC0 (pass None).
+        score      (float | None): For SF: the mover-relative cp delta
+                                   (candidate cp − played cp) to render in pawns.
         delta_mu   (float | None): For LC0: (candidate_mu − played_mu).
-                                   Unused for SF (pass None).
 
     Returns:
         Formatted label string, or "" when the required value is absent.
@@ -475,12 +475,61 @@ def _arrow_label(engine_key: str, score: float | None, delta_mu: float | None) -
     if engine_key == "sf" and score is not None:
         pawns = score / 100.0
         sign = "+" if pawns >= 0 else _UNICODE_MINUS
-        return f"SF {sign}{abs(pawns):.2f}"
+        return f"{sign}{abs(pawns):.2f}"
     if engine_key == "lc0" and delta_mu is not None:
         delta_pct = delta_mu * 100.0
         sign = "+" if delta_pct >= 0 else _UNICODE_MINUS
-        return f"Lc0 {sign}{abs(delta_pct):.0f}%"
+        return f"{sign}{abs(delta_pct):.0f}%"
     return ""
+
+
+def _wdl_mu(win: int | None, draw: int | None, loss: int | None) -> float | None:
+    """Expected-score fraction (0..1) from a milli-unit WDL triple, or None.
+
+    Params:
+        win  (int | None): Win count (milli-units, mover frame).
+        draw (int | None): Draw count (milli-units, mover frame).
+        loss (int | None): Loss count (milli-units, mover frame).
+
+    Returns:
+        (win + draw/2) / (win + draw + loss), or None when any input is None or
+        the total is non-positive.
+    """
+    if win is None or draw is None or loss is None:
+        return None
+    total = win + draw + loss
+    if total <= 0:
+        return None
+    return (win + (draw / 2.0)) / total
+
+
+def _lc0_candidate_delta_mu(row: object, tier: int) -> float | None:
+    """Candidate-tier expected-score delta vs the played move (mover frame), or None.
+
+    Uses the raw per-candidate WDL (``wdl_*_{tier}``) and the raw played WDL
+    (``wdl_win/draw/loss``), both mover-frame, so a candidate better for the
+    mover reads positive.
+
+    Params:
+        row  (object): Lc0MoveRow with raw played + per-candidate WDL triples.
+        tier (int):    1, 2, or 3.
+
+    Returns:
+        candidate_mu − played_mu, or None when either is unavailable.
+    """
+    cand = _wdl_mu(
+        getattr(row, f"wdl_win_{tier}", None),
+        getattr(row, f"wdl_draw_{tier}", None),
+        getattr(row, f"wdl_loss_{tier}", None),
+    )
+    played = _wdl_mu(
+        getattr(row, "wdl_win", None),
+        getattr(row, "wdl_draw", None),
+        getattr(row, "wdl_loss", None),
+    )
+    if cand is None or played is None:
+        return None
+    return cand - played
 
 
 def _arrow_entries_from_row(engine_key: str, row: object, is_white_move: bool) -> list[dict]:
@@ -488,8 +537,10 @@ def _arrow_entries_from_row(engine_key: str, row: object, is_white_move: bool) -
     Extract flat arrow metadata dicts from a single analysis row.
 
     Each arrow's ``label`` is the candidate's signed delta vs the move actually
-    played, mover-relative: SF as a pawn delta (candidate cp - played cp), LC0 as
-    a win-% delta (candidate expected-score mu - played mu from raw WDL triples).
+    played, mover-relative: SF passes the mover-frame delta (candidate cp − played
+    cp) to ``_arrow_label`` (not the absolute eval); LC0 uses per-candidate WDL via
+    ``_lc0_candidate_delta_mu`` so each candidate gets its own label instead of the
+    played-move delta_mu repeated three times.
 
     Each arrow also carries ``color`` (engine base hex), ``opacity`` (encoding tier
     rank and delta magnitude), and ``stroke_width`` (constant 7, matching the
@@ -510,11 +561,6 @@ def _arrow_entries_from_row(engine_key: str, row: object, is_white_move: bool) -
     ]
     base_color = _ENGINE_BASE_COLORS[engine_key]
     entries: list[dict] = []
-    # LC0 label uses delta_mu directly (= candidate_mu − played_mu).
-    delta_mu: float | None = getattr(row, "delta_mu", None)
-    # SF: the played move's mover-frame score, for delta computation.
-    played_cp = getattr(row, "cp_eval", None)
-    played_mover_cp = _mover_relative_score(played_cp, is_white_move)
 
     for tier_index, uci in enumerate(ucis):
         if not (uci and len(uci) >= 4):
@@ -522,14 +568,17 @@ def _arrow_entries_from_row(engine_key: str, row: object, is_white_move: bool) -
 
         if engine_key == "sf":
             cand_cp = getattr(row, f"arrow_cp_{tier_index + 1}", None)
-            # Convert white-frame candidate to mover-frame for label display.
-            cand_mover_cp = _mover_relative_score(cand_cp, is_white_move)
-            label = _arrow_label("sf", cand_mover_cp, None)
-            # Delta for opacity shading: mover-frame candidate minus mover-frame played.
+            played_cp = getattr(row, "cp_eval", None)
+            label = ""
             delta_for_opacity: float | None = None
-            if cand_mover_cp is not None and played_mover_cp is not None:
-                delta_for_opacity = cand_mover_cp - played_mover_cp
+            if cand_cp is not None and played_cp is not None:
+                # arrow_cp_* and cp_eval are both white-frame (#197); flip to mover-frame
+                # so the delta sign matches what the side-to-move sees.
+                delta_mover = _mover_relative_score(cand_cp - played_cp, is_white_move)
+                label = _arrow_label("sf", delta_mover, None)
+                delta_for_opacity = delta_mover
         else:
+            delta_mu = _lc0_candidate_delta_mu(row, tier_index + 1)
             label = _arrow_label("lc0", None, delta_mu)
             # Scale mu delta (0..1 unit) into cp-equivalent for opacity shading.
             delta_for_opacity = (delta_mu * 100.0) if delta_mu is not None else None

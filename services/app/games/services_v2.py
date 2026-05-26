@@ -74,6 +74,22 @@ class Lc0MoveRow:
     pv_san_2: str | None
     pv_san_3: str | None
 
+    # Raw mover-frame played-move WDL triple (#161 worker).
+    wdl_win:  int | None = None
+    wdl_draw: int | None = None
+    wdl_loss: int | None = None
+
+    # Per-candidate mover-frame WDL triples for arrow tiers 1, 2, 3.
+    wdl_win_1:  int | None = None
+    wdl_draw_1: int | None = None
+    wdl_loss_1: int | None = None
+    wdl_win_2:  int | None = None
+    wdl_draw_2: int | None = None
+    wdl_loss_2: int | None = None
+    wdl_win_3:  int | None = None
+    wdl_draw_3: int | None = None
+    wdl_loss_3: int | None = None
+
 
 @dataclass
 class GameAnalysisDataV2:
@@ -212,6 +228,10 @@ def _lc0_rows(lga: Lc0GameAnalysis | None) -> list[Lc0MoveRow]:
             arrow_uci_1=r.arrow_uci_1 or "",
             arrow_uci_2=r.arrow_uci_2, arrow_uci_3=r.arrow_uci_3,
             pv_san_1=r.pv_san_1, pv_san_2=r.pv_san_2, pv_san_3=r.pv_san_3,
+            wdl_win=r.wdl_win, wdl_draw=r.wdl_draw, wdl_loss=r.wdl_loss,
+            wdl_win_1=r.wdl_win_1, wdl_draw_1=r.wdl_draw_1, wdl_loss_1=r.wdl_loss_1,
+            wdl_win_2=r.wdl_win_2, wdl_draw_2=r.wdl_draw_2, wdl_loss_2=r.wdl_loss_2,
+            wdl_win_3=r.wdl_win_3, wdl_draw_3=r.wdl_draw_3, wdl_loss_3=r.wdl_loss_3,
         )
         for r in rows
     ]
