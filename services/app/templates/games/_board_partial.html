@@ -5,8 +5,8 @@
   {# board-frames-json: list[dict] — each entry is {svg, arrows, ply, san, last_move_uci, classification} #}
   <script type="application/json" id="board-frames-json">{{ frames_json|safe }}</script>
   {# board-arrows-json removed (Task 7, #209): arrows are now embedded per-frame above #}
-  <script type="application/json" id="board-san-json">{{ san_list_json|safe }}</script>
-  <script type="application/json" id="board-isbest-json">{{ is_best_json|safe }}</script>
+  {# board-san-json removed (#210 M3): SAN is embedded per-frame in frames[ply].san #}
+  {# board-isbest-json removed (#210 M2): is_best_map was dead code; not read by any JS #}
 
   {# Top player label #}
   <div class="player-label{% if top_side == 'White' %} player-label-no-top{% endif %}{% if top_side == 'Black' %} player-label-no-bottom{% endif %}">
