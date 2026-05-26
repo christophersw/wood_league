@@ -40,19 +40,20 @@
     <button class="board-btn" id="board-btn-play" title="Play/Pause">&#x25B6;</button>
     <button class="board-btn" id="board-btn-next" title="Next">&#x25B6;&#xFE0E;</button>
     <button class="board-btn" id="board-btn-end" title="End">&#x23ED;</button>
-    <input type="range" id="board-slider" min="0" max="{{ total_frames|add:'-1' }}" value="0" style="flex:1;max-width:220px;accent-color:#D4A843;">
-    <span id="board-ply-label" style="font-family:'DM Mono',monospace;font-size:.68rem;color:#8B3A2A;min-width:72px;text-align:center;letter-spacing:.04em;">Start</span>
+    <input type="range" id="board-slider" min="0" max="{{ total_frames|add:'-1' }}" value="0" style="flex:1;max-width:220px;accent-color:var(--color-gold);">
+    <span id="board-ply-label" style="font-family:var(--font-mono);font-size:.68rem;color:var(--color-rust);min-width:72px;text-align:center;letter-spacing:.04em;">Start</span>
   </div>
 
 </div>
 
 <style>
-.player-label{display:flex;align-items:center;justify-content:space-between;border-top:2.5px solid #1A1A1A;border-bottom:1px solid #1A1A1A;padding:5px 4px;min-height:31px;box-sizing:border-box;}
-.player-label-bottom{border-top:1px solid #1A1A1A;border-bottom:2.5px solid #1A1A1A;}
+.player-label{display:flex;align-items:center;justify-content:space-between;border-top:2.5px solid var(--color-ebony);border-bottom:1px solid var(--color-ebony);padding:5px 4px;min-height:31px;box-sizing:border-box;}
+.player-label-bottom{border-top:1px solid var(--color-ebony);border-bottom:2.5px solid var(--color-ebony);}
 .player-label-no-top{border-top:0;}
 .player-label-no-bottom{border-bottom:0;}
-.player-side{font-family:'DM Mono',monospace;font-size:.65rem;letter-spacing:.12em;text-transform:uppercase;color:#8B3A2A;}
-.player-name{font-family:Georgia,serif;font-size:.95rem;font-weight:600;color:#1A1A1A;letter-spacing:.02em;}
+.player-side{font-family:var(--font-mono);font-size:.65rem;letter-spacing:.12em;text-transform:uppercase;color:var(--color-rust);}
+.player-name{font-family:var(--font-serif);font-size:.95rem;font-weight:600;color:var(--color-ebony);letter-spacing:.02em;}
+.player-name--bot{font-family:var(--font-mono);font-size:.72rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--color-forest);}
 .board-wrap{display:flex;justify-content:center;margin:0 4px;padding:0 4px;box-sizing:border-box;}
 .board-stage{position:relative;width:480px;max-width:100%;}
 .board-svg-layer svg{display:block;width:100%;height:auto;}
@@ -61,15 +62,17 @@
 .board-arrow-visible{transition:filter .12s ease, opacity .12s ease;}
 .board-arrow-group:hover .board-arrow-visible,
 .board-arrow-group:focus .board-arrow-visible{filter:brightness(1.12);}
-.board-arrow-label-box,
-.board-arrow-label-text{pointer-events:none;}
-.board-arrow-label{font-family:'DM Mono',monospace;font-size:11px;font-weight:700;paint-order:stroke fill;stroke:rgba(255,255,255,0.85);stroke-width:3px;pointer-events:none;}
-.board-arrow-label--sf{fill:#A8781B;}
-.board-arrow-label--lc0{fill:#35586F;}
-.board-controls{display:flex;align-items:center;gap:5px;padding:8px 0 6px;justify-content:center;border-top:1px solid #D4C4A0;flex-wrap:wrap;}
-.board-btn{background:transparent;color:#1A1A1A;border:1.5px solid #1A1A1A;border-radius:0;padding:4px 10px;cursor:pointer;font-family:'DM Mono',monospace;font-size:.85rem;min-width:32px;transition:background .15s,color .15s;}
-.board-btn:hover{background:#1A1A1A;color:#F2E6D0;}
-.engine-line-player-spacer{border-top:1px solid #1A1A1A;border-bottom:2.5px solid #1A1A1A;padding:5px 4px;min-height:36px;box-sizing:border-box;}
+.board-arrow-label-layer{pointer-events:none;}
+.board-arrow-label-box{fill:var(--color-parchment);stroke:color-mix(in srgb,var(--color-peat) 35%,transparent);stroke-width:1;pointer-events:none;}
+.board-arrow-label-rule{pointer-events:none;}
+.board-arrow-label-rule--sf{fill:var(--color-tobacco);}
+.board-arrow-label-rule--lc0{fill:var(--color-denim);}
+.board-arrow-label{font-family:var(--font-mono);font-size:10px;font-weight:700;pointer-events:none;}
+.board-arrow-label--sf{fill:var(--color-tobacco);}
+.board-arrow-label--lc0{fill:var(--color-denim);}
+.board-controls{display:flex;align-items:center;gap:5px;padding:8px 0 6px;justify-content:center;border-top:1px solid var(--color-card-border-soft);flex-wrap:wrap;}
+.board-btn{background:transparent;color:var(--color-ebony);border:1.5px solid var(--color-ebony);border-radius:0;padding:4px 10px;cursor:pointer;font-family:var(--font-mono);font-size:.85rem;min-width:32px;transition:background .15s,color .15s;}
+.board-btn:hover{background:var(--color-ebony);color:var(--color-parchment);}
 </style>
 
 <script>
@@ -358,33 +361,29 @@
     head.setAttribute('fill-opacity', Number(arrowData.opacity || 0.7));
     group.appendChild(head);
 
+    // The label tag is NOT appended to the arrow group: it is returned as a spec
+    // so renderArrowOverlay can anchor it at the arrow base, resolve overlaps
+    // against the other tags, and draw all tags in a layer above every arrow.
+    var labelSpec = null;
     var rawLabelText = arrowData.label || arrowData.delta_text || '';
     if (rawLabelText) {
       var labelText = String(rawLabelText);
-      var labelPositionRatio = 0.72;
-      var labelCenterX = fromPoint.x + ((geometry.shaftEndX - fromPoint.x) * labelPositionRatio);
-      var labelCenterY = fromPoint.y + ((geometry.shaftEndY - fromPoint.y) * labelPositionRatio);
-      var labelAngleDegrees = Math.atan2(geometry.shaftEndY - fromPoint.y, geometry.shaftEndX - fromPoint.x) * (180 / Math.PI);
-      if (labelAngleDegrees > 90 || labelAngleDegrees < -90) {
-        labelAngleDegrees += 180;
-      }
-
-      var labelGroup = document.createElementNS(SVG_NS, 'g');
-      labelGroup.setAttribute('transform', 'translate(' + labelCenterX + ' ' + labelCenterY + ') rotate(' + labelAngleDegrees + ')');
-
-      var label = document.createElementNS(SVG_NS, 'text');
-      var engineClass = arrowData.engine ? ('board-arrow-label board-arrow-label--' + arrowData.engine) : 'board-arrow-label-text';
-      label.setAttribute('class', engineClass);
-      label.setAttribute('x', '0');
-      label.setAttribute('y', '0.5');
-      label.setAttribute('text-anchor', 'middle');
-      label.setAttribute('dominant-baseline', 'middle');
-      label.textContent = labelText;
-      labelGroup.appendChild(label);
-      group.appendChild(labelGroup);
+      var tagHeight = 15;
+      var tagWidth = (labelText.length * 6) + 12;
+      labelSpec = {
+        cx: fromPoint.x,
+        cy: fromPoint.y,
+        w: tagWidth,
+        h: tagHeight,
+        text: labelText,
+        engineSuffix: arrowData.engine === 'lc0' ? 'lc0' : 'sf',
+        moveUci: arrowData.move_uci || '',
+        engine: arrowData.engine || '',
+        tier: arrowData.tier || 1,
+      };
     }
 
-    return group;
+    return { group: group, labelSpec: labelSpec };
   }
 
   /**
@@ -459,7 +458,89 @@
   }
 
   /**
+   * Build the SVG tag element for one resolved label spec.
+   *
+   * Carries the arrow's engine/tier/move-uci so applyArrowVisibility() toggles
+   * the tag in sync with its arrow even though it lives in a separate layer.
+   *
+   * @param {Object} spec - Resolved label placement (x/y/w/h/text/engineSuffix + data).
+   * @returns {SVGGElement}
+   */
+  function buildLabelTag(spec) {
+    var tag = document.createElementNS(SVG_NS, 'g');
+    tag.setAttribute('class', 'board-arrow-label-tag');
+    tag.setAttribute('transform', 'translate(' + spec.x + ' ' + spec.y + ')');
+    tag.setAttribute('data-move-uci', spec.moveUci);
+    tag.setAttribute('data-engine', spec.engine);
+    tag.setAttribute('data-tier', String(spec.tier));
+
+    var box = document.createElementNS(SVG_NS, 'rect');
+    box.setAttribute('class', 'board-arrow-label-box');
+    box.setAttribute('width', spec.w);
+    box.setAttribute('height', spec.h);
+    tag.appendChild(box);
+
+    var rule = document.createElementNS(SVG_NS, 'rect');
+    rule.setAttribute('class', 'board-arrow-label-rule board-arrow-label-rule--' + spec.engineSuffix);
+    rule.setAttribute('width', spec.w);
+    rule.setAttribute('height', '2.5');
+    tag.appendChild(rule);
+
+    var label = document.createElementNS(SVG_NS, 'text');
+    label.setAttribute('class', 'board-arrow-label board-arrow-label--' + spec.engineSuffix);
+    label.setAttribute('x', spec.w / 2);
+    label.setAttribute('y', (spec.h / 2) + 1.5);
+    label.setAttribute('text-anchor', 'middle');
+    label.setAttribute('dominant-baseline', 'middle');
+    label.textContent = spec.text;
+    tag.appendChild(label);
+
+    return tag;
+  }
+
+  /**
+   * Resolve label placements so tags anchored at arrow bases do not overlap.
+   *
+   * Each spec starts centred on its anchor (spec.cx/cy); a colliding tag is
+   * nudged downward until clear, then clamped inside the overlay. Sets spec.x/y
+   * to the final top-left for rendering.
+   *
+   * @param {Array<Object>} specs - Label specs with cx/cy/w/h.
+   */
+  function resolveLabelCollisions(specs) {
+    var pad = 2;
+    var placed = [];
+    specs.forEach(function (spec) {
+      spec.x = spec.cx - (spec.w / 2);
+      spec.y = spec.cy - (spec.h / 2);
+      var guard = 0;
+      var collided = true;
+      while (collided && guard < 80) {
+        collided = false;
+        guard++;
+        for (var i = 0; i < placed.length; i++) {
+          var p = placed[i];
+          if (spec.x < p.x + p.w + pad && spec.x + spec.w + pad > p.x &&
+              spec.y < p.y + p.h + pad && spec.y + spec.h + pad > p.y) {
+            spec.y = p.y + p.h + pad;
+            collided = true;
+            break;
+          }
+        }
+      }
+      if (spec.x < 0) { spec.x = 0; }
+      if (spec.y < 0) { spec.y = 0; }
+      if (spec.x + spec.w > overlayViewboxSize) { spec.x = overlayViewboxSize - spec.w; }
+      if (spec.y + spec.h > overlayViewboxSize) { spec.y = overlayViewboxSize - spec.h; }
+      placed.push(spec);
+    });
+  }
+
+  /**
    * Render the dedicated overlay SVG for the requested ply.
+   *
+   * Arrows are drawn first; their labels are collected, de-overlapped, and
+   * appended in a single layer LAST so every tag sits on top of every arrow.
    *
    * @param {number} ply - Current board ply.
    */
@@ -470,12 +551,26 @@
     // v2 path: arrows are embedded in the frame dict under frames[ply].arrows.
     var arrowsForPly = (frames[ply] && frames[ply].arrows) || [];
     var arrowLayoutMap = buildArrowLayoutMap(arrowsForPly);
+    var labelSpecs = [];
     arrowsForPly.forEach(function (arrowData, arrowIndex) {
-      var arrowElement = buildArrowElement(arrowData, ply, arrowLayoutMap[arrowIndex]);
-      if (arrowElement) {
-        arrowOverlay.appendChild(arrowElement);
+      var built = buildArrowElement(arrowData, ply, arrowLayoutMap[arrowIndex]);
+      if (built && built.group) {
+        arrowOverlay.appendChild(built.group);
+        if (built.labelSpec) {
+          labelSpecs.push(built.labelSpec);
+        }
       }
     });
+
+    if (labelSpecs.length) {
+      resolveLabelCollisions(labelSpecs);
+      var labelLayer = document.createElementNS(SVG_NS, 'g');
+      labelLayer.setAttribute('class', 'board-arrow-label-layer');
+      labelSpecs.forEach(function (spec) {
+        labelLayer.appendChild(buildLabelTag(spec));
+      });
+      arrowOverlay.appendChild(labelLayer);
+    }
 
     applyArrowVisibility();
   }

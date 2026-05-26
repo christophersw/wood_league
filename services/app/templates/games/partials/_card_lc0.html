@@ -1,141 +1,171 @@
 {% load static %}
-<style>
-  /* All colors via :root tokens in static/css/main.css.
-     Same hue = same token: e.g. blunder / missed-win / wdl-loss all share
-     --color-vermilion-bright so a single edit moves all three. */
-  .lc0-wdl-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; margin-top: .35rem; }
-  .lc0-wdl-bar__win  { background: var(--color-emerald); height: 100%; }
-  .lc0-wdl-bar__draw { background: var(--color-tan); height: 100%; }
-  .lc0-wdl-bar__loss { background: var(--color-vermilion-bright); height: 100%; }
-  .lc0-sev-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; margin-top: .35rem; }
-  .lc0-sev-bar__seg { height: 100%; }
-  .lc0-dc-bar { display: flex; height: 5px; border-radius: 3px; overflow: hidden; margin-top: .2rem; opacity: .6; }
-  .lc0-dc-bar__seg { height: 100%; }
-  .lc0-dc-missed-win    { background: var(--color-vermilion-bright); }
-  .lc0-dc-losing-blunder{ background: var(--color-ember); }
-  .lc0-dc-risky         { background: var(--color-saffron); }
-  .lc0-dc-simplification{ background: var(--color-emerald); }
-</style>
+{# Title: _card_lc0.html — LC0 stat card (Du Bois plate) #}
+{# Description: #}
+{#     HTMX partial rendering the LC0 analysis card in the shared "Du Bois #}
+{#     plate" language. Per side: Accuracy + Avg Δμ stat tiles (hover/focus #}
+{#     tooltips), a game-end WDL probability bar, a labelled move-quality #}
+{#     (base-severity) bar with glyph + count, and a subordinate draw-character #}
+{#     dot-chip row. Outcome chip in each side title; hover run-info (ⓘ). #}
+{#     All styles come from the shared .wc-card / .card-* / .move-annotation-* #}
+{#     rules in static/css/main.css (also used by _card_sf.html). #}
+{# Changelog: #}
+{#     2026-05-22 (#208): Du Bois plate restyle to match the SF card. #}
 
-<section class="wc-card wc-card--lc0" aria-label="LC0 analysis">
+<section class="wc-card wc-card--lc0" aria-label="Leela Chess Zero analysis">
   <header class="wc-card__head">
-    <h3>LC0</h3>
-    <details class="card-info-tooltip">
-      <summary aria-label="LC0 run info">ⓘ</summary>
-      <dl>
-        <dt>Network</dt><dd>{{ tooltip_meta.network_name|default:"—" }}</dd>
-        <dt>Nodes</dt><dd>{{ tooltip_meta.engine_nodes|default:"—" }}</dd>
-        <dt>Contempt</dt><dd>{{ tooltip_meta.contempt|default:"0" }}</dd>
-        <dt>Draw ref</dt><dd>{% if tooltip_meta.draw_rate_reference %}{{ tooltip_meta.draw_rate_reference|floatformat:3 }}{% else %}—{% endif %}</dd>
-        <dt>Cal. Elo</dt><dd>{{ tooltip_meta.calibration_elo|default:"—" }}</dd>
-        <dt>Analyzed</dt><dd>{{ tooltip_meta.analyzed_at|default:"—" }}</dd>
-      </dl>
-    </details>
+    <h3>Leela Chess Zero</h3>
+    <span class="card-info" tabindex="0" aria-label="LC0 run info">ⓘ
+      <div class="card-pop card-info-pop">
+        <h4>Run info</h4>
+        <dl>
+          <dt>Network</dt><dd>{{ tooltip_meta.network_name|default:"—" }}</dd>
+          <dt>Nodes</dt><dd>{{ tooltip_meta.engine_nodes|default:"—" }}</dd>
+          <dt>Contempt</dt><dd>{{ tooltip_meta.contempt|default:"0" }}</dd>
+          <dt>Draw ref</dt><dd>{% if tooltip_meta.draw_rate_reference %}{{ tooltip_meta.draw_rate_reference|floatformat:3 }}{% else %}—{% endif %}</dd>
+          <dt>Cal. Elo</dt><dd>{{ tooltip_meta.calibration_elo|default:"—" }}</dd>
+          <dt>Analyzed</dt><dd>{{ tooltip_meta.analyzed_at|default:"—" }}</dd>
+        </dl>
+      </div>
+    </span>
   </header>
 
-  {# White side #}
+  {# Whole-game average winning chances — White's perspective, shown once at top #}
+  {% with gw=wdl.white %}
+  {% if gw.win or gw.draw or gw.loss %}
+  <div class="card-qwrap" style="margin-bottom:1.15rem;">
+    <div class="card-qcap">Avg. Winning Chances for Whole Game <span class="hint" tabindex="0">— what's this?</span></div>
+    <div class="card-gwc" aria-label="Average winning chances for the whole game, White's perspective">
+      {% if gw.win %}<div class="seg gwc-white{% if white_outcome.kind == 'win' %} gwc-actual{% endif %}" style="flex:{{ gw.win }}" title="{% if white_outcome.kind == 'win' %}White won the game{% else %}White wins{% endif %}">{% if white_outcome.kind == 'win' %}🏆 {% endif %}{% widthratio gw.win 1 100 %}%</div>{% endif %}
+      {% if gw.draw %}<div class="seg gwc-draw{% if white_outcome.kind == 'draw' %} gwc-actual{% endif %}" style="flex:{{ gw.draw }}" title="{% if white_outcome.kind == 'draw' %}Game drawn{% else %}Draw{% endif %}">{% if white_outcome.kind == 'draw' %}🤝 {% endif %}{% widthratio gw.draw 1 100 %}%</div>{% endif %}
+      {% if gw.loss %}<div class="seg gwc-black{% if white_outcome.kind == 'loss' %} gwc-actual{% endif %}" style="flex:{{ gw.loss }}" title="{% if white_outcome.kind == 'loss' %}Black won the game{% else %}Black wins{% endif %}">{% if white_outcome.kind == 'loss' %}🏆 {% endif %}{% widthratio gw.loss 1 100 %}%</div>{% endif %}
+    </div>
+    <div class="card-pop card-legend card-legend--down">
+      <h4>Avg. winning chances</h4>
+      {% if white_outcome %}<p>{% if white_outcome.kind == 'draw' %}The game was drawn.{% elif white_outcome.kind == 'loss' %}Black won the game in the end.{% else %}White won the game in the end.{% endif %} Averaged over the whole game:</p>{% endif %}
+      <div class="lrow"><span class="sw" style="background:var(--color-near-white);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--color-peat) 30%,transparent)"></span><span class="lg"></span><span class="lt"><b>White</b> winning chance — <b>{% widthratio gw.win 1 100 %}%</b></span></div>
+      <div class="lrow"><span class="sw" style="background:var(--color-slate)"></span><span class="lg"></span><span class="lt"><b>Draw</b> chance — <b>{% widthratio gw.draw 1 100 %}%</b></span></div>
+      <div class="lrow"><span class="sw" style="background:var(--color-ebony)"></span><span class="lg"></span><span class="lt"><b>Black</b> winning chance — <b>{% widthratio gw.loss 1 100 %}%</b></span></div>
+      <span class="calc">Elo-adjusted — these odds reflect the players' estimated skill difference at the start of the game, not even-strength chances.</span>
+    </div>
+  </div>
+  {% endif %}
+  {% endwith %}
+
+  {# ── White side ───────────────────────────────────────────────────────── #}
   <div class="wc-card__side">
-    <div class="wc-card__side-title">{{ side_labels.0.1 }} (White)</div>
-    <div class="metric"><span>Accuracy</span><span>{% if lc0_white_accuracy %}{{ lc0_white_accuracy|floatformat:1 }}%{% else %}—{% endif %}</span></div>
-    <div class="metric"><span>Avg Δμ</span><span>{% if avg_delta_mu_white %}{{ avg_delta_mu_white|floatformat:4 }}{% else %}—{% endif %}</span></div>
+    <div class="wc-card__side-title">{{ side_labels.0.1 }} · White{% if white_outcome %} · <span class="card-outcome card-outcome--{{ white_outcome.kind }}">{{ white_outcome.label }}</span>{% endif %}</div>
 
-    {# Game-end WDL stacked bar — White-frame aggregated probabilities #}
-    {% with ww=wdl.white %}
-    <div class="lc0-wdl-bar" aria-label="White game-end WDL distribution">
-      {% if ww.win or ww.draw or ww.loss %}
-        {% if ww.win %}<div class="lc0-wdl-bar__win" style="flex:{{ ww.win }}" title="Win: {{ ww.win|floatformat:2 }}"></div>{% endif %}
-        {% if ww.draw %}<div class="lc0-wdl-bar__draw" style="flex:{{ ww.draw }}" title="Draw: {{ ww.draw|floatformat:2 }}"></div>{% endif %}
-        {% if ww.loss %}<div class="lc0-wdl-bar__loss" style="flex:{{ ww.loss }}" title="Loss: {{ ww.loss|floatformat:2 }}"></div>{% endif %}
-      {% else %}
-        <div style="flex:1;background:var(--color-band-empty);height:100%;" title="No WDL data"></div>
-      {% endif %}
+    <div class="card-tiles card-tiles--2">
+      <div class="card-tile" tabindex="0">
+        <span class="card-tile__k">Accuracy</span>
+        <span class="card-tile__v">{% if lc0_white_accuracy %}{{ lc0_white_accuracy|floatformat:1 }}%{% else %}—{% endif %}</span>
+        <div class="card-pop card-tip"><h4>Accuracy</h4><p>How closely this player matched LC0's preferred moves, on a 0–100% scale.</p><span class="calc">Measured from LC0's rating-adjusted win/draw/loss probabilities, not centipawns.</span></div>
+      </div>
+      <div class="card-tile" tabindex="0">
+        <span class="card-tile__k">Avg Δμ</span>
+        <span class="card-tile__v">{% if avg_delta_mu_white %}{{ avg_delta_mu_white|floatformat:4 }}{% else %}—{% endif %}</span>
+        <div class="card-pop card-tip"><h4>Avg Δμ</h4><p>Average drop in rating-adjusted expected score per move (μ runs 0–1, win = 1).</p><span class="calc">LC0's main severity measure; adjusted for both players' ratings. Lower is better.</span></div>
+      </div>
     </div>
-    {% endwith %}
 
-    {# Base severity stacked bar (primary) #}
-    {% with bsw=base_severity_counts.white %}
-    <div class="lc0-sev-bar" aria-label="White base severity distribution" title="White: severity breakdown">
-      {% with total_bsw=bsw.best|add:bsw.excellent|add:bsw.good|add:bsw.inaccuracy|add:bsw.mistake|add:bsw.blunder %}
-      {% if total_bsw %}
-        {% if bsw.best %}<div class="lc0-sev-bar__seg move-annotation-best" style="flex:{{ bsw.best }}" title="Best: {{ bsw.best }}"></div>{% endif %}
-        {% if bsw.excellent %}<div class="lc0-sev-bar__seg move-annotation-excellent" style="flex:{{ bsw.excellent }}" title="Excellent: {{ bsw.excellent }}"></div>{% endif %}
-        {% if bsw.good %}<div class="lc0-sev-bar__seg move-annotation-good" style="flex:{{ bsw.good }}" title="Good: {{ bsw.good }}"></div>{% endif %}
-        {% if bsw.inaccuracy %}<div class="lc0-sev-bar__seg move-annotation-inaccuracy" style="flex:{{ bsw.inaccuracy }}" title="Inaccuracy: {{ bsw.inaccuracy }}"></div>{% endif %}
-        {% if bsw.mistake %}<div class="lc0-sev-bar__seg move-annotation-mistake" style="flex:{{ bsw.mistake }}" title="Mistake: {{ bsw.mistake }}"></div>{% endif %}
-        {% if bsw.blunder %}<div class="lc0-sev-bar__seg move-annotation-blunder" style="flex:{{ bsw.blunder }}" title="Blunder: {{ bsw.blunder }}"></div>{% endif %}
-      {% else %}
-        <div class="lc0-sev-bar__seg" style="flex:1;background:var(--color-band-empty);" title="No severity data"></div>
-      {% endif %}
+    {# Move quality (base severity) #}
+    <div class="card-qwrap">
+      <div class="card-qcap">Move quality <span class="hint" tabindex="0">— what's this?</span></div>
+      {% with bs=base_severity_counts.white total=base_severity_counts.white.best|add:base_severity_counts.white.excellent|add:base_severity_counts.white.good|add:base_severity_counts.white.inaccuracy|add:base_severity_counts.white.mistake|add:base_severity_counts.white.blunder %}
+      <div class="card-qbar" aria-label="White move-quality distribution">
+        {% if total %}
+          {% if bs.best %}<div class="seg move-annotation-best" style="flex:{{ bs.best }}" title="Best: {{ bs.best }}"><span class="c">{{ bs.best }}</span></div>{% endif %}
+          {% if bs.excellent %}<div class="seg move-annotation-excellent" style="flex:{{ bs.excellent }}" title="Excellent: {{ bs.excellent }}"><span class="c">{{ bs.excellent }}</span></div>{% endif %}
+          {% if bs.good %}<div class="seg move-annotation-good" style="flex:{{ bs.good }}" title="Good: {{ bs.good }}"><span class="c">{{ bs.good }}</span></div>{% endif %}
+          {% if bs.inaccuracy %}<div class="seg move-annotation-inaccuracy" style="flex:{{ bs.inaccuracy }}" title="Inaccuracy: {{ bs.inaccuracy }}"><span class="g">?!</span><span class="c">{{ bs.inaccuracy }}</span></div>{% endif %}
+          {% if bs.mistake %}<div class="seg move-annotation-mistake" style="flex:{{ bs.mistake }}" title="Mistake: {{ bs.mistake }}"><span class="g">?</span><span class="c">{{ bs.mistake }}</span></div>{% endif %}
+          {% if bs.blunder %}<div class="seg move-annotation-blunder" style="flex:{{ bs.blunder }}" title="Blunder: {{ bs.blunder }}"><span class="g">??</span><span class="c">{{ bs.blunder }}</span></div>{% endif %}
+        {% else %}
+          <div class="card-qbar__empty" title="No move-quality data">No move-quality data</div>
+        {% endif %}
+      </div>
       {% endwith %}
+      <div class="card-pop card-legend">
+        <h4>Move quality key</h4>
+        <div class="lrow"><span class="sw" style="background:var(--color-emerald)"></span><span class="lg">·</span><span class="lt"><b>Best</b> — <span>≤0.01 expected-score lost</span></span></div>
+        <div class="lrow"><span class="sw" style="background:var(--color-leaf)"></span><span class="lg">·</span><span class="lt"><b>Excellent</b> — <span>≤0.02 lost</span></span></div>
+        <div class="lrow"><span class="sw" style="background:var(--color-leaf)"></span><span class="lg">·</span><span class="lt"><b>Good</b> — <span>≤0.05 lost</span></span></div>
+        <div class="lrow"><span class="sw" style="background:var(--color-saffron)"></span><span class="lg">?!</span><span class="lt"><b>Inaccuracy</b> — <span>≤0.10 lost</span></span></div>
+        <div class="lrow"><span class="sw" style="background:var(--color-ember)"></span><span class="lg">?</span><span class="lt"><b>Mistake</b> — <span>≤0.20 lost</span></span></div>
+        <div class="lrow"><span class="sw" style="background:var(--color-vermilion-bright)"></span><span class="lg">??</span><span class="lt"><b>Blunder</b> — <span>&gt;0.20 lost</span></span></div>
+      </div>
     </div>
-    {% endwith %}
 
-    {# Draw-character stacked bar (subordinate, muted) #}
-    {% with dcw=draw_character_counts.white %}
-    <div class="lc0-dc-bar" aria-label="White draw-character distribution" title="White: draw-character overlay">
-      {% with total_dcw=dcw|dictsortreversed:"value" %}
-      {% if dcw.missed_win or dcw.losing_blunder or dcw.risky or dcw.simplification %}
-        {% if dcw.missed_win %}<div class="lc0-dc-bar__seg lc0-dc-missed-win" style="flex:{{ dcw.missed_win }}" title="Missed Win: {{ dcw.missed_win }}"></div>{% endif %}
-        {% if dcw.losing_blunder %}<div class="lc0-dc-bar__seg lc0-dc-losing-blunder" style="flex:{{ dcw.losing_blunder }}" title="Losing Blunder: {{ dcw.losing_blunder }}"></div>{% endif %}
-        {% if dcw.risky %}<div class="lc0-dc-bar__seg lc0-dc-risky" style="flex:{{ dcw.risky }}" title="Risky: {{ dcw.risky }}"></div>{% endif %}
-        {% if dcw.simplification %}<div class="lc0-dc-bar__seg lc0-dc-simplification" style="flex:{{ dcw.simplification }}" title="Simplification: {{ dcw.simplification }}"></div>{% endif %}
-      {% else %}
-        <div class="lc0-dc-bar__seg" style="flex:1;background:var(--color-band-empty);" title="No draw-character data"></div>
-      {% endif %}
-      {% endwith %}
+    {# Draw character (subordinate dot chips) — only shown when present #}
+    {% with dc=draw_character_counts.white %}
+    {% if dc.missed_win or dc.losing_blunder or dc.risky or dc.simplification %}
+    <div class="card-qcap" style="margin-top:.6rem;">Draw character</div>
+    <div class="card-chiprow card-chiprow--muted">
+      {% if dc.simplification %}<span class="card-dchip" tabindex="0"><span class="dot dc-simplification"></span>Simplification <span class="n">{{ dc.simplification }}</span><span class="card-pop card-dchip-tip"><b class="t">Simplification</b>About as good a move, trading tension for a calmer, drawish game.</span></span>{% endif %}
+      {% if dc.risky %}<span class="card-dchip" tabindex="0"><span class="dot dc-risky"></span>Risky <span class="n">{{ dc.risky }}</span><span class="card-pop card-dchip-tip"><b class="t">Risky</b>About as good a move, but it avoidably sharpened the position.</span></span>{% endif %}
+      {% if dc.losing_blunder %}<span class="card-dchip" tabindex="0"><span class="dot dc-losing_blunder"></span>Losing Blunder <span class="n">{{ dc.losing_blunder }}</span><span class="card-pop card-dchip-tip"><b class="t">Losing Blunder</b>A big loss that also sharpened the position into something decisive.</span></span>{% endif %}
+      {% if dc.missed_win %}<span class="card-dchip" tabindex="0"><span class="dot dc-missed_win"></span>Missed Win <span class="n">{{ dc.missed_win }}</span><span class="card-pop card-dchip-tip"><b class="t">Missed Win</b>Let real winning chances slip into a draw.</span></span>{% endif %}
     </div>
+    {% endif %}
     {% endwith %}
   </div>
 
-  {# Black side #}
+  {# ── Black side ───────────────────────────────────────────────────────── #}
   <div class="wc-card__side">
-    <div class="wc-card__side-title">{{ side_labels.1.1 }} (Black)</div>
-    <div class="metric"><span>Accuracy</span><span>{% if lc0_black_accuracy %}{{ lc0_black_accuracy|floatformat:1 }}%{% else %}—{% endif %}</span></div>
-    <div class="metric"><span>Avg Δμ</span><span>{% if avg_delta_mu_black %}{{ avg_delta_mu_black|floatformat:4 }}{% else %}—{% endif %}</span></div>
+    <div class="wc-card__side-title">{{ side_labels.1.1 }} · Black{% if black_outcome %} · <span class="card-outcome card-outcome--{{ black_outcome.kind }}">{{ black_outcome.label }}</span>{% endif %}</div>
 
-    {# Game-end WDL stacked bar — Black-side aggregated probabilities #}
-    {% with wb=wdl.black %}
-    <div class="lc0-wdl-bar" aria-label="Black game-end WDL distribution">
-      {% if wb.win or wb.draw or wb.loss %}
-        {% if wb.win %}<div class="lc0-wdl-bar__win" style="flex:{{ wb.win }}" title="Win: {{ wb.win|floatformat:2 }}"></div>{% endif %}
-        {% if wb.draw %}<div class="lc0-wdl-bar__draw" style="flex:{{ wb.draw }}" title="Draw: {{ wb.draw|floatformat:2 }}"></div>{% endif %}
-        {% if wb.loss %}<div class="lc0-wdl-bar__loss" style="flex:{{ wb.loss }}" title="Loss: {{ wb.loss|floatformat:2 }}"></div>{% endif %}
-      {% else %}
-        <div style="flex:1;background:var(--color-band-empty);height:100%;" title="No WDL data"></div>
-      {% endif %}
+    <div class="card-tiles card-tiles--2">
+      <div class="card-tile" tabindex="0">
+        <span class="card-tile__k">Accuracy</span>
+        <span class="card-tile__v">{% if lc0_black_accuracy %}{{ lc0_black_accuracy|floatformat:1 }}%{% else %}—{% endif %}</span>
+        <div class="card-pop card-tip"><h4>Accuracy</h4><p>How closely this player matched LC0's preferred moves, on a 0–100% scale.</p><span class="calc">Measured from LC0's rating-adjusted win/draw/loss probabilities, not centipawns.</span></div>
+      </div>
+      <div class="card-tile" tabindex="0">
+        <span class="card-tile__k">Avg Δμ</span>
+        <span class="card-tile__v">{% if avg_delta_mu_black %}{{ avg_delta_mu_black|floatformat:4 }}{% else %}—{% endif %}</span>
+        <div class="card-pop card-tip"><h4>Avg Δμ</h4><p>Average drop in rating-adjusted expected score per move (μ runs 0–1, win = 1).</p><span class="calc">LC0's main severity measure; adjusted for both players' ratings. Lower is better.</span></div>
+      </div>
     </div>
-    {% endwith %}
 
-    {# Base severity stacked bar (primary) #}
-    {% with bsb=base_severity_counts.black %}
-    <div class="lc0-sev-bar" aria-label="Black base severity distribution" title="Black: severity breakdown">
-      {% with total_bsb=bsb.best|add:bsb.excellent|add:bsb.good|add:bsb.inaccuracy|add:bsb.mistake|add:bsb.blunder %}
-      {% if total_bsb %}
-        {% if bsb.best %}<div class="lc0-sev-bar__seg move-annotation-best" style="flex:{{ bsb.best }}" title="Best: {{ bsb.best }}"></div>{% endif %}
-        {% if bsb.excellent %}<div class="lc0-sev-bar__seg move-annotation-excellent" style="flex:{{ bsb.excellent }}" title="Excellent: {{ bsb.excellent }}"></div>{% endif %}
-        {% if bsb.good %}<div class="lc0-sev-bar__seg move-annotation-good" style="flex:{{ bsb.good }}" title="Good: {{ bsb.good }}"></div>{% endif %}
-        {% if bsb.inaccuracy %}<div class="lc0-sev-bar__seg move-annotation-inaccuracy" style="flex:{{ bsb.inaccuracy }}" title="Inaccuracy: {{ bsb.inaccuracy }}"></div>{% endif %}
-        {% if bsb.mistake %}<div class="lc0-sev-bar__seg move-annotation-mistake" style="flex:{{ bsb.mistake }}" title="Mistake: {{ bsb.mistake }}"></div>{% endif %}
-        {% if bsb.blunder %}<div class="lc0-sev-bar__seg move-annotation-blunder" style="flex:{{ bsb.blunder }}" title="Blunder: {{ bsb.blunder }}"></div>{% endif %}
-      {% else %}
-        <div class="lc0-sev-bar__seg" style="flex:1;background:var(--color-band-empty);" title="No severity data"></div>
-      {% endif %}
+    {# Move quality (base severity) #}
+    <div class="card-qwrap">
+      <div class="card-qcap">Move quality <span class="hint" tabindex="0">— what's this?</span></div>
+      {% with bs=base_severity_counts.black total=base_severity_counts.black.best|add:base_severity_counts.black.excellent|add:base_severity_counts.black.good|add:base_severity_counts.black.inaccuracy|add:base_severity_counts.black.mistake|add:base_severity_counts.black.blunder %}
+      <div class="card-qbar" aria-label="Black move-quality distribution">
+        {% if total %}
+          {% if bs.best %}<div class="seg move-annotation-best" style="flex:{{ bs.best }}" title="Best: {{ bs.best }}"><span class="c">{{ bs.best }}</span></div>{% endif %}
+          {% if bs.excellent %}<div class="seg move-annotation-excellent" style="flex:{{ bs.excellent }}" title="Excellent: {{ bs.excellent }}"><span class="c">{{ bs.excellent }}</span></div>{% endif %}
+          {% if bs.good %}<div class="seg move-annotation-good" style="flex:{{ bs.good }}" title="Good: {{ bs.good }}"><span class="c">{{ bs.good }}</span></div>{% endif %}
+          {% if bs.inaccuracy %}<div class="seg move-annotation-inaccuracy" style="flex:{{ bs.inaccuracy }}" title="Inaccuracy: {{ bs.inaccuracy }}"><span class="g">?!</span><span class="c">{{ bs.inaccuracy }}</span></div>{% endif %}
+          {% if bs.mistake %}<div class="seg move-annotation-mistake" style="flex:{{ bs.mistake }}" title="Mistake: {{ bs.mistake }}"><span class="g">?</span><span class="c">{{ bs.mistake }}</span></div>{% endif %}
+          {% if bs.blunder %}<div class="seg move-annotation-blunder" style="flex:{{ bs.blunder }}" title="Blunder: {{ bs.blunder }}"><span class="g">??</span><span class="c">{{ bs.blunder }}</span></div>{% endif %}
+        {% else %}
+          <div class="card-qbar__empty" title="No move-quality data">No move-quality data</div>
+        {% endif %}
+      </div>
       {% endwith %}
+      <div class="card-pop card-legend">
+        <h4>Move quality key</h4>
+        <div class="lrow"><span class="sw" style="background:var(--color-emerald)"></span><span class="lg">·</span><span class="lt"><b>Best</b> — <span>≤0.01 expected-score lost</span></span></div>
+        <div class="lrow"><span class="sw" style="background:var(--color-leaf)"></span><span class="lg">·</span><span class="lt"><b>Excellent</b> — <span>≤0.02 lost</span></span></div>
+        <div class="lrow"><span class="sw" style="background:var(--color-leaf)"></span><span class="lg">·</span><span class="lt"><b>Good</b> — <span>≤0.05 lost</span></span></div>
+        <div class="lrow"><span class="sw" style="background:var(--color-saffron)"></span><span class="lg">?!</span><span class="lt"><b>Inaccuracy</b> — <span>≤0.10 lost</span></span></div>
+        <div class="lrow"><span class="sw" style="background:var(--color-ember)"></span><span class="lg">?</span><span class="lt"><b>Mistake</b> — <span>≤0.20 lost</span></span></div>
+        <div class="lrow"><span class="sw" style="background:var(--color-vermilion-bright)"></span><span class="lg">??</span><span class="lt"><b>Blunder</b> — <span>&gt;0.20 lost</span></span></div>
+      </div>
     </div>
-    {% endwith %}
 
-    {# Draw-character stacked bar (subordinate, muted) #}
-    {% with dcb=draw_character_counts.black %}
-    <div class="lc0-dc-bar" aria-label="Black draw-character distribution" title="Black: draw-character overlay">
-      {% if dcb.missed_win or dcb.losing_blunder or dcb.risky or dcb.simplification %}
-        {% if dcb.missed_win %}<div class="lc0-dc-bar__seg lc0-dc-missed-win" style="flex:{{ dcb.missed_win }}" title="Missed Win: {{ dcb.missed_win }}"></div>{% endif %}
-        {% if dcb.losing_blunder %}<div class="lc0-dc-bar__seg lc0-dc-losing-blunder" style="flex:{{ dcb.losing_blunder }}" title="Losing Blunder: {{ dcb.losing_blunder }}"></div>{% endif %}
-        {% if dcb.risky %}<div class="lc0-dc-bar__seg lc0-dc-risky" style="flex:{{ dcb.risky }}" title="Risky: {{ dcb.risky }}"></div>{% endif %}
-        {% if dcb.simplification %}<div class="lc0-dc-bar__seg lc0-dc-simplification" style="flex:{{ dcb.simplification }}" title="Simplification: {{ dcb.simplification }}"></div>{% endif %}
-      {% else %}
-        <div class="lc0-dc-bar__seg" style="flex:1;background:var(--color-band-empty);" title="No draw-character data"></div>
-      {% endif %}
+    {# Draw character (subordinate dot chips) — only shown when present #}
+    {% with dc=draw_character_counts.black %}
+    {% if dc.missed_win or dc.losing_blunder or dc.risky or dc.simplification %}
+    <div class="card-qcap" style="margin-top:.6rem;">Draw character</div>
+    <div class="card-chiprow card-chiprow--muted">
+      {% if dc.simplification %}<span class="card-dchip" tabindex="0"><span class="dot dc-simplification"></span>Simplification <span class="n">{{ dc.simplification }}</span><span class="card-pop card-dchip-tip"><b class="t">Simplification</b>About as good a move, trading tension for a calmer, drawish game.</span></span>{% endif %}
+      {% if dc.risky %}<span class="card-dchip" tabindex="0"><span class="dot dc-risky"></span>Risky <span class="n">{{ dc.risky }}</span><span class="card-pop card-dchip-tip"><b class="t">Risky</b>About as good a move, but it avoidably sharpened the position.</span></span>{% endif %}
+      {% if dc.losing_blunder %}<span class="card-dchip" tabindex="0"><span class="dot dc-losing_blunder"></span>Losing Blunder <span class="n">{{ dc.losing_blunder }}</span><span class="card-pop card-dchip-tip"><b class="t">Losing Blunder</b>A big loss that also sharpened the position into something decisive.</span></span>{% endif %}
+      {% if dc.missed_win %}<span class="card-dchip" tabindex="0"><span class="dot dc-missed_win"></span>Missed Win <span class="n">{{ dc.missed_win }}</span><span class="card-pop card-dchip-tip"><b class="t">Missed Win</b>Let real winning chances slip into a draw.</span></span>{% endif %}
     </div>
+    {% endif %}
     {% endwith %}
   </div>
 </section>

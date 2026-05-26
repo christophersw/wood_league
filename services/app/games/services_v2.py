@@ -73,6 +73,20 @@ class Lc0MoveRow:
     pv_san_1: str | None
     pv_san_2: str | None
     pv_san_3: str | None
+    # Raw played WDL triple (mover frame, milli-units) — arrow delta baseline.
+    wdl_win: int | None = None
+    wdl_draw: int | None = None
+    wdl_loss: int | None = None
+    # Raw per-candidate WDL triples (mover frame) for the top-3 arrows.
+    wdl_win_1: int | None = None
+    wdl_draw_1: int | None = None
+    wdl_loss_1: int | None = None
+    wdl_win_2: int | None = None
+    wdl_draw_2: int | None = None
+    wdl_loss_2: int | None = None
+    wdl_win_3: int | None = None
+    wdl_draw_3: int | None = None
+    wdl_loss_3: int | None = None
 
     # Raw mover-frame played-move WDL triple (#161 worker).
     wdl_win:  int | None = None
@@ -258,7 +272,10 @@ def _apply_sf_summary(data: GameAnalysisDataV2, ga: GameAnalysis) -> None:
     data.sf_black_mistakes = ga.black_mistakes
     data.sf_black_inaccuracies = ga.black_inaccuracies
     data.sf_engine_depth = ga.engine_depth
-    data.sf_analyzed_at = ga.analyzed_at.isoformat() if ga.analyzed_at else ""
+    # Human-readable "5 May 2026" (day without leading zero, abbreviated month).
+    data.sf_analyzed_at = (
+        f"{ga.analyzed_at.day} {ga.analyzed_at:%b %Y}" if ga.analyzed_at else ""
+    )
 
 
 def _apply_lc0_summary(data: GameAnalysisDataV2, lga: Lc0GameAnalysis) -> None:
@@ -281,7 +298,10 @@ def _apply_lc0_summary(data: GameAnalysisDataV2, lga: Lc0GameAnalysis) -> None:
     data.lc0_contempt = lga.contempt
     data.lc0_draw_rate_reference = lga.draw_rate_reference
     data.lc0_calibration_elo = lga.wdl_calibration_elo
-    data.lc0_analyzed_at = lga.analyzed_at.isoformat() if lga.analyzed_at else ""
+    # Human-readable "5 May 2026" (day without leading zero, abbreviated month).
+    data.lc0_analyzed_at = (
+        f"{lga.analyzed_at.day} {lga.analyzed_at:%b %Y}" if lga.analyzed_at else ""
+    )
 
 
 def _load_analyses(db_game: Game) -> tuple[GameAnalysis | None, Lc0GameAnalysis | None]:

@@ -11,6 +11,7 @@ Changelog:
     2026-05-21 (#186): Task 9 — add Win% partial content assertions.
     2026-05-21 (#186): Task 10 — add SF cp partial content assertions.
     2026-05-21 (#186): Task 11 — add LC0 WDL partial content assertions.
+    2026-05-25 (#208): Task 2 — add THIS MOVE identity + score-delta test.
 """
 import pytest
 from django.urls import reverse
@@ -85,6 +86,73 @@ def test_lc0_wdl_partial_contains_payload_and_tooltip(client, new_schema_game_fa
     assert "LC0 Win / Draw / Loss" in body                # chart section title
     assert "draw rate" in body                            # calibration draw-rate subtitle text
     assert "lc0Wdl.js" in body                            # static JS reference
+
+
+def test_chips_partial_has_move_label(client, new_schema_game_factory):
+    """Chips partial header shows a 'Move N · Side' subject label derived from ply.
+
+    Params:
+        client: Django test client fixture.
+        new_schema_game_factory: Factory fixture producing a new-schema game.
+    """
+    game = new_schema_game_factory()
+    resp = client.get(f"/_partials/games/{game.slug}/chips/?ply=3")
+    body = resp.content.decode()
+    assert resp.status_code == 200
+    assert "Move 2 · White" in body      # ply 3 -> move (3+1)//2 = 2, odd -> White
+
+
+def test_chips_partial_is_du_bois_plate(client, new_schema_game_factory):
+    """Chips partial renders inside a wc-card plate titled 'This Move' with source prefixes.
+
+    Params:
+        client: Django test client fixture.
+        new_schema_game_factory: Factory fixture producing a new-schema game.
+    """
+    game = new_schema_game_factory()
+    resp = client.get(f"/_partials/games/{game.slug}/chips/?ply=3")
+    body = resp.content.decode()
+    assert resp.status_code == 200
+    assert 'class="wc-card move-chips-card"' in body
+    assert "This Move" in body
+    assert "move-chip__source" in body
+    assert "border-radius: 999px" not in body
+
+
+def test_chips_partial_no_longer_links_movechips_css(client, new_schema_game_factory):
+    """Chip styling now ships in the global tailwind.css; the partial must not
+    inject its own moveChips.css <link> (which never applied through the HTMX swap).
+
+    Params:
+        client: Django test client fixture.
+        new_schema_game_factory: Factory fixture producing a new-schema game.
+    """
+    game = new_schema_game_factory()
+    resp = client.get(f"/_partials/games/{game.slug}/chips/?ply=3")
+    body = resp.content.decode()
+    assert resp.status_code == 200
+    assert "moveChips.css" not in body
+    assert "move-chip" in body  # chips still rendered
+
+
+def test_this_move_partial_has_identity_and_score_deltas(client, new_schema_game_factory):
+    """The THIS MOVE partial renders move identity and SF/LC0 score-delta chips.
+
+    Parameters:
+        client: Django test client fixture.
+        new_schema_game_factory: Factory fixture producing a new-schema game.
+    """
+    game = new_schema_game_factory()
+    resp = client.get(f"/_partials/games/{game.slug}/chips/?ply=2")
+    body = resp.content.decode()
+    assert resp.status_code == 200
+    assert "Move 1" in body          # ply 2 -> move (2+1)//2 = 1
+    assert "Black" in body           # ply 2 is even -> Black moved
+    # SF delta ply2 = cp_eval[2]-cp_eval[1] = -25-30 = -55 (White frame);
+    # Black moved -> mover-relative +55cp -> +0.55 pawns
+    assert "+0.55" in body
+    # LC0 delta ply2 = delta_mu 0.044 * 100 = +4%
+    assert "+4%" in body
 
 
 def test_pgn_partial_renders_table_and_js(client, new_schema_game_factory):

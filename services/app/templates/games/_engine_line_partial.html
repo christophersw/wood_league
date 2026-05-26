@@ -6,9 +6,16 @@
   <script type="application/json" id="engine-line-arrows-json">{{ arrow_labels_json|safe }}</script>
   <script type="application/json" id="engine-line-san-json">{{ san_list_json|safe }}</script>
 
-  {# Board SVG container #}
+  {# Board SVG container with bot player labels on both sides #}
+  <div class="player-label{% if top_side == 'White' %} player-label-no-top{% endif %}{% if top_side == 'Black' %} player-label-no-bottom{% endif %}">
+    <span class="player-side">{{ top_sym }} {{ top_side }}</span>
+    <span class="player-name player-name--bot">{{ bot_label }}</span>
+  </div>
   <div class="board-wrap" id="engine-line-board-svg-wrap"></div>
-  <div class="engine-line-player-spacer" id="engine-line-player-spacer" aria-hidden="true"></div>
+  <div class="player-label player-label-bottom{% if bottom_side == 'White' %} player-label-no-top{% endif %}{% if bottom_side == 'Black' %} player-label-no-bottom{% endif %}">
+    <span class="player-side">{{ bottom_sym }} {{ bottom_side }}</span>
+    <span class="player-name player-name--bot">{{ bot_label }}</span>
+  </div>
 
 </div>
 
@@ -16,11 +23,6 @@
 (function () {
   if (window.WoodLeagueEngineLines && typeof window.WoodLeagueEngineLines.clearRequestState === 'function') {
     window.WoodLeagueEngineLines.clearRequestState();
-  }
-
-  var engineLinesHeader = document.getElementById('engine-lines-header');
-  if (engineLinesHeader) {
-    engineLinesHeader.textContent = '{{ context_label|escapejs }}';
   }
 
   // Call setupEngineLineBoard to initialize controls
