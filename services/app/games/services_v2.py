@@ -403,6 +403,25 @@ def _build_dataclass_kwargs(
     }
 
 
+def load_board_inputs(game: Game) -> tuple[str, list[SfMoveRow], list[Lc0MoveRow]]:
+    """Return (pgn, sf_moves, lc0_moves) for the analysis-page board builder.
+
+    Wraps the v2 analysis loaders so view code doesn't need to know about
+    GameAnalysis / Lc0GameAnalysis lookups or row construction.
+
+    Parameters:
+        game (Game): The Django Game model row to render.
+
+    Returns:
+        tuple[str, list[SfMoveRow], list[Lc0MoveRow]]:
+            - pgn: The game's PGN string (empty string if the Game has no pgn set).
+            - sf_moves: Stockfish move rows, or [] when no SF analysis exists.
+            - lc0_moves: LC0 move rows, or [] when no LC0 analysis exists.
+    """
+    ga, lga = _load_analyses(game)
+    return (game.pgn or "", _sf_rows(ga), _lc0_rows(lga))
+
+
 def get_game_analysis_v2(slug: str) -> GameAnalysisDataV2 | None:
     """Return new-schema analysis for the given slug, or None.
 
