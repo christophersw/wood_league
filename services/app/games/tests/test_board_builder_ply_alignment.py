@@ -5,9 +5,12 @@ Description:
     Lc0MoveRow lists, maps each analysis row to the correct displayed ply.
     Exercises the fix for the positional zip/enumerate bug where LC0 rows
     starting at a different first ply from SF were assigned to the wrong frame.
+    Also verifies v2 frames are self-contained (svg, ply, san, last_move_uci,
+    classification in every frame).
 
 Changelog:
     2026-05-21 (#186): Initial — ply-alignment regression test.
+    2026-05-26 (#209): Add test_v2_frames_are_self_contained.
 """
 import pytest
 from games.board_builder import build_board_frames
@@ -81,3 +84,37 @@ def test_arrow_at_ply_matches_source_ply(simple_pgn_game):
     ply1 = frames["frames"][1]
     assert any(a["engine"] == "sf" and a["uci"] == "e2e4" for a in ply1["arrows"])
     assert not any(a["engine"] == "lc0" for a in ply1["arrows"])
+
+
+def test_v2_frames_are_self_contained(simple_pgn_game):
+    """Every v2 frame carries svg, ply, san, last_move_uci, classification.
+
+    Ply-0 (start position) must have None for san, last_move_uci, and
+    classification. Ply-1 (first move) must carry the SAN, UCI, and
+    classification sourced from the matching SF row.
+
+    Parameters:
+        simple_pgn_game: Fixture game exposing a parsable .pgn.
+    """
+    sf = [SfMoveRow(
+        ply=1, san="e4", fen="", cp_eval=20.0, mate_in=None, cpl=0.0,
+        move_win_delta=0.0, classification="best", best_move="",
+        arrow_uci_1=None, arrow_uci_2=None, arrow_uci_3=None,
+        arrow_cp_1=None, arrow_cp_2=None, arrow_cp_3=None,
+        pv_san_1=None, pv_san_2=None, pv_san_3=None,
+    )]
+    frames = build_board_frames(
+        pgn=simple_pgn_game.pgn, sf_moves=sf, lc0_moves=[], orientation="white",
+    )["frames"]
+    # Ply 0 = start position; san and last_move_uci must be None there.
+    assert frames[0]["ply"] == 0
+    assert frames[0]["san"] is None
+    assert frames[0]["last_move_uci"] is None
+    assert frames[0]["classification"] is None
+    assert isinstance(frames[0]["svg"], str) and frames[0]["svg"].startswith("<svg")
+    # Ply 1 = first move; san + last_move_uci + classification populated from SF.
+    assert frames[1]["ply"] == 1
+    assert frames[1]["san"] == "e4"
+    assert frames[1]["last_move_uci"] == "e2e4"
+    assert frames[1]["classification"] == "best"
+    assert isinstance(frames[1]["svg"], str) and frames[1]["svg"].startswith("<svg")

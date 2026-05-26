@@ -375,8 +375,14 @@ def _build_frames_v2(
     starts at ply 3 never bleeds its arrows into ply 1 or ply 2.
 
     Returns a dict where frames["frames"] is a list indexed by ply (0 = start).
-    Each entry is a dict {svg: str, arrows: list[dict]}.  The arrows list
-    contains one entry per suggested engine move with keys:
+    Each entry is a self-contained dict with keys:
+        svg            (str):       Board SVG for this ply's position.
+        arrows         (list[dict]): Engine arrow suggestions.
+        ply            (int):       0-based ply index.
+        san            (str|None):  SAN move that reached this ply (None for ply 0).
+        last_move_uci  (str|None):  UCI move that reached this ply (None for ply 0).
+        classification (str|None):  SF move classification or None.
+    The arrows list contains one entry per suggested engine move with keys:
         engine (str): "sf" or "lc0"
         uci    (str): UCI move string for the suggestion (e.g. "g1f3")
         tier   (int): 1-based rank among the engine's suggestions
@@ -400,7 +406,14 @@ def _build_frames_v2(
         board = chess.Board()
         start_svg = chess.svg.board(board, size=size, flipped=flipped, colors=_BOARD_COLORS)
         return {
-            "frames": [{"svg": start_svg, "arrows": []}],
+            "frames": [{
+                "svg": start_svg,
+                "arrows": [],
+                "ply": 0,
+                "san": None,
+                "last_move_uci": None,
+                "classification": None,
+            }],
             "san_list": [],
             "total_frames": 1,
             "overlay_geometry": overlay_geometry,
@@ -417,11 +430,20 @@ def _build_frames_v2(
 
     # Frame 0 — start position, no arrows (no move has been played yet).
     start_svg = chess.svg.board(board, size=size, flipped=flipped, colors=_BOARD_COLORS)
-    frames: list[dict] = [{"svg": start_svg, "arrows": []}]
+    frames: list[dict] = [{
+        "svg": start_svg,
+        "arrows": [],
+        "ply": 0,
+        "san": None,
+        "last_move_uci": None,
+        "classification": None,
+    }]
     san_list: list[str] = []
 
     for move in moves_played:
-        san_list.append(board.san(move))
+        san_str = board.san(move)
+        san_list.append(san_str)
+        uci_str = move.uci()
         is_white_move = board.turn == chess.WHITE
         board.push(move)
         current_ply = board.ply()
@@ -443,7 +465,14 @@ def _build_frames_v2(
             flipped=flipped,
             colors=board_colors_for_move_classification(sf_classification),
         )
-        frames.append({"svg": svg, "arrows": arrows})
+        frames.append({
+            "svg": svg,
+            "arrows": arrows,
+            "ply": current_ply,
+            "san": san_str,
+            "last_move_uci": uci_str,
+            "classification": sf_classification,
+        })
 
     return {
         "frames": frames,
