@@ -10,6 +10,7 @@ Changelog:
     2026-05-26 (#212): Initial — guards the new annotation single source of truth.
 """
 import pytest
+from django.template import Context, Template
 
 from games.move_annotations import ANNOTATIONS, symbol, title
 
@@ -83,3 +84,44 @@ def test_title_falls_back_to_classification_when_unknown():
 def test_title_returns_empty_string_for_none():
     """A None classification (unanalyzed move) yields no title."""
     assert title(None) == ""
+
+
+# --- Template-tag filter tests ---
+
+
+def _render(template_source: str, context: dict) -> str:
+    """Render a template fragment with {% load games_extras %} for filter tests.
+
+    Parameters:
+        template_source (str): The template body (without the load tag).
+        context (dict): The render context.
+
+    Returns:
+        str: The rendered output.
+    """
+    full = "{% load games_extras %}" + template_source
+    return Template(full).render(Context(context))
+
+
+def test_move_annotation_symbol_filter_returns_canonical_symbol():
+    """The filter exposes symbol() to templates."""
+    out = _render("{{ cls|move_annotation_symbol }}", {"cls": "blunder"})
+    assert out == "??"
+
+
+def test_move_annotation_symbol_filter_returns_empty_for_none():
+    """None classification renders as empty string (no badge)."""
+    out = _render("{{ cls|move_annotation_symbol }}", {"cls": None})
+    assert out == ""
+
+
+def test_move_annotation_title_filter_returns_human_label():
+    """The filter exposes title() to templates."""
+    out = _render("{{ cls|move_annotation_title }}", {"cls": "inaccuracy"})
+    assert out == "Inaccuracy"
+
+
+def test_move_annotation_title_filter_falls_back_to_classification():
+    """Unknown classification → renders the input unchanged."""
+    out = _render("{{ cls|move_annotation_title }}", {"cls": "future-class"})
+    assert out == "future-class"
