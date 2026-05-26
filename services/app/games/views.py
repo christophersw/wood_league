@@ -54,10 +54,11 @@ from django.shortcuts import get_object_or_404, render
 
 from analysis.models import AnalysisJob
 from games.board_builder import board_colors_for_move_classification, build_board_frames
-from games.models import Game
 from games.cards import build_lc0_card_context, build_sf_card_context
 from games.chart_data import lc0_wdl_payload, sf_cp_payload, winpct_payload
 from games.chip_data import chips_for_ply
+from games.models import Game
+from games.move_annotations import ANNOTATIONS
 from games.services_v2 import (
     GameAnalysisDataV2,
     Lc0MoveRow,
@@ -206,6 +207,7 @@ def game_analysis(request: HttpRequest, slug: str) -> HttpResponse:
         "no_data": False,
         "initial_ply": initial_ply,
         "initial_perspective": initial_perspective,
+        "move_annotations": ANNOTATIONS,
     })
 
 

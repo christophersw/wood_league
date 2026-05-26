@@ -18,6 +18,53 @@
 .engine-line-inline .eln-mv.is-active { background: color-mix(in srgb, var(--color-gold) 35%, transparent); box-shadow: inset 0 -2px 0 var(--color-forest); }
 .engine-line-inline .eln-empty { font-family: var(--font-mono); font-size: 0.72rem; color: var(--color-peat); opacity: 0.7; }
 .engine-lines-idle { display:flex; align-items:center; justify-content:center; text-align:center; min-height:120px; padding:0 16px; line-height:1.5; border-top:2.5px solid var(--color-ebony); font-family:var(--font-mono); font-size:.72rem; color:var(--color-peat); }
+.moves-strip-slot { padding: 0; }
+.moves-strip {
+  font-family: var(--font-serif);
+  font-size: 0.95rem;
+  line-height: 1.8;
+  color: var(--color-ebony);
+  padding: 8px 10px 10px;
+  border-top: 1px solid var(--color-card-border-soft);
+  max-height: calc(1.8em * 6);
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.moves-strip .moves-num {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  color: var(--color-peat);
+  margin: 0 2px 0 6px;
+}
+.moves-strip .moves-mv {
+  background: transparent;
+  border: 0;
+  padding: 0 3px;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  display: inline;
+}
+.moves-strip .moves-mv:hover,
+.moves-strip .moves-mv:focus-visible {
+  background: color-mix(in srgb, var(--color-gold) 18%, transparent);
+  outline: 0;
+}
+.moves-strip .moves-mv.is-active {
+  background: color-mix(in srgb, var(--color-gold) 35%, transparent);
+  box-shadow: inset 0 -2px 0 var(--color-forest);
+}
+.moves-strip .move-annotation {
+  margin-left: 1px;
+  font-size: 0.78em;
+  vertical-align: baseline;
+}
+.moves-strip .moves-empty {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--color-peat);
+  opacity: 0.7;
+}
 </style>
 <div class="page-hero">
   <div>
@@ -65,6 +112,9 @@
       <div id="board-container"
            hx-get="/_partials/games/{{ game.slug }}/board/?orientation={{ initial_perspective }}"
            hx-trigger="load" hx-swap="innerHTML">Loading board…</div>
+      <div class="moves-strip-slot"
+           hx-get="/_partials/games/{{ game.slug }}/pgn/"
+           hx-trigger="load" hx-swap="innerHTML">Loading moves…</div>
     </section>
     <section class="wc-card engine-line-plate" aria-label="Engine line explorer">
       <header class="wc-card__head">
@@ -100,7 +150,6 @@
   <div hx-get="/_partials/games/{{ game.slug }}/charts/winpct/" hx-trigger="load" hx-swap="innerHTML"></div>
   <div hx-get="/_partials/games/{{ game.slug }}/charts/sf-cp/" hx-trigger="load" hx-swap="innerHTML"></div>
   <div hx-get="/_partials/games/{{ game.slug }}/charts/lc0-wdl/" hx-trigger="load" hx-swap="innerHTML"></div>
-  <div hx-get="/_partials/games/{{ game.slug }}/pgn/" hx-trigger="load" hx-swap="innerHTML"></div>
 </div>
 
 {% include "games/_queue_modal.html" %}
@@ -114,6 +163,35 @@
 <script src="{% static 'games/cardTooltip.js' %}"></script>
 <script src="{% static 'games/charts/chartTheme.js' %}"></script>
 <script src="{% static 'games/charts/chartTooltip.js' %}"></script>
+{{ move_annotations|json_script:"move-annotations-data" }}
+<script>
+(function () {
+  var raw = document.getElementById("move-annotations-data");
+  if (!raw) return;
+  var data = JSON.parse(raw.textContent || "{}");
+  // Build the flat {symbols, titles} shape consumed by legacy callers
+  // (pgnTable.js previously read .symbols/.titles before this work, and
+  // charts/sfCp.js still reads .colors — populated below from the same source).
+  var symbols = {};
+  var titles = {};
+  Object.keys(data).forEach(function (cls) {
+    symbols[cls] = data[cls].symbol;
+    titles[cls] = data[cls].title;
+  });
+  window.WoodLeagueMoveAnnotations = {
+    raw: data,
+    symbols: symbols,
+    titles: titles,
+    // sfCp.js consumer — map each classification to its CSS class so the
+    // chart can pull the right swatch via getComputedStyle. Keys stay in
+    // sync with the .move-annotation-{cls} classes hardcoded in main.css.
+    colors: Object.keys(data).reduce(function (acc, cls) {
+      acc[cls] = "move-annotation-" + cls;
+      return acc;
+    }, {}),
+  };
+})();
+</script>
 <script>
 window.ANALYSIS_DATA = {
   slug: "{{ game.slug }}",
