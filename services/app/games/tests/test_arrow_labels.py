@@ -42,3 +42,18 @@ def test_lc0_arrow_has_signed_winpct_label(simple_pgn_game):
     arrow = frames["frames"][1]["arrows"][0]
     assert arrow["label"].startswith("Lc0 ")
     assert "%" in arrow["label"]
+
+
+def test_v2_arrow_entry_has_color_opacity_stroke(simple_pgn_game):
+    """Each v2 arrow entry carries engine color, opacity, and stroke width."""
+    sf = [SfMoveRow(
+        ply=1, san="e4", fen="", cp_eval=20.0, mate_in=None, cpl=0.0, move_win_delta=0.0,
+        classification="best", best_move="", arrow_uci_1="e2e4", arrow_uci_2=None, arrow_uci_3=None,
+        arrow_cp_1=65.0, arrow_cp_2=None, arrow_cp_3=None,
+        pv_san_1=None, pv_san_2=None, pv_san_3=None,
+    )]
+    frames = build_board_frames(pgn=simple_pgn_game.pgn, sf_moves=sf, lc0_moves=[], orientation="white")
+    arrow = frames["frames"][1]["arrows"][0]
+    assert isinstance(arrow["color"], str) and arrow["color"].startswith("#"), arrow
+    assert 0.42 <= arrow["opacity"] <= 0.98, arrow
+    assert arrow["stroke_width"] == 7, arrow

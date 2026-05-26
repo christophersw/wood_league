@@ -487,9 +487,13 @@ def _arrow_entries_from_row(engine_key: str, row: object, is_white_move: bool) -
     """
     Extract flat arrow metadata dicts from a single analysis row.
 
-    Reads arrow_uci_1 / arrow_uci_2 / arrow_uci_3 from new-schema dataclasses.
-    Attaches a human-readable `label` to each entry using arrow_cp_* (SF) or
-    delta_mu (LC0).
+    Each arrow's ``label`` is the candidate's signed delta vs the move actually
+    played, mover-relative: SF as a pawn delta (candidate cp - played cp), LC0 as
+    a win-% delta (candidate expected-score mu - played mu from raw WDL triples).
+
+    Each arrow also carries ``color`` (engine base hex), ``opacity`` (encoding tier
+    rank and delta magnitude), and ``stroke_width`` (constant 7, matching the
+    legacy default the JS still expects).
 
     Params:
         engine_key    (str):    "sf" or "lc0".
@@ -497,35 +501,48 @@ def _arrow_entries_from_row(engine_key: str, row: object, is_white_move: bool) -
         is_white_move (bool):   True when the mover for this ply is White.
 
     Returns:
-        List of arrow dicts, each containing: engine, uci, tier, label.
+        List of arrow dicts: {engine, uci, tier, label, color, opacity, stroke_width}.
     """
     ucis = [
         getattr(row, "arrow_uci_1", None),
         getattr(row, "arrow_uci_2", None),
         getattr(row, "arrow_uci_3", None),
     ]
-    # White-frame candidate centipawns (#197); flipped to the mover frame below
-    # so the SF eval label reads positive for a good move by the side to move.
-    scores = [
-        getattr(row, "arrow_cp_1", None),
-        getattr(row, "arrow_cp_2", None),
-        getattr(row, "arrow_cp_3", None),
-    ]
+    base_color = _ENGINE_BASE_COLORS[engine_key]
+    entries: list[dict] = []
     # LC0 label uses delta_mu directly (= candidate_mu − played_mu).
     delta_mu: float | None = getattr(row, "delta_mu", None)
+    # SF: the played move's mover-frame score, for delta computation.
+    played_cp = getattr(row, "cp_eval", None)
+    played_mover_cp = _mover_relative_score(played_cp, is_white_move)
 
-    entries: list[dict] = []
-    for tier_index, (uci, score) in enumerate(zip(ucis, scores)):
-        if uci and len(uci) >= 4:
-            label = _arrow_label(
-                engine_key, _mover_relative_score(score, is_white_move), delta_mu,
-            )
-            entries.append({
-                "engine": engine_key,
-                "uci": uci,
-                "tier": tier_index + 1,
-                "label": label,
-            })
+    for tier_index, uci in enumerate(ucis):
+        if not (uci and len(uci) >= 4):
+            continue
+
+        if engine_key == "sf":
+            cand_cp = getattr(row, f"arrow_cp_{tier_index + 1}", None)
+            # Convert white-frame candidate to mover-frame for label display.
+            cand_mover_cp = _mover_relative_score(cand_cp, is_white_move)
+            label = _arrow_label("sf", cand_mover_cp, None)
+            # Delta for opacity shading: mover-frame candidate minus mover-frame played.
+            delta_for_opacity: float | None = None
+            if cand_mover_cp is not None and played_mover_cp is not None:
+                delta_for_opacity = cand_mover_cp - played_mover_cp
+        else:
+            label = _arrow_label("lc0", None, delta_mu)
+            # Scale mu delta (0..1 unit) into cp-equivalent for opacity shading.
+            delta_for_opacity = (delta_mu * 100.0) if delta_mu is not None else None
+
+        entries.append({
+            "engine": engine_key,
+            "uci": uci,
+            "tier": tier_index + 1,
+            "label": label,
+            "color": base_color,
+            "opacity": _build_arrow_opacity(delta_for_opacity, tier_index),
+            "stroke_width": 7,
+        })
     return entries
 
 
