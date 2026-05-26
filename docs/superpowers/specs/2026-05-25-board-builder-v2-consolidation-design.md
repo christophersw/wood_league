@@ -63,13 +63,22 @@ def build_board_frames(
         …
     ],
     "overlay_geometry": {…},                # constant per game (depends on size)
-    "player_layout": {…},                   # constant per game (top/bottom side, names)
-    "has_sf": bool,
-    "has_lc0": bool,
+    # Player-layout keys are flat at top level (not nested), matching the legacy
+    # template contract so the cutover needs no template variable-name churn.
+    "top_player":    str | None,
+    "top_sym":       str,                   # "♔" / "♚"
+    "top_side":      "White" | "Black",
+    "bottom_player": str | None,
+    "bottom_sym":    str,
+    "bottom_side":   "White" | "Black",
+    "has_sf":        bool,
+    "has_lc0":       bool,
+    "san_list":      list[str],             # convenience: SAN per ply (excluding start frame)
+    "total_frames":  int,                   # convenience: len(frames)
 }
 ```
 
-Top-level keys dropped vs. legacy: `total_frames` (use `len(frames)`), `san_list` (use `[f["san"] for f in frames[1:]]`), sidecar `arrows_by_ply` (now `frames[i]["arrows"]`).
+Top-level key dropped vs. legacy: sidecar `arrows_by_ply` (arrows now live in `frames[i]["arrows"]`). `san_list` and `total_frames` are kept as convenience aggregations the template still reads (slider max, PGN-sync). `arrow_data_json` context key, the `board-arrows-json` script block, and the `is_best_json` / `board-isbest-json` and `board-san-json` dead blocks were also removed (the latter two in PR #210 review cleanup — they were unread by any JS).
 
 ### Per-arrow dict (tightened)
 
