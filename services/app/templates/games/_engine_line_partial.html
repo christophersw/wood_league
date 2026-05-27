@@ -3,7 +3,6 @@
 
   {# JSON data containers — read by JS below #}
   <script type="application/json" id="engine-line-frames-json">{{ frames_json|safe }}</script>
-  <script type="application/json" id="engine-line-arrows-json">{{ arrow_labels_json|safe }}</script>
   <script type="application/json" id="engine-line-san-json">{{ san_list_json|safe }}</script>
 
   {# Board SVG container with bot player labels on both sides #}
@@ -28,9 +27,8 @@
   // Call setupEngineLineBoard to initialize controls
   if (window.setupEngineLineBoard) {
     var framesJson = document.getElementById('engine-line-frames-json').textContent;
-    var arrowLabelsJson = document.getElementById('engine-line-arrows-json').textContent;
     var sanListJson = document.getElementById('engine-line-san-json').textContent;
-    window.setupEngineLineBoard(framesJson, arrowLabelsJson, sanListJson);
+    window.setupEngineLineBoard(framesJson, sanListJson);
   }
 })();
 </script>

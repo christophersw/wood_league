@@ -4,9 +4,6 @@
   {# JSON data containers — read by JS below, not executed #}
   {# board-frames-json: list[dict] — each entry is {svg, arrows, ply, san, last_move_uci, classification} #}
   <script type="application/json" id="board-frames-json">{{ frames_json|safe }}</script>
-  {# board-arrows-json removed (Task 7, #209): arrows are now embedded per-frame above #}
-  {# board-san-json removed (#210 M3): SAN is embedded per-frame in frames[ply].san #}
-  {# board-isbest-json removed (#210 M2): is_best_map was dead code; not read by any JS #}
 
   {# Top player label #}
   <div class="player-label{% if top_side == 'White' %} player-label-no-top{% endif %}{% if top_side == 'Black' %} player-label-no-bottom{% endif %}">
@@ -41,7 +38,6 @@
     <button class="board-btn" id="board-btn-next" title="Next">&#x25B6;&#xFE0E;</button>
     <button class="board-btn" id="board-btn-end" title="End">&#x23ED;</button>
     <input type="range" id="board-slider" min="0" max="{{ total_frames|add:'-1' }}" value="0" style="flex:1;max-width:220px;accent-color:var(--color-gold);">
-    <span id="board-ply-label" style="font-family:var(--font-mono);font-size:.68rem;color:var(--color-rust);min-width:72px;text-align:center;letter-spacing:.04em;">Start</span>
   </div>
 
 </div>
@@ -70,7 +66,7 @@
 .board-arrow-label{font-family:var(--font-mono);font-size:10px;font-weight:700;pointer-events:none;}
 .board-arrow-label--sf{fill:var(--color-tobacco);}
 .board-arrow-label--lc0{fill:var(--color-denim);}
-.board-controls{display:flex;align-items:center;gap:5px;padding:8px 0 6px;justify-content:center;border-top:1px solid var(--color-card-border-soft);flex-wrap:wrap;}
+.board-controls{display:flex;align-items:center;gap:5px;padding:8px 10px 6px;justify-content:flex-start;border-top:1px solid var(--color-card-border-soft);flex-wrap:wrap;}
 .board-btn{background:transparent;color:var(--color-ebony);border:1.5px solid var(--color-ebony);border-radius:0;padding:4px 10px;cursor:pointer;font-family:var(--font-mono);font-size:.85rem;min-width:32px;transition:background .15s,color .15s;}
 .board-btn:hover{background:var(--color-ebony);color:var(--color-parchment);}
 </style>
@@ -81,7 +77,6 @@
   var SVG_NS = 'http://www.w3.org/2000/svg';
   var SAME_ORIGIN_ARROW_SPACING = 9;
   var frames = JSON.parse(document.getElementById('board-frames-json').textContent);
-  // arrowsByPly removed (Task 7, #209): arrows are now embedded in each frame dict.
   var boardOrientation = '{{ orientation }}';
   var overlayViewboxSize = parseFloat('{{ overlay_viewbox_size }}');
   var overlayBoardMargin = parseFloat('{{ overlay_board_margin }}');
@@ -91,7 +86,6 @@
   var svgWrap = document.getElementById('board-svg-wrap');
   var arrowOverlay = document.getElementById('board-arrow-overlay');
   var slider = document.getElementById('board-slider');
-  var plyLabel = document.getElementById('board-ply-label');
   var btnStart = document.getElementById('board-btn-start');
   var btnPrev = document.getElementById('board-btn-prev');
   var btnPlay = document.getElementById('board-btn-play');
@@ -587,13 +581,8 @@
     svgWrap.innerHTML = (typeof frameData === 'object' && frameData !== null) ? (frameData.svg || '') : frameData;
     renderArrowOverlay(ply);
     slider.value = ply;
-    if (ply === 0) {
-      plyLabel.textContent = 'Start';
-    } else {
-      var moveNum = Math.ceil(ply / 2);
-      var dots = ply % 2 === 0 ? '...' : '.';
-      plyLabel.textContent = moveNum + dots + ' (ply ' + ply + ')';
-    }
+    // ply-label text removed (#212 v4) — current move is shown by the
+    // .is-active chip in the moves strip below the board.
   }
 
   arrowOverlay.addEventListener('click', function (event) {

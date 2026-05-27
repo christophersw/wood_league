@@ -11,13 +11,146 @@
 
 {% block content %}
 <style>
-.engine-line-inline { font-family: var(--font-serif); font-size: 0.95rem; line-height: 1.8; color: var(--color-ebony); padding: 6px 10px 10px; }
-.engine-line-inline .eln-num { font-family: var(--font-mono); font-size: 0.62rem; color: var(--color-peat); margin: 0 2px 0 6px; }
+/* Engine-line continuation strip — share the moves-strip mono/ebony palette
+   so the two strips read as siblings. (Per #212 live-review item 8.) */
+.engine-line-inline { font-family: var(--font-mono, 'DM Mono', monospace); font-size: 0.72rem; line-height: 1.8; color: var(--color-ebony); padding: 6px 10px 10px; font-weight: 700; letter-spacing: 0.02em; }
+.engine-line-inline .eln-num { font-family: var(--font-mono); font-size: 0.6rem; color: var(--color-peat); font-weight: 600; margin: 0 2px 0 6px; }
 .engine-line-inline .eln-mv { padding: 0 3px; cursor: pointer; }
 .engine-line-inline .eln-mv:hover { background: color-mix(in srgb, var(--color-gold) 18%, transparent); }
 .engine-line-inline .eln-mv.is-active { background: color-mix(in srgb, var(--color-gold) 35%, transparent); box-shadow: inset 0 -2px 0 var(--color-forest); }
 .engine-line-inline .eln-empty { font-family: var(--font-mono); font-size: 0.72rem; color: var(--color-peat); opacity: 0.7; }
 .engine-lines-idle { display:flex; align-items:center; justify-content:center; text-align:center; min-height:120px; padding:0 16px; line-height:1.5; border-top:2.5px solid var(--color-ebony); font-family:var(--font-mono); font-size:.72rem; color:var(--color-peat); }
+/* Engine-line card info tooltip — only one popup is visible at a time based
+   on which engine's line is currently shown. Default is SF (the engine-line
+   card mounts with .engine-line-plate--sf; engineLines.js swaps to --lc0
+   when an LC0 arrow is opened). #212 v5 live-review. */
+.engine-line-plate--sf .engine-line-info-pop--lc0 { display: none; }
+.engine-line-plate--lc0 .engine-line-info-pop--sf { display: none; }
+/* Right-justify the branching-context label so it sits flush with the
+   info icon at the right edge of the card header (#212 v6 live-review). */
+.engine-line-plate__ctx {
+  margin-left: auto;
+  margin-right: 8px;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  color: var(--color-peat);
+  letter-spacing: 0.02em;
+}
+.moves-strip-slot { padding: 0; }
+/* Collapsible Moves panel — mirrors the engine-line continuation <details>
+   pattern but lives in the Position card under the main board. */
+.moves-panel { border-top: 1px solid var(--color-card-border-soft); }
+.moves-panel-summary {
+  cursor: pointer;
+  list-style: none;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-rust);
+  padding: 8px 12px;
+  user-select: none;
+}
+.moves-panel-summary .moves-engine-tag {
+  font-size: 0.62rem;
+  letter-spacing: 0.06em;
+  color: var(--color-peat);
+  text-transform: none;
+  margin-left: 6px;
+  font-weight: 400;
+}
+.moves-panel-summary .moves-engine-name { font-weight: 700; color: var(--color-rust); }
+.moves-panel-summary::-webkit-details-marker { display: none; }
+.moves-panel-summary::before {
+  content: "▸";
+  display: inline-block;
+  margin-right: 6px;
+  transition: transform 0.12s ease;
+}
+.moves-panel[open] > .moves-panel-summary::before { transform: rotate(90deg); }
+.moves-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+  padding: 0.45rem 0.75rem 0.6rem;
+  /* Bounded scroll so 200-ply games don't push the page around; the active
+     chip is auto-scrolled into view by pgnTable.js as the user steps. */
+  max-height: calc(2.2rem * 6);
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+/* Chip body — extends .move-chip from main.css for the per-classification
+   top-bar treatment. Override .move-chip's default cursor:default so the
+   button reads as clickable, and tweak padding so the move-number prefix
+   sits flush left inside the chip. */
+.moves-strip .moves-mv {
+  cursor: pointer;
+  padding: 0.18rem 0.5rem 0.15rem;
+  gap: 0.3rem;
+  transition: background 0.1s ease;
+}
+/* Move-number prefix — now lives between chip pairs as a flex sibling,
+   shared by both white and black chips of the same move number
+   (#212 v4 live-review item 2). Aligns vertically with the chip text. */
+.moves-strip > .moves-num {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--color-peat);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 0.18rem 0.05rem 0.15rem 0.3rem;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+}
+.moves-strip .moves-mv .moves-san {
+  color: var(--color-ebony);
+  font-weight: 700;
+}
+.moves-strip .moves-mv:hover,
+.moves-strip .moves-mv:focus-visible {
+  background: color-mix(in srgb, var(--color-gold) 18%, transparent);
+  outline: 0;
+}
+/* Active chip — bottom bar in forest, like the engine-line continuation.
+   This stacks with the classification top-bar (the chip's border-top from
+   .move-chip.move-annotation-*) so an active blunder shows red on top and
+   forest on bottom simultaneously. */
+.moves-strip .moves-mv.is-active {
+  background: color-mix(in srgb, var(--color-gold) 35%, transparent);
+  box-shadow: inset 0 -2.5px 0 var(--color-forest);
+}
+/* Unanalyzed moves (no classification) — use a muted default top bar so
+   chips are still visually identifiable as chips without implying a quality. */
+.moves-strip .moves-mv--unanalyzed { border-top-color: var(--color-band, #C9B998); }
+/* Annotation badges inside chips — strip the colored background that
+   .move-annotation-{cls} sets in main.css (those are for the SF accuracy
+   bar segments). Inside the chip we want the symbol as plain text alongside
+   the SAN; the chip's top-border already carries the classification colour. */
+.moves-strip .move-annotation {
+  margin-left: 1px;
+  font-size: 0.85em;
+  vertical-align: baseline;
+  background: transparent !important;
+  padding: 0;
+  color: var(--color-rust);
+  font-weight: 700;
+}
+/* Per-engine source toggling — default to SF visible, LC0 hidden. JS adds
+   .moves-source--lc0 / .moves-source--sf on #pgn-moves based on the board
+   arrow-toggle state (item 3b in #212 live review). Both badge variants are
+   server-rendered; CSS picks the visible one. */
+.moves-strip .moves-badge--lc0 { display: none; }
+.moves-strip.moves-source--lc0 .moves-badge--sf { display: none; }
+.moves-strip.moves-source--lc0 .moves-badge--lc0 { display: inline; }
+.moves-strip .moves-empty {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--color-peat);
+  opacity: 0.7;
+  padding: 0.5rem 0.75rem;
+}
 </style>
 <div class="page-hero">
   <div>
@@ -65,11 +198,37 @@
       <div id="board-container"
            hx-get="/_partials/games/{{ game.slug }}/board/?orientation={{ initial_perspective }}"
            hx-trigger="load" hx-swap="innerHTML">Loading board…</div>
+      <div class="moves-strip-slot"
+           hx-get="/_partials/games/{{ game.slug }}/pgn/"
+           hx-trigger="load" hx-swap="innerHTML">Loading moves…</div>
     </section>
-    <section class="wc-card engine-line-plate" aria-label="Engine line explorer">
+    <section class="wc-card engine-line-plate engine-line-plate--sf" id="engine-line-card" aria-label="Engine line explorer">
       <header class="wc-card__head">
         <h3>Engine Line</h3>
         <span id="engine-lines-context" class="engine-line-plate__ctx">—</span>
+        {# Info tooltip — mirrors the SF/LC0 stat-card popups; engineLines.js #}
+        {# toggles engine-line-plate--sf / --lc0 on the <section> to swap which #}
+        {# popup is rendered. (#212 v5 live-review.) #}
+        <span class="card-info engine-line-card-info" tabindex="0" aria-label="Engine line run info">ⓘ
+          <div class="card-pop card-info-pop engine-line-info-pop engine-line-info-pop--sf">
+            <h4>Stockfish — Run info</h4>
+            <dl>
+              <dt>Depth</dt><dd>{{ sf_tooltip_meta.engine_depth|default:"—" }}</dd>
+              <dt>Analyzed</dt><dd>{{ sf_tooltip_meta.analyzed_at|default:"—" }}</dd>
+            </dl>
+          </div>
+          <div class="card-pop card-info-pop engine-line-info-pop engine-line-info-pop--lc0">
+            <h4>Leela Chess Zero — Run info</h4>
+            <dl>
+              <dt>Network</dt><dd>{{ lc0_tooltip_meta.network_name|default:"—" }}</dd>
+              <dt>Nodes</dt><dd>{{ lc0_tooltip_meta.engine_nodes|default:"—" }}</dd>
+              <dt>Contempt</dt><dd>{{ lc0_tooltip_meta.contempt|default:"0" }}</dd>
+              <dt>Draw ref</dt><dd>{% if lc0_tooltip_meta.draw_rate_reference %}{{ lc0_tooltip_meta.draw_rate_reference|floatformat:3 }}{% else %}—{% endif %}</dd>
+              <dt>Cal. Elo</dt><dd>{{ lc0_tooltip_meta.calibration_elo|default:"—" }}</dd>
+              <dt>Analyzed</dt><dd>{{ lc0_tooltip_meta.analyzed_at|default:"—" }}</dd>
+            </dl>
+          </div>
+        </span>
       </header>
       <div id="engine-lines-shell" style="position:relative;">
         <div id="engine-lines-idle" class="engine-lines-idle">
@@ -100,7 +259,6 @@
   <div hx-get="/_partials/games/{{ game.slug }}/charts/winpct/" hx-trigger="load" hx-swap="innerHTML"></div>
   <div hx-get="/_partials/games/{{ game.slug }}/charts/sf-cp/" hx-trigger="load" hx-swap="innerHTML"></div>
   <div hx-get="/_partials/games/{{ game.slug }}/charts/lc0-wdl/" hx-trigger="load" hx-swap="innerHTML"></div>
-  <div hx-get="/_partials/games/{{ game.slug }}/pgn/" hx-trigger="load" hx-swap="innerHTML"></div>
 </div>
 
 {% include "games/_queue_modal.html" %}
@@ -111,9 +269,39 @@
 {% if not no_data %}
 <script src="{% static 'games/plySync.js' %}"></script>
 <script src="{% static 'games/engineLines.js' %}"></script>
+<script src="{% static 'games/movesStrip.js' %}"></script>
 <script src="{% static 'games/cardTooltip.js' %}"></script>
 <script src="{% static 'games/charts/chartTheme.js' %}"></script>
 <script src="{% static 'games/charts/chartTooltip.js' %}"></script>
+{{ move_annotations|json_script:"move-annotations-data" }}
+<script>
+(function () {
+  var raw = document.getElementById("move-annotations-data");
+  if (!raw) return;
+  var data = JSON.parse(raw.textContent || "{}");
+  // Build the flat {symbols, titles} shape consumed by legacy callers
+  // (pgnTable.js previously read .symbols/.titles before this work, and
+  // charts/sfCp.js still reads .colors — populated below from the same source).
+  var symbols = {};
+  var titles = {};
+  Object.keys(data).forEach(function (cls) {
+    symbols[cls] = data[cls].symbol;
+    titles[cls] = data[cls].title;
+  });
+  window.WoodLeagueMoveAnnotations = {
+    raw: data,
+    symbols: symbols,
+    titles: titles,
+    // sfCp.js consumer — map each classification to its CSS class so the
+    // chart can pull the right swatch via getComputedStyle. Keys stay in
+    // sync with the .move-annotation-{cls} classes hardcoded in main.css.
+    colors: Object.keys(data).reduce(function (acc, cls) {
+      acc[cls] = "move-annotation-" + cls;
+      return acc;
+    }, {}),
+  };
+})();
+</script>
 <script>
 window.ANALYSIS_DATA = {
   slug: "{{ game.slug }}",

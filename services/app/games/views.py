@@ -54,10 +54,11 @@ from django.shortcuts import get_object_or_404, render
 
 from analysis.models import AnalysisJob
 from games.board_builder import board_colors_for_move_classification, build_board_frames
-from games.models import Game
 from games.cards import build_lc0_card_context, build_sf_card_context
 from games.chart_data import lc0_wdl_payload, sf_cp_payload, winpct_payload
 from games.chip_data import chips_for_ply
+from games.models import Game
+from games.move_annotations import ANNOTATIONS
 from games.services_v2 import (
     GameAnalysisDataV2,
     Lc0MoveRow,
@@ -200,12 +201,30 @@ def game_analysis(request: HttpRequest, slug: str) -> HttpResponse:
     initial_perspective = request.GET.get("perspective", "white")
     if initial_perspective not in {"white", "black"}:
         initial_perspective = "white"
+    # Engine-line card info-tooltip metadata — same shape the SF + LC0 stat
+    # cards use, exposed here so the Engine Line card header can render its
+    # own ⓘ popup that swaps content based on which engine's line is shown.
+    sf_tooltip_meta = {
+        "engine_depth": data.sf_engine_depth,
+        "analyzed_at": data.sf_analyzed_at,
+    }
+    lc0_tooltip_meta = {
+        "network_name": data.lc0_network_name,
+        "engine_nodes": data.lc0_engine_nodes,
+        "contempt": data.lc0_contempt,
+        "draw_rate_reference": data.lc0_draw_rate_reference,
+        "calibration_elo": data.lc0_calibration_elo,
+        "analyzed_at": data.lc0_analyzed_at,
+    }
     return render(request, "games/analysis.html", {
         "game": game,
         "data": data,
         "no_data": False,
         "initial_ply": initial_ply,
         "initial_perspective": initial_perspective,
+        "move_annotations": ANNOTATIONS,
+        "sf_tooltip_meta": sf_tooltip_meta,
+        "lc0_tooltip_meta": lc0_tooltip_meta,
     })
 
 
@@ -249,7 +268,6 @@ def board_partial(request: HttpRequest, slug: str) -> HttpResponse:
         "slug": slug,
         "orientation": orientation,
         "frames_json": json.dumps(board_data["frames"]),
-        # arrow_data_json dropped — arrows are now embedded per-frame.
         "total_frames": board_data["total_frames"],
         "top_player": board_data["top_player"],
         "top_sym": board_data["top_sym"],
@@ -536,10 +554,8 @@ def engine_line_partial(request: HttpRequest, slug: str) -> HttpResponse:
         ply=params.ply,
     )
 
-    arrow_labels_by_ply: dict[int, list[str]] = {}
     return render(request, "games/_engine_line_partial.html", {
         "frames_json": json.dumps(frames),
-        "arrow_labels_json": json.dumps(arrow_labels_by_ply),
         "san_list_json": json.dumps(san_list),
         "bot_label": bot_label,
         "total_frames": len(frames),
@@ -831,11 +847,16 @@ def pgn_partial(request: HttpRequest, slug: str) -> HttpResponse:
         slug: The game slug identifying which game to render.
 
     Returns:
-        HttpResponse: Rendered _pgn_table.html with ``pgn_moves`` context — a list
-        of dicts with keys: ply, san, color ("white"/"black"), move_number, classification.
+        HttpResponse: Rendered _pgn_table.html with ``pgn_move_pairs`` context — a
+        list of dicts grouping each move number's white/black move dicts (keys:
+        ply, san, color, move_number, sf_classification, lc0_classification).
     """
     data = _load_or_404(slug)
-    by_ply_class = {m.ply: m.classification for m in data.sf_moves}
+    by_ply_sf = {m.ply: m.classification for m in data.sf_moves}
+    # LC0 carries its move-quality label as base_severity (same vocabulary as
+    # SF: brilliant/best/great/excellent/good/inaccuracy/mistake/blunder). See
+    # tests/conftest.py _make_lc0_move_row for the canonical values.
+    by_ply_lc0 = {m.ply: m.base_severity for m in (data.lc0_moves or [])}
     moves: list[dict] = []
     pgn_game = _pgn.read_game(_io.StringIO(data.pgn))
     board = pgn_game.board()
@@ -849,6 +870,37 @@ def pgn_partial(request: HttpRequest, slug: str) -> HttpResponse:
             "san": san,
             "color": "white" if ply % 2 == 1 else "black",
             "move_number": (ply + 1) // 2,
-            "classification": by_ply_class.get(ply),
+            # SF stays exposed as "classification" for backward compat with
+            # any other consumer of this context; the moves-strip template
+            # also reads "sf_classification" / "lc0_classification" so the JS
+            # source-toggle (#212 v3) can swap which engine's classification
+            # drives the chip top-bar + badge.
+            "classification": by_ply_sf.get(ply),
+            "sf_classification": by_ply_sf.get(ply),
+            "lc0_classification": by_ply_lc0.get(ply),
         })
-    return render(request, "games/partials/_pgn_table.html", {"pgn_moves": moves})
+
+    # Group by move number for the moves-strip template, so the move-number
+    # prefix can render once per pair instead of inside both the white and
+    # black chips of the same number (#212 v4 live-review item 2).
+    #
+    # Each pair: {number: int, white: move|None, black: move|None,
+    #             leading_color: "white"|"black"} — leading_color is what the
+    # first ply in this pair was, used by the template to decide between
+    # "{n}." (white-leads) and "{n}…" (black-leads, only on first pair when
+    # the PGN starts mid-position with Black to move).
+    pgn_move_pairs: list[dict] = []
+    current_pair: dict | None = None
+    for m in moves:
+        if current_pair is None or current_pair["number"] != m["move_number"]:
+            current_pair = {
+                "number": m["move_number"],
+                "white": None,
+                "black": None,
+                "leading_color": m["color"],
+            }
+            pgn_move_pairs.append(current_pair)
+        current_pair[m["color"]] = m
+    return render(request, "games/partials/_pgn_table.html", {
+        "pgn_move_pairs": pgn_move_pairs,
+    })

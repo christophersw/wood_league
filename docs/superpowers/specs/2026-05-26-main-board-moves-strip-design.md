@@ -61,7 +61,7 @@ Position card
 {#     the pgnTable.js delegated click handler; the active chip is highlighted #}
 {#     and scrolled into view as the user steps through the game. #}
 {# Changelog: #}
-{#     2026-05-26 (#new): replace <details>Moves</details> + two-column table #}
+{#     2026-05-26 (#212): replace <details>Moves</details> + two-column table #}
 {#                       with inline strip; relocate slot under main board. #}
 {% load static %}
 
@@ -170,7 +170,7 @@ Remove the old slot at line 103:
  *   WoodLeagueAnalysis ply-state bus, and keeps the active chip visible.
  *
  * Changelog:
- *   2026-05-26 (#new): rewritten — server-rendered chip strip replaces the
+ *   2026-05-26 (#212): rewritten — server-rendered chip strip replaces the
  *                     two-column table; no DOM construction in JS.
  *   2026-05-21 (#186): Task 14 — lifted from inline analysis.html.
  */
@@ -341,4 +341,4 @@ Gate per-commit: ruff, mypy, bandit -ll on edited `.py` files, `pytest games/`. 
 None at design time. Implementation phase will resolve:
 
 - Exact `WoodLeagueMoveAnnotations` symbol/title values (read at implementation start, mirrored into `ANNOTATIONS`).
-- Where the JS-side `window.WoodLeagueMoveAnnotations` is currently defined (the consolidation needs to replace that definition; if it lives outside the shell template, we relocate the `json_script` accordingly).
+- ~~Where the JS-side `window.WoodLeagueMoveAnnotations` is currently defined~~ — **Resolved 2026-05-26:** never actually defined anywhere in the codebase. `pgnTable.js:29` and `charts/sfCp.js:18` consume it with `{}` fallbacks, so annotation badges have been silently absent the whole time. The implementation creates the JS object net-new via `json_script` in `analysis.html`'s `extra_js` block. The new payload also includes a `colors` key (classification → CSS variable name) to feed `sfCp.js`'s existing `WoodLeagueMoveAnnotations.colors` consumer; `sfCp.js` itself is not modified here.
