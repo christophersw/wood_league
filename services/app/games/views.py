@@ -16,7 +16,6 @@ Changelog:
                       and queue_analysis views; removed build_board_viewer_html usage
     2026-05-21 (#186): Wire card_sf_partial to build_sf_card_context; import cards module.
     2026-05-21 (#186): Wire card_lc0_partial to build_lc0_card_context with side_labels.
-    2026-05-21 (#186): Wire chart_winpct_partial to winpct_payload from chart_data.
     2026-05-21 (#186): Wire chart_sf_cp_partial to sf_cp_payload from chart_data.
     2026-05-21 (#186): Wire chips_partial to chips_for_ply from chip_data.
     2026-05-21 (#186): Task 14 — wire pgn_partial to walk PGN mainline and attach SF classifications.
@@ -39,6 +38,7 @@ Changelog:
                       get_game_analysis import) so the d1bb7f0 helper extraction
                       (_EngineLineParams / _parse_engine_line_request / _build_continuation_frames /
                       _engine_line_bot_label) runs on top of #209's deleted v1 surface.
+    2026-05-27 (#216): Task 8 — delete chart_winpct_partial view; remove winpct_payload import.
 """
 
 import io as _io
@@ -55,7 +55,7 @@ from django.shortcuts import get_object_or_404, render
 from analysis.models import AnalysisJob
 from games.board_builder import board_colors_for_move_classification, build_board_frames
 from games.cards import build_lc0_card_context, build_sf_card_context
-from games.chart_data import lc0_wdl_payload, sf_cp_payload, winpct_payload
+from games.chart_data import lc0_wdl_payload, sf_cp_payload
 from games.chip_data import chips_for_ply
 from games.models import Game
 from games.move_annotations import ANNOTATIONS
@@ -772,24 +772,6 @@ def chips_partial(request: HttpRequest, slug: str) -> HttpResponse:
     context["black_label"] = data.black_label
     return render(request, "games/partials/_move_chips.html", context)
 
-
-def chart_winpct_partial(request: HttpRequest, slug: str) -> HttpResponse:
-    """Render the Win% headline chart partial.
-
-    Builds the winpct payload (SF Lichess logistic + LC0 wdl_mu*100) and passes
-    it as ``payload`` to the template for embedding via json_script.
-
-    Params:
-        request (HttpRequest): The HTTP request.
-        slug (str): Game URL slug.
-
-    Returns:
-        Rendered _chart_winpct.html partial with serialized winpct data.
-    """
-    data = _load_or_404(slug)
-    return render(request, "games/partials/_chart_winpct.html", {
-        "payload": winpct_payload(data),
-    })
 
 
 def chart_sf_cp_partial(request: HttpRequest, slug: str) -> HttpResponse:

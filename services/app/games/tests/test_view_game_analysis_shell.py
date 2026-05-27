@@ -7,6 +7,7 @@ Description:
 
 Changelog:
     2026-05-21 (#186): Initial — Task 4 shell view + template tests.
+    2026-05-27 (#216): Task 8 — remove charts/winpct from partial fragment list.
 """
 import pytest
 from django.urls import reverse
@@ -26,8 +27,7 @@ def test_shell_returns_200_and_loads_partials(client, new_schema_game_factory):
     assert resp.status_code == 200
     body = resp.content.decode()
     # Each visual unit is wired with hx-get pointing at its partial URL.
-    for partial in ["cards/sf", "cards/lc0", "chips", "charts/winpct",
-                    "charts/sf-cp", "charts/lc0-wdl", "pgn"]:
+    for partial in ["cards/sf", "cards/lc0", "chips", "pgn"]:
         assert f"/_partials/games/{game.slug}/{partial}/" in body
     # Shell stays thin — no inline Plotly traces.
     assert body.count("Plotly.newPlot") == 0

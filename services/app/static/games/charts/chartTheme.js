@@ -6,12 +6,13 @@
 //   change made in main.css automatically propagates to every chart, the cards,
 //   and the chip strip — no JS edit required.
 //
-//   Must be loaded before any chart script (winpct.js, sfCp.js, lc0Wdl.js).
+//   Must be loaded before any chart script (sfCp.js, lc0Wdl.js).
 //   Falls back to neutral defaults if a token is missing so the page never
 //   renders blank — but a missing token is a bug in main.css.
 //
 // Changelog:
 //   2026-05-21 (#186): Initial.
+//   2026-05-27 (#216): Remove winpct.js from comment (chart retired).
 
 (function () {
   function readVar(name, fallback) {
