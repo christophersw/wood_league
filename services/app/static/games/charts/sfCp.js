@@ -161,17 +161,25 @@
    *   Plotly layout object.
    */
   function buildLayout(perspective) {
-    var axisTitle = perspective === "white" ? "White Advantage →" : "← Black Advantage";
     var monoFont = { size: 11, color: theme.colors.text, family: theme.fonts.mono };
+    // Pawn-unit tick labels (e.g. "+5", "-5") instead of raw centipawns, so
+    // the y-axis stays narrow enough to match the LC0 chart's left margin (#216).
+    var tickvals = [-1200, -600, 0, 600, 1200];
+    var ticktext = tickvals.map(function (v) {
+      if (v === 0) return "0";
+      var sign = v > 0 ? "+" : "-";
+      return sign + (Math.abs(v) / 100);
+    });
     return {
       xaxis: { title: { text: "Ply", font: monoFont }, zeroline: false, showgrid: false, tickfont: monoFont },
       yaxis: {
-        title: { text: axisTitle, font: monoFont },
         zeroline: true, zerolinecolor: theme.colors.textBold,
         showgrid: true, gridcolor: theme.colors.grid,
         tickfont: monoFont,
+        tickvals: tickvals,
+        ticktext: ticktext,
       },
-      margin: { l: 95, r: 20, t: 50, b: 50 },
+      margin: { l: 55, r: 20, t: 56, b: 60 },
       height: chartHeight,
       paper_bgcolor: "rgba(0,0,0,0)",
       plot_bgcolor: theme.colors.plotBg,
