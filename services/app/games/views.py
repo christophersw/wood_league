@@ -837,7 +837,11 @@ def pgn_partial(request: HttpRequest, slug: str) -> HttpResponse:
         of dicts with keys: ply, san, color ("white"/"black"), move_number, classification.
     """
     data = _load_or_404(slug)
-    by_ply_class = {m.ply: m.classification for m in data.sf_moves}
+    by_ply_sf = {m.ply: m.classification for m in data.sf_moves}
+    # LC0 carries its move-quality label as base_severity (same vocabulary as
+    # SF: brilliant/best/great/excellent/good/inaccuracy/mistake/blunder). See
+    # tests/conftest.py _make_lc0_move_row for the canonical values.
+    by_ply_lc0 = {m.ply: m.base_severity for m in (data.lc0_moves or [])}
     moves: list[dict] = []
     pgn_game = _pgn.read_game(_io.StringIO(data.pgn))
     board = pgn_game.board()
@@ -851,6 +855,13 @@ def pgn_partial(request: HttpRequest, slug: str) -> HttpResponse:
             "san": san,
             "color": "white" if ply % 2 == 1 else "black",
             "move_number": (ply + 1) // 2,
-            "classification": by_ply_class.get(ply),
+            # SF stays exposed as "classification" for backward compat with
+            # any other consumer of this context; the moves-strip template
+            # also reads "sf_classification" / "lc0_classification" so the JS
+            # source-toggle (#212 v3) can swap which engine's classification
+            # drives the chip top-bar + badge.
+            "classification": by_ply_sf.get(ply),
+            "sf_classification": by_ply_sf.get(ply),
+            "lc0_classification": by_ply_lc0.get(ply),
         })
     return render(request, "games/partials/_pgn_table.html", {"pgn_moves": moves})

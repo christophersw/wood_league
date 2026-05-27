@@ -3,38 +3,41 @@
 {#     HTMX partial rendering the collapsible "Moves" panel shown directly #}
 {#     under the main game board. Each move is a focusable chip-shaped button #}
 {#     (.move-chip.moves-mv) carrying the whole notation (e.g. "3. Nf3 ?!") #}
-{#     plus its absolute ply in data-ply. The per-classification "top bar" #}
-{#     comes from the .move-chip.move-annotation-{cls} rules in main.css. #}
-{#     The "bottom bar" (current-ply tracking) comes from .moves-mv.is-active #}
-{#     in analysis.html's inline style block. Both rules can apply at once, #}
-{#     mirroring the engine-line continuation strip's idiom. #}
+{#     plus its absolute ply in data-ply. #}
 {# #}
-{#     pgnTable.js (loaded once from analysis.html's extra_js block) attaches #}
-{#     a document-level delegated click handler and subscribes to the #}
-{#     WoodLeagueAnalysis ply-state bus; both survive HTMX swaps regardless #}
-{#     of script-tag execution timing. #}
+{#     Per-engine source: each chip carries BOTH SF and LC0 classifications in #}
+{#     data-sf-cls / data-lc0-cls and BOTH badge variants in .moves-badge--sf / #}
+{#     .moves-badge--lc0 spans. movesStrip.js reads the board arrow-toggle state #}
+{#     (#board-sf-toggle / #board-lc0-toggle) and swaps the active engine's #}
+{#     classification onto the chip + reveals the matching badge via the #}
+{#     .moves-source--sf / .moves-source--lc0 class on the strip nav. Default #}
+{#     is SF (the per-engine source-toggle CSS hides the lc0 badge until JS #}
+{#     flips the source class). #}
+{# #}
+{#     movesStrip.js is loaded once from analysis.html's extra_js block, not #}
+{#     from inside this partial. It uses document-level click delegation + a #}
+{#     WoodLeagueAnalysis subscription that both survive HTMX swaps. #}
 {# Context: #}
-{#     pgn_moves (list[dict]) — each entry: {ply, move_number, color, san, classification} #}
+{#     pgn_moves (list[dict]) — each entry has: ply, move_number, color, san, #}
+{#         classification (= sf_classification, kept for backward compat), #}
+{#         sf_classification, lc0_classification. #}
 {# Changelog: #}
+{#     2026-05-26 (#212 v3): emit both SF + LC0 classifications and badge #}
+{#                       variants per chip so JS can swap the visible engine #}
+{#                       to follow the board's arrow-toggle state. #}
 {#     2026-05-26 (#212 v2): wrap the strip in a collapsible <details open> #}
-{#                       panel, fold the move-number prefix into the chip body #}
-{#                       so the whole "N. SAN ?!" is one click target, and #}
-{#                       reuse .move-chip + .move-annotation-{cls} so each chip #}
-{#                       carries the same classification top-bar treatment as #}
-{#                       elsewhere in the app. Dropped the in-partial #}
-{#                       <script src="pgnTable.js"> — the module is loaded #}
-{#                       once from analysis.html and uses document-level #}
-{#                       delegation, sidestepping HTMX 2's partial-script #}
-{#                       execution-timing inconsistency. #}
+{#                       panel, fold the move-number prefix into the chip body, #}
+{#                       reuse .move-chip + .move-annotation-{cls} for the #}
+{#                       classification top-bar treatment. #}
 {#     2026-05-26 (#212): replaced <details>Moves</details> + two-column table #}
 {#                       with an inline chip strip; relocated slot under main board. #}
 {#     2026-05-21 (#186): Task 14 — lifted from inline analysis.html into partial. #}
 
 <details open id="pgn-panel" class="moves-panel">
   <summary class="moves-panel-summary">Moves</summary>
-  <nav id="pgn-moves" class="moves-strip" aria-label="Game moves">
+  <nav id="pgn-moves" class="moves-strip moves-source--sf" aria-label="Game moves">
     {% for move in pgn_moves %}
-      <button type="button" class="move-chip moves-mv {% if move.classification %}move-annotation-{{ move.classification|lower }}{% else %}moves-mv--unanalyzed{% endif %}" data-ply="{{ move.ply }}"><span class="moves-num">{% if move.color == "white" %}{{ move.move_number }}.{% elif forloop.first %}{{ move.move_number }}…{% endif %}</span><span class="moves-san">{{ move.san }}</span>{% include "games/partials/_move_annotation.html" with classification=move.classification %}</button>
+      <button type="button" class="move-chip moves-mv {% if move.sf_classification %}move-annotation-{{ move.sf_classification|lower }}{% else %}moves-mv--unanalyzed{% endif %}" data-ply="{{ move.ply }}" data-sf-cls="{{ move.sf_classification|default_if_none:''|lower }}" data-lc0-cls="{{ move.lc0_classification|default_if_none:''|lower }}"><span class="moves-num">{% if move.color == "white" %}{{ move.move_number }}.{% elif forloop.first %}{{ move.move_number }}…{% endif %}</span><span class="moves-san">{{ move.san }}</span><span class="moves-badge moves-badge--sf">{% include "games/partials/_move_annotation.html" with classification=move.sf_classification %}</span><span class="moves-badge moves-badge--lc0">{% include "games/partials/_move_annotation.html" with classification=move.lc0_classification %}</span></button>
     {% empty %}
       <span class="moves-empty">No moves recorded.</span>
     {% endfor %}

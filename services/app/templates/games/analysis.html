@@ -11,8 +11,10 @@
 
 {% block content %}
 <style>
-.engine-line-inline { font-family: var(--font-serif); font-size: 0.95rem; line-height: 1.8; color: var(--color-ebony); padding: 6px 10px 10px; }
-.engine-line-inline .eln-num { font-family: var(--font-mono); font-size: 0.62rem; color: var(--color-peat); margin: 0 2px 0 6px; }
+/* Engine-line continuation strip — share the moves-strip mono/ebony palette
+   so the two strips read as siblings. (Per #212 live-review item 8.) */
+.engine-line-inline { font-family: var(--font-mono, 'DM Mono', monospace); font-size: 0.72rem; line-height: 1.8; color: var(--color-ebony); padding: 6px 10px 10px; font-weight: 700; letter-spacing: 0.02em; }
+.engine-line-inline .eln-num { font-family: var(--font-mono); font-size: 0.6rem; color: var(--color-peat); font-weight: 600; margin: 0 2px 0 6px; }
 .engine-line-inline .eln-mv { padding: 0 3px; cursor: pointer; }
 .engine-line-inline .eln-mv:hover { background: color-mix(in srgb, var(--color-gold) 18%, transparent); }
 .engine-line-inline .eln-mv.is-active { background: color-mix(in srgb, var(--color-gold) 35%, transparent); box-shadow: inset 0 -2px 0 var(--color-forest); }
@@ -93,11 +95,26 @@
 /* Unanalyzed moves (no classification) — use a muted default top bar so
    chips are still visually identifiable as chips without implying a quality. */
 .moves-strip .moves-mv--unanalyzed { border-top-color: var(--color-band, #C9B998); }
+/* Annotation badges inside chips — strip the colored background that
+   .move-annotation-{cls} sets in main.css (those are for the SF accuracy
+   bar segments). Inside the chip we want the symbol as plain text alongside
+   the SAN; the chip's top-border already carries the classification colour. */
 .moves-strip .move-annotation {
   margin-left: 1px;
-  font-size: 0.78em;
+  font-size: 0.85em;
   vertical-align: baseline;
+  background: transparent !important;
+  padding: 0;
+  color: var(--color-rust);
+  font-weight: 700;
 }
+/* Per-engine source toggling — default to SF visible, LC0 hidden. JS adds
+   .moves-source--lc0 / .moves-source--sf on #pgn-moves based on the board
+   arrow-toggle state (item 3b in #212 live review). Both badge variants are
+   server-rendered; CSS picks the visible one. */
+.moves-strip .moves-badge--lc0 { display: none; }
+.moves-strip.moves-source--lc0 .moves-badge--sf { display: none; }
+.moves-strip.moves-source--lc0 .moves-badge--lc0 { display: inline; }
 .moves-strip .moves-empty {
   font-family: var(--font-mono);
   font-size: 0.72rem;
@@ -200,7 +217,7 @@
 {% if not no_data %}
 <script src="{% static 'games/plySync.js' %}"></script>
 <script src="{% static 'games/engineLines.js' %}"></script>
-<script src="{% static 'games/pgnTable.js' %}"></script>
+<script src="{% static 'games/movesStrip.js' %}"></script>
 <script src="{% static 'games/cardTooltip.js' %}"></script>
 <script src="{% static 'games/charts/chartTheme.js' %}"></script>
 <script src="{% static 'games/charts/chartTooltip.js' %}"></script>

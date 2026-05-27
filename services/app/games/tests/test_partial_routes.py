@@ -198,10 +198,13 @@ def test_pgn_strip_renders_one_chip_per_move(client, new_schema_game_factory):
     body = resp.content.decode()
     for ply in (1, 2, 3, 4):
         assert f'data-ply="{ply}"' in body, f"chip data-ply={ply} missing"
-    # Strip-shape sanity checks.
+    # Strip-shape sanity checks. The strip class attribute now carries both
+    # "moves-strip" and a default source token (moves-source--sf), so we
+    # substring-match the base class rather than the literal attribute.
     assert 'id="pgn-moves"' in body
-    assert 'class="moves-strip"' in body
+    assert "moves-strip" in body
     assert 'id="pgn-panel"' in body  # collapsible <details> wrapper (#212 v2)
+    assert "moves-source--sf" in body  # default engine source (#212 v3)
     # Old table shape must be gone — be specific about which structure rather
     # than "no <details>" (the strip is itself wrapped in a <details> now).
     assert 'id="pgn-table"' not in body
@@ -227,9 +230,13 @@ def test_pgn_strip_emits_annotation_for_classified_moves(client, new_schema_game
 def test_pgn_strip_omits_annotation_for_unclassified_moves(client, new_schema_game_factory):
     """A row classified 'best' (no badge) produces no move-annotation span for that ply.
 
-    The fixture has classifications best/best/great/inaccuracy at plies 1/2/3/4.
-    best and excellent and good carry no symbol so only plies 3 (great="!") and
-    4 (inaccuracy="?!") produce annotation spans — exactly 2.
+    The fixture has classifications best/best/great/inaccuracy at plies 1/2/3/4
+    for BOTH SF and LC0 (LC0 base_severity mirrors SF in the fixture). Since the
+    moves strip now server-renders BOTH engine badges per chip (#212 v3 — JS
+    flips visibility via the .moves-source--{sf,lc0} class), plies 3 and 4
+    each emit two badge spans (one SF + one LC0) — total = 4. The semantic
+    invariant being tested is unchanged: "best" plies (1 + 2) still produce
+    zero annotation spans, only badged plies do.
 
     Params:
         client: Django test client fixture.
@@ -238,9 +245,10 @@ def test_pgn_strip_omits_annotation_for_unclassified_moves(client, new_schema_ga
     game = new_schema_game_factory()
     resp = client.get(reverse("games_pgn_partial", args=[game.slug]))
     body = resp.content.decode()
-    # Plies 1 and 2 are "best" — no annotation span. Plies 3 (great) and 4
-    # (inaccuracy) each emit one span. Total = 2.
-    assert body.count('class="move-annotation') == 2
+    # Plies 1 + 2 = "best" → 0 spans. Plies 3 + 4 each emit one SF + one LC0
+    # badge span (the LC0 one is hidden by default CSS until JS toggles source).
+    # Total = 4 badge spans on body.
+    assert body.count('class="move-annotation') == 4
 
 
 def test_pgn_strip_renders_empty_placeholder_when_no_moves(client, simple_pgn_game):
