@@ -26,6 +26,16 @@
    when an LC0 arrow is opened). #212 v5 live-review. */
 .engine-line-plate--sf .engine-line-info-pop--lc0 { display: none; }
 .engine-line-plate--lc0 .engine-line-info-pop--sf { display: none; }
+/* Right-justify the branching-context label so it sits flush with the
+   info icon at the right edge of the card header (#212 v6 live-review). */
+.engine-line-plate__ctx {
+  margin-left: auto;
+  margin-right: 8px;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  color: var(--color-peat);
+  letter-spacing: 0.02em;
+}
 .moves-strip-slot { padding: 0; }
 /* Collapsible Moves panel — mirrors the engine-line continuation <details>
    pattern but lives in the Position card under the main board. */
