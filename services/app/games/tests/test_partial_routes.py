@@ -172,7 +172,12 @@ def test_pgn_partial_renders_strip_and_js(client, new_schema_game_factory):
     body = resp.content.decode()
     assert resp.status_code == 200
     assert 'id="pgn-moves"' in body      # strip nav element present
-    assert "pgnTable.js" in body          # static JS reference
+    assert 'id="pgn-panel"' in body      # collapsible <details> wrapper (#212 v2)
+    # pgnTable.js is now loaded once from analysis.html's extra_js block, not
+    # from inside this partial — so the partial body should NOT contain a
+    # second <script src=…/pgnTable.js> tag. This guards against regressing
+    # back to the in-partial loading that raced with HTMX swap timing.
+    assert "pgnTable.js" not in body
     assert 'id="pgn-table"' not in body  # old table shape gone
     assert "pgn-tbody" not in body        # old tbody gone
 
@@ -196,8 +201,10 @@ def test_pgn_strip_renders_one_chip_per_move(client, new_schema_game_factory):
     # Strip-shape sanity checks.
     assert 'id="pgn-moves"' in body
     assert 'class="moves-strip"' in body
-    # Old table shape must be gone.
-    assert "<details" not in body
+    assert 'id="pgn-panel"' in body  # collapsible <details> wrapper (#212 v2)
+    # Old table shape must be gone — be specific about which structure rather
+    # than "no <details>" (the strip is itself wrapped in a <details> now).
+    assert 'id="pgn-table"' not in body
     assert "pgn-tbody" not in body
 
 
@@ -282,6 +289,9 @@ def test_pgn_strip_uses_ellipsis_prefix_for_leading_black_move(client, new_schem
     resp = client.get(reverse("games_pgn_partial", args=[game.slug]))
     assert resp.status_code == 200
     body = resp.content.decode()
-    assert 'class="moves-mv"' in body
+    # The chip's class attribute is now a multi-class string (move-chip moves-mv
+    # move-annotation-{cls}), so substring-match on " moves-mv " catches it
+    # without depending on class ordering.
+    assert " moves-mv " in body
     # The first (and only) move-number span must use the ellipsis form.
     assert "1…" in body or "1..." in body

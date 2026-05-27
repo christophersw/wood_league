@@ -1,26 +1,42 @@
-{% load static %}
 {# Title: _pgn_table.html — Main-board moves strip partial #}
 {# Description: #}
-{#     HTMX partial rendering the always-visible inline moves strip shown #}
-{#     directly under the main game board. Each move is a focusable button #}
-{#     (.moves-mv) carrying its absolute ply in data-ply and a server-rendered #}
-{#     classification annotation badge via _move_annotation.html. Clicking a #}
-{#     chip calls WoodLeagueAnalysis.setPly() via the pgnTable.js delegated #}
-{#     click handler; the active chip is highlighted and scrolled into view #}
-{#     as the user steps through the game. #}
+{#     HTMX partial rendering the collapsible "Moves" panel shown directly #}
+{#     under the main game board. Each move is a focusable chip-shaped button #}
+{#     (.move-chip.moves-mv) carrying the whole notation (e.g. "3. Nf3 ?!") #}
+{#     plus its absolute ply in data-ply. The per-classification "top bar" #}
+{#     comes from the .move-chip.move-annotation-{cls} rules in main.css. #}
+{#     The "bottom bar" (current-ply tracking) comes from .moves-mv.is-active #}
+{#     in analysis.html's inline style block. Both rules can apply at once, #}
+{#     mirroring the engine-line continuation strip's idiom. #}
+{# #}
+{#     pgnTable.js (loaded once from analysis.html's extra_js block) attaches #}
+{#     a document-level delegated click handler and subscribes to the #}
+{#     WoodLeagueAnalysis ply-state bus; both survive HTMX swaps regardless #}
+{#     of script-tag execution timing. #}
 {# Context: #}
 {#     pgn_moves (list[dict]) — each entry: {ply, move_number, color, san, classification} #}
 {# Changelog: #}
+{#     2026-05-26 (#212 v2): wrap the strip in a collapsible <details open> #}
+{#                       panel, fold the move-number prefix into the chip body #}
+{#                       so the whole "N. SAN ?!" is one click target, and #}
+{#                       reuse .move-chip + .move-annotation-{cls} so each chip #}
+{#                       carries the same classification top-bar treatment as #}
+{#                       elsewhere in the app. Dropped the in-partial #}
+{#                       <script src="pgnTable.js"> — the module is loaded #}
+{#                       once from analysis.html and uses document-level #}
+{#                       delegation, sidestepping HTMX 2's partial-script #}
+{#                       execution-timing inconsistency. #}
 {#     2026-05-26 (#212): replaced <details>Moves</details> + two-column table #}
 {#                       with an inline chip strip; relocated slot under main board. #}
 {#     2026-05-21 (#186): Task 14 — lifted from inline analysis.html into partial. #}
 
-<nav id="pgn-moves" class="moves-strip" aria-label="Game moves">
-  {% for move in pgn_moves %}
-    {% if move.color == "white" %}<span class="moves-num">{{ move.move_number }}.</span>{% elif forloop.first %}<span class="moves-num">{{ move.move_number }}…</span>{% endif %}<button type="button" class="moves-mv" data-ply="{{ move.ply }}"><span class="moves-san">{{ move.san }}</span>{% include "games/partials/_move_annotation.html" with classification=move.classification %}</button>
-  {% empty %}
-    <span class="moves-empty">No moves recorded.</span>
-  {% endfor %}
-</nav>
-
-<script src="{% static 'games/pgnTable.js' %}"></script>
+<details open id="pgn-panel" class="moves-panel">
+  <summary class="moves-panel-summary">Moves</summary>
+  <nav id="pgn-moves" class="moves-strip" aria-label="Game moves">
+    {% for move in pgn_moves %}
+      <button type="button" class="move-chip moves-mv {% if move.classification %}move-annotation-{{ move.classification|lower }}{% else %}moves-mv--unanalyzed{% endif %}" data-ply="{{ move.ply }}"><span class="moves-num">{% if move.color == "white" %}{{ move.move_number }}.{% elif forloop.first %}{{ move.move_number }}…{% endif %}</span><span class="moves-san">{{ move.san }}</span>{% include "games/partials/_move_annotation.html" with classification=move.classification %}</button>
+    {% empty %}
+      <span class="moves-empty">No moves recorded.</span>
+    {% endfor %}
+  </nav>
+</details>
