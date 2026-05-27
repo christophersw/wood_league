@@ -49,7 +49,9 @@
     };
   });
 
-  var chartHeight = Math.max(260, 180 + rawPoints.length * 5);
+  // Fixed in-card height (#216): chart lives inside the SF stat card, so
+  // it must not grow with ply count or it overflows the card.
+  var chartHeight = 240;
 
   /**
    * Build the bar colour array from move-quality class colours.

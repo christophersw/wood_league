@@ -21,7 +21,9 @@
 
   var plies = rawPayload.map(function (d) { return Number(d.ply); });
 
-  var chartHeight = Math.max(240, 160 + rawPayload.length * 4);
+  // Fixed in-card height (#216): chart lives inside the LC0 stat card,
+  // with the classification strip directly beneath it.
+  var chartHeight = 240;
 
   var theme = window.WoodLeagueChartTheme;
   var WHITE_FILL = theme.colors.whiteAdvantage;
