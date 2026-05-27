@@ -14,8 +14,6 @@
   var div = document.getElementById("sf-cp-chart");
   if (!div || !rawPayload || typeof Plotly === "undefined") return;
 
-  var moveQualityColors =
-    (window.WoodLeagueMoveAnnotations && window.WoodLeagueMoveAnnotations.colors) || {};
   var theme = window.WoodLeagueChartTheme;
 
   /** Maximum absolute centipawn value treated as a forced-mate signal. */
@@ -54,6 +52,40 @@
   var chartHeight = 240;
 
   /**
+   * Resolve a move-quality classification to its actual CSS background colour
+   * by mounting a hidden swatch with the .move-annotation-<cls> class and
+   * reading getComputedStyle. Cached after first lookup. (#216 fix — previously
+   * the chart passed raw CSS class names to Plotly's marker.color, which
+   * silently fell back to a default.)
+   *
+   * Params:
+   *   cls (string): Lowercase classification, e.g. "best", "blunder", or "".
+   *
+   * Returns:
+   *   CSS colour string (rgb/rgba) usable as Plotly marker.color.
+   */
+  var colorCache = {};
+  function resolveAnnotationColor(cls) {
+    if (!cls) return theme.colors.barDefault;
+    if (colorCache[cls]) return colorCache[cls];
+    var swatch = document.createElement("div");
+    swatch.className = "move-annotation-" + cls;
+    swatch.style.position = "absolute";
+    swatch.style.visibility = "hidden";
+    swatch.style.pointerEvents = "none";
+    document.body.appendChild(swatch);
+    var bg = window.getComputedStyle(swatch).backgroundColor;
+    document.body.removeChild(swatch);
+    // getComputedStyle returns "rgba(0, 0, 0, 0)" for unmatched/transparent;
+    // fall back to the chart's default in that case.
+    var resolved = (bg && bg !== "rgba(0, 0, 0, 0)" && bg !== "transparent")
+      ? bg
+      : theme.colors.barDefault;
+    colorCache[cls] = resolved;
+    return resolved;
+  }
+
+  /**
    * Build the bar colour array from move-quality class colours.
    *
    * Returns:
@@ -61,7 +93,7 @@
    */
   function buildColors() {
     return rawPoints.map(function (p) {
-      return moveQualityColors[p.cls] || theme.colors.barDefault;
+      return resolveAnnotationColor(p.cls);
     });
   }
 
