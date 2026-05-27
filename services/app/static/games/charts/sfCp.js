@@ -88,12 +88,24 @@
   /**
    * Build the bar colour array from move-quality class colours.
    *
+   * Only bars representing moves made by the perspective player are coloured;
+   * the opposing side's bars use the chart's neutral default so the eye
+   * focuses on the player's own move quality (#216).
+   * Ply parity: odd = White's move, even = Black's.
+   *
+   * Params:
+   *   perspective (string): "white" or "black".
+   *
    * Returns:
    *   Array of CSS colour strings, one per point.
    */
-  function buildColors() {
+  function buildColors(perspective) {
     return rawPoints.map(function (p) {
-      return resolveAnnotationColor(p.cls);
+      var isWhiteMove = (p.ply % 2) === 1;
+      var isPerspectiveMove = perspective === "white" ? isWhiteMove : !isWhiteMove;
+      return isPerspectiveMove
+        ? resolveAnnotationColor(p.cls)
+        : theme.colors.barDefault;
     });
   }
 
@@ -173,7 +185,7 @@
       x: pts.map(function (p) { return p.ply; }),
       y: pts.map(function (p) { return p.display; }),
       type: "bar",
-      marker: { color: buildColors() },
+      marker: { color: buildColors(perspective) },
       customdata: pts.map(function (p) {
         return [p.san, p.cp >= 0 ? "+" : "", Math.abs(p.cp / 100).toFixed(2)];
       }),
@@ -272,6 +284,8 @@
           customdata: [pts.map(function (p) {
             return [p.san, p.cp >= 0 ? "+" : "", Math.abs(p.cp / 100).toFixed(2)];
           })],
+          // Re-color bars so only the new perspective player's moves are vivid.
+          "marker.color": [buildColors(currentPerspective)],
         }, [0]);
         Plotly.relayout(div, buildLayout(currentPerspective));
       }
