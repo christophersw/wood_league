@@ -356,6 +356,9 @@ def derive_lc0_game(raw_payload: dict, game: Any) -> dict:
         "engine_nodes": int(raw_payload["engine_nodes"]),
         "network_name": raw_payload["network_name"],
         "draw_rate_reference": draw_rate_reference,
+        # White-side analysis: WDLCalibrationElo=white_elo,
+        # Contempt=white_elo−black_elo, ContemptMode=white_side_analysis.
+        # Contempt is negative when White is the underdog (e.g. 1000 vs 1300 → −300).
         "wdl_calibration_elo": white_elo,
         "contempt": white_elo - black_elo,
         **probs,

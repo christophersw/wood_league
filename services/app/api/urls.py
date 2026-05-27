@@ -22,5 +22,4 @@ urlpatterns = [
     path('jobs/status/', views.QueueStatusView.as_view()),
     path('heartbeat/', views.HeartbeatView.as_view()),
     path('worker/logs/', WorkerLogUploadView.as_view()),
-    path('network_calibrations/', views.NetworkCalibrationView.as_view()),
 ]

@@ -31,15 +31,10 @@ Changelog:
                 raises InvalidMoveError for, killing the engine event
                 loop. A synthesised terminal score (Win/Draw/Loss = mate
                 outcome or draw permille) is supplied instead. Fixes #58.
-    2026-05-19: launch_engine() now measures the per-network draw-rate
-                reference once per process (module-level cache) and
-                returns it as the 3rd element of the return tuple. Added
-                draw_rate_reference_override param to analyze_pgn() so
-                callers that reuse a warm engine can pass the measured
-                value through without re-measuring (issue #159).
-    2026-05-19: _get_or_measure_draw_rate() now checks lc0_tuning.json disk
-                store before measuring, and persists fresh measurements to
-                disk via push_draw_rate / pull_draw_rate (issue #159 FIX 1).
+    2026-05-19: launch_engine() previously measured the per-network draw-rate
+                reference once per process (issue #159).
+    2026-05-27 (#214): draw_rate_reference is now a worker-side constant from
+                lc0_calibration.LC0_DRAW_RATE_REFERENCE; sampler removed.
 """
 from __future__ import annotations
 
@@ -53,6 +48,7 @@ import chess
 import chess.engine
 import chess.pgn
 
+from .lc0_calibration import LC0_DRAW_RATE_REFERENCE
 from .lc0_tuning import get_tuned_opts
 from ..lc0_tuning_sync import push_after_calibrate
 from .eval_cache import (
@@ -664,7 +660,7 @@ def analyze_pgn(
     eval_cache: Optional[EvalCache] = None,
     engine: Optional[chess.engine.SimpleEngine] = None,
     network_name_override: str = "",
-    draw_rate_reference: float = 0.5,
+    draw_rate_reference: float = LC0_DRAW_RATE_REFERENCE,
 ) -> Lc0GameResult:
     """Analyse a PGN game with Lc0 and return raw per-move WDL observables.
 

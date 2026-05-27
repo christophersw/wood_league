@@ -42,21 +42,12 @@ LC0_DRAW_CHARACTER_CHOICES = [
 
 
 class CheckoutRequestSerializer(serializers.Serializer):
-    """Inbound: request to check out a batch of analysis jobs.
-
-    ``network_name`` is required when the engine is ``lc0`` (issue #161 Phase B):
-    the app pre-flights NetworkCalibration for that network before claiming and
-    returns 409 ``NEEDS_CALIBRATION`` when no matching calibration row exists.
-    Stockfish checkouts ignore the field.
-    """
+    """Inbound: request to check out a batch of analysis jobs."""
 
     engine = serializers.ChoiceField(choices=ENGINE_CHOICES)
     batch_size = serializers.IntegerField(min_value=1, max_value=10, default=1)
     worker_id = serializers.CharField(max_length=64)
     game_id = serializers.CharField(max_length=64, required=False)
-    network_name = serializers.CharField(
-        max_length=64, required=False, allow_blank=True, default="",
-    )
 
 
 class JobSerializer(serializers.Serializer):
@@ -75,12 +66,6 @@ class JobSerializer(serializers.Serializer):
         source='game.white_rating', required=False, allow_null=True, default=None)
     black_rating = serializers.IntegerField(
         source='game.black_rating', required=False, allow_null=True, default=None)
-    # Resolved per-network draw rate, attached transiently by claim_jobs for lc0
-    # checkouts (#161 Phase B). None for stockfish jobs and for lc0 jobs that
-    # were claimed without a network pre-flight (legacy/test paths).
-    draw_rate_reference = serializers.FloatField(
-        required=False, allow_null=True, default=None,
-    )
 
     def get_nodes(self, obj) -> int | None:
         """Resolve the lc0 node budget the worker must use.
@@ -456,29 +441,3 @@ class JobSubmitSerializer(serializers.Serializer):
     runpod_job_id = serializers.CharField(max_length=128)
 
 
-class NetworkCalibrationSubmitSerializer(serializers.Serializer):
-    """Inbound: a worker reporting a completed lc0 draw-rate measurement.
-
-    The ``(network_name, settings_hash)`` pair is the unique key the app uses
-    to deduplicate concurrent submissions. ``worker_id`` is recorded into
-    NetworkCalibration.submitted_by_worker_id verbatim.
-    """
-
-    network_name = serializers.CharField(max_length=64)
-    settings_hash = serializers.RegexField(
-        regex=r"^[0-9a-f]{64}$",
-        help_text="Lowercase hex sha256 of the canonical sampler settings.",
-    )
-    draw_rate_reference = serializers.FloatField(min_value=0.001, max_value=0.999)
-    sample_size = serializers.IntegerField(min_value=1)
-    sem = serializers.FloatField(min_value=0.0)
-    sampler_version = serializers.CharField(max_length=32)
-    worker_id = serializers.CharField(max_length=64)
-
-    def validate_draw_rate_reference(self, value: float) -> float:
-        """Reject the open-interval endpoints (DRF's min/max are inclusive)."""
-        if value <= 0.001 or value >= 0.999:
-            raise serializers.ValidationError(
-                "draw_rate_reference must lie strictly within (0.001, 0.999)."
-            )
-        return value

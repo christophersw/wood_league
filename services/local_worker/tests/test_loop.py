@@ -77,9 +77,6 @@ class _StubJob:
     engine: str = "lc0"
     depth: int = 0
     nodes: int | None = None
-    # Per-network calibrated draw rate; app attaches at checkout (#161 Phase B).
-    # None exercises the legacy/uncalibrated fallback path in _run_lc0_job.
-    draw_rate_reference: float | None = 0.5
 
 
 class _StubClient:
@@ -194,47 +191,21 @@ def test_lc0_call_site_kwargs_match_real_signature(
         pgn_text="", **{k: v for k, v in captured.items() if k != "pgn_text"})
 
 
-def test_lc0_uses_job_draw_rate_reference(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """#182 regression: the value passed to ``lc0_analyze`` (and thence the
-    ``complete_lc0`` payload) is the app-attached ``job.draw_rate_reference``,
-    not a stale warm-engine value or the ``0.0`` sentinel that the server's
-    ``min_value=0.001`` validator rejects.
+def test_lc0_draw_rate_reference_from_constant() -> None:
+    """#214: analyze_pgn's draw_rate_reference default is the worker-side
+    constant LC0_DRAW_RATE_REFERENCE (0.62 against BT4-it332), not a per-job
+    or per-network sampled value.
     """
-    captured: dict[str, Any] = {}
-    _patch_lc0_analyze(monkeypatch, captured)
+    import inspect
 
-    ok = run_one_job(
-        job=_StubJob(depth=0, nodes=10000, draw_rate_reference=0.612),
-        settings=_settings_for_lc0(default_nodes=10000),
-        stats=WorkerStats(),
-        client=cast(WorkerClient, _StubClient()),
-    )
+    from local_worker.analysis.lc0 import analyze_pgn as real_analyze_pgn
+    from local_worker.analysis.lc0_calibration import LC0_DRAW_RATE_REFERENCE
 
-    assert ok is True
-    assert captured["draw_rate_reference"] == 0.612
-
-
-def test_lc0_draw_rate_reference_fallback_when_job_missing_value(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """#182 belt-and-suspenders: a ``None`` on the job falls back to 0.5
-    (above the server's 0.001 floor), never to the 0.0 sentinel that
-    triggered the production HTTP 400.
-    """
-    captured: dict[str, Any] = {}
-    _patch_lc0_analyze(monkeypatch, captured)
-
-    ok = run_one_job(
-        job=_StubJob(depth=0, nodes=10000, draw_rate_reference=None),
-        settings=_settings_for_lc0(default_nodes=10000),
-        stats=WorkerStats(),
-        client=cast(WorkerClient, _StubClient()),
-    )
-
-    assert ok is True
-    assert captured["draw_rate_reference"] == 0.5
+    assert LC0_DRAW_RATE_REFERENCE == 0.62
+    default = inspect.signature(real_analyze_pgn).parameters[
+        "draw_rate_reference"
+    ].default
+    assert default == LC0_DRAW_RATE_REFERENCE
 
 
 def test_lc0_absurdly_low_nodes_fails_job(

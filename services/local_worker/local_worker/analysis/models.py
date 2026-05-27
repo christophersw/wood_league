@@ -120,9 +120,9 @@ class Lc0MoveResult:
 class Lc0GameResult:
     """Raw game-level Lc0 observables (#161 Phase H).
 
-    ``draw_rate_reference`` is echoed from the calibration-row value the app
-    attached to the job at checkout time (Phase B). The worker treats it as
-    opaque payload metadata — derivation runs app-side.
+    ``draw_rate_reference`` is sourced from the worker-side constant
+    ``analysis.lc0_calibration.LC0_DRAW_RATE_REFERENCE`` (#214) and echoed
+    into the engine_done payload for the app's derivation layer.
     """
 
     engine_nodes: int

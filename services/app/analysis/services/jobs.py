@@ -20,56 +20,18 @@ from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
-from analysis.calibration_hash import (
-    current_lc0_sampler_settings,
-    current_lc0_settings_hash,
-)
 from analysis.models import (
     AnalysisJob,
     GameAnalysis,
     Lc0GameAnalysis,
     Lc0MoveAnalysis,
     MoveAnalysis,
-    NetworkCalibration,
 )
 
 
 # ── Constants ────────────────────────────────────────────────────────────
 class JobCheckoutDenied(Exception):
     """Raised when a requested job checkout cannot be honored."""
-
-
-class NeedsCalibration(Exception):
-    """Raised when an lc0 checkout arrives for an uncalibrated network.
-
-    Carries the metadata the worker needs to drive the calibration sampler:
-    the resolved ``network_name``, the current ``settings_hash`` to echo
-    back on submission, the canonical sampler settings, and the sampler
-    version tag. The view layer translates this exception into a 409
-    response with ``error="NEEDS_CALIBRATION"``.
-    """
-
-    def __init__(
-        self,
-        *,
-        network_name: str,
-        settings_hash: str,
-        sampler_settings: dict,
-        sampler_version: str,
-    ) -> None:
-        """Capture the calibration request payload.
-
-        Args:
-            network_name: Resolved lc0 network identifier.
-            settings_hash: Current canonical sampler-settings hash.
-            sampler_settings: Canonical settings dict the worker must use.
-            sampler_version: Echoes settings.WL_LC0_DRAW_RATE_SAMPLER_VERSION.
-        """
-        super().__init__(f"NEEDS_CALIBRATION for {network_name}")
-        self.network_name = network_name
-        self.settings_hash = settings_hash
-        self.sampler_settings = sampler_settings
-        self.sampler_version = sampler_version
 
 
 # Error substrings that signal the job is structurally unanalysable. Retrying
@@ -126,36 +88,6 @@ def recover_stale_jobs(engine: str) -> int:
 # ── Claim jobs ───────────────────────────────────────────────────────────
 
 
-def _resolve_lc0_calibration(network_name: str) -> float:
-    """Resolve the current draw_rate_reference for ``network_name``.
-
-    Args:
-        network_name: Resolved lc0 network identifier supplied by the worker.
-
-    Returns:
-        The ``draw_rate_reference`` stored on the matching NetworkCalibration
-        row.
-
-    Raises:
-        NeedsCalibration: When no calibration row exists for the current
-            ``(network_name, settings_hash)`` pair. The exception carries the
-            sampler settings the worker must use.
-    """
-    settings_hash = current_lc0_settings_hash()
-    row = NetworkCalibration.objects.filter(
-        network_name=network_name, settings_hash=settings_hash,
-    ).only("draw_rate_reference").first()
-    if row is None:
-        sampler = current_lc0_sampler_settings()
-        raise NeedsCalibration(
-            network_name=network_name,
-            settings_hash=settings_hash,
-            sampler_settings=sampler,
-            sampler_version=sampler["sampler_version"],
-        )
-    return row.draw_rate_reference
-
-
 def _select_single_game_job(*, engine: str, game_id: str) -> list[AnalysisJob]:
     """Return the one pending AnalysisJob for ``game_id`` under SELECT FOR UPDATE.
 
@@ -199,14 +131,11 @@ def claim_jobs(
     worker_id: str,
     key_prefix: str | None = None,
     game_id: str | None = None,
-    network_name: str = "",
 ) -> list[AnalysisJob]:
     """Atomically claim up to batch_size pending jobs using SELECT FOR UPDATE SKIP LOCKED.
 
-    Runs stale recovery before each checkout. For lc0 checkouts that supply a
-    ``network_name``, pre-flights the network's calibration row and raises
-    ``NeedsCalibration`` when one is absent (issue #161 Phase B). Returns the
-    claimed AnalysisJob instances with their related Game.
+    Runs stale recovery before each checkout. Returns the claimed AnalysisJob
+    instances with their related Game.
 
     Args:
         engine: 'stockfish' or 'lc0'.
@@ -214,12 +143,7 @@ def claim_jobs(
         worker_id: Identifier for the claiming worker (stored for tracing).
         key_prefix: API key prefix stored for audit (None for non-API callers).
         game_id: Claim only this specific game's job (optional).
-        network_name: For lc0 only: the worker's resolved network name. When
-            empty, the calibration pre-flight is skipped (legacy/test paths).
     """
-    draw_rate_reference: float | None = None
-    if engine == "lc0" and network_name:
-        draw_rate_reference = _resolve_lc0_calibration(network_name)
     with transaction.atomic():
         recover_stale_jobs(engine)
         if game_id:
@@ -243,16 +167,11 @@ def claim_jobs(
             worker_id=worker_id,
             claimed_by_key_prefix=key_prefix,
         )
-        claimed = list(
+        return list(
             AnalysisJob.objects
             .filter(id__in=job_ids)
             .select_related('game')
         )
-        if draw_rate_reference is not None:
-            # Transient annotation read by JobSerializer; not persisted.
-            for job in claimed:
-                job.draw_rate_reference = draw_rate_reference
-        return claimed
 
 
 # ── Complete: Stockfish ──────────────────────────────────────────────────
