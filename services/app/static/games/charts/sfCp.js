@@ -211,7 +211,7 @@
         tickvals: tickvals,
         ticktext: ticktext,
       },
-      margin: { l: 55, r: 20, t: 20, b: 60 },
+      margin: { l: 36, r: 8, t: 20, b: 60 },
       height: chartHeight,
       paper_bgcolor: "rgba(0,0,0,0)",
       plot_bgcolor: theme.colors.plotBg,
