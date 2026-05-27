@@ -179,20 +179,69 @@
    * Returns:
    *   Plotly trace object (type "bar").
    */
-  function buildTrace(perspective) {
+  /**
+   * Build two stacked bar traces for the given perspective:
+   *   - base: the previous ply's display value (neutral colour)
+   *   - delta: the change introduced by this ply (classification colour,
+   *     perspective-aware via buildColors)
+   * Sum (base + delta) = current ply's display value, so the total bar
+   * height still reads as the absolute evaluation. The eye picks out the
+   * "this move's contribution" segment from the rest of the history.
+   *
+   * Params:
+   *   perspective (string): "white" or "black".
+   *
+   * Returns:
+   *   Array of two Plotly bar traces (base first, delta on top).
+   */
+  function buildTraces(perspective) {
     var pts = getPointsForPerspective(perspective);
-    return {
-      x: pts.map(function (p) { return p.ply; }),
-      y: pts.map(function (p) { return p.display; }),
-      type: "bar",
-      marker: { color: buildColors(perspective) },
-      customdata: pts.map(function (p) {
-        return [p.san, p.cp >= 0 ? "+" : "", Math.abs(p.cp / 100).toFixed(2)];
-      }),
-      hovertemplate: "Ply %{x}: %{customdata[0]} %{customdata[1]}%{customdata[2]} pawns<extra></extra>",
-      name: "Eval",
-      showlegend: false,
-    };
+    var plies = pts.map(function (p) { return p.ply; });
+    var baseY = [];
+    var deltaY = [];
+    var prev = 0;
+    for (var i = 0; i < pts.length; i++) {
+      baseY.push(prev);
+      deltaY.push(pts[i].display - prev);
+      prev = pts[i].display;
+    }
+    return [
+      {
+        x: plies,
+        y: baseY,
+        type: "bar",
+        marker: { color: theme.colors.barDefault, opacity: 0.35 },
+        hoverinfo: "skip",
+        showlegend: false,
+        name: "Previous",
+      },
+      {
+        x: plies,
+        y: deltaY,
+        type: "bar",
+        marker: { color: buildColors(perspective) },
+        customdata: pts.map(function (p, idx) {
+          var delta = deltaY[idx] / 100;  // pawns, in display orientation
+          // Reverse the display inversion so delta sign reads in cp-units:
+          // negative display = positive cp (advantage for the bottom side).
+          var cpDelta = -delta;
+          var dsign = cpDelta >= 0 ? "+" : "-";
+          return [
+            p.san,
+            p.cp >= 0 ? "+" : "",
+            Math.abs(p.cp / 100).toFixed(2),
+            dsign,
+            Math.abs(cpDelta).toFixed(2),
+          ];
+        }),
+        hovertemplate:
+          "Ply %{x}: %{customdata[0]} " +
+          "(eval %{customdata[1]}%{customdata[2]} · " +
+          "Δ %{customdata[3]}%{customdata[4]})<extra></extra>",
+        name: "Δ",
+        showlegend: false,
+      },
+    ];
   }
 
   /**
@@ -229,6 +278,10 @@
       plot_bgcolor: theme.colors.plotBg,
       font: { color: theme.colors.text, family: theme.fonts.serif },
       hovermode: "x unified",
+      // Stacked bars with mixed-sign deltas — Plotly's "relative" mode
+      // stacks positive and negative independently, which is what we want
+      // since the delta can go either way relative to the running base.
+      barmode: "relative",
       hoverlabel: {
         bgcolor: "white", bordercolor: theme.colors.textBold,
         font: { color: theme.colors.textBold, family: theme.fonts.mono, size: 12 },
@@ -249,14 +302,16 @@
 
   var currentPerspective = WoodLeagueAnalysis.getState().perspective;
 
+  // Trace order: 0 = base (previous score), 1 = delta (this move's change),
+  // 2 = ply highlight marker.
   Plotly.newPlot(
     div,
-    [buildTrace(currentPerspective), highlight],
+    buildTraces(currentPerspective).concat([highlight]),
     buildLayout(currentPerspective),
     { displaylogo: false, responsive: true }
   ).then(function () {
     /**
-     * Click on a bar to jump shared ply state to that ply.
+     * Click on any bar (base or delta) to jump shared ply state to that ply.
      */
     div.on("plotly_click", function (ev) {
       if (ev.points && ev.points.length) {
@@ -267,26 +322,23 @@
     /**
      * Subscribe to shared WoodLeagueAnalysis state changes.
      * Updates the ply marker and re-renders the chart when perspective flips.
-     *
-     * Params:
-     *   state (object): { ply: number, perspective: string }
      */
     WoodLeagueAnalysis.subscribe(function (state) {
-      // Move the ply marker (trace index 1).
-      Plotly.restyle(div, { x: [[state.ply, state.ply]], y: [[-DISPLAY_CAP, DISPLAY_CAP]] }, [1]);
+      // Move the ply marker (trace index 2 after the two bar traces).
+      Plotly.restyle(div, { x: [[state.ply, state.ply]], y: [[-DISPLAY_CAP, DISPLAY_CAP]] }, [2]);
 
       if (state.perspective !== currentPerspective) {
         currentPerspective = state.perspective;
-        var pts = getPointsForPerspective(currentPerspective);
+        var traces = buildTraces(currentPerspective);
+        // Restyle base (0) and delta (1) bar traces in lock-step.
         Plotly.restyle(div, {
-          x: [pts.map(function (p) { return p.ply; })],
-          y: [pts.map(function (p) { return p.display; })],
-          customdata: [pts.map(function (p) {
-            return [p.san, p.cp >= 0 ? "+" : "", Math.abs(p.cp / 100).toFixed(2)];
-          })],
-          // Re-color bars so only the new perspective player's moves are vivid.
-          "marker.color": [buildColors(currentPerspective)],
-        }, [0]);
+          x: [traces[0].x, traces[1].x],
+          y: [traces[0].y, traces[1].y],
+        }, [0, 1]);
+        Plotly.restyle(div, {
+          customdata: [traces[1].customdata],
+          "marker.color": [traces[1].marker.color],
+        }, [1]);
         Plotly.relayout(div, buildLayout(currentPerspective));
       }
     });
