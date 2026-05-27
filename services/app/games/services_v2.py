@@ -88,22 +88,6 @@ class Lc0MoveRow:
     wdl_draw_3: int | None = None
     wdl_loss_3: int | None = None
 
-    # Raw mover-frame played-move WDL triple (#161 worker).
-    wdl_win:  int | None = None
-    wdl_draw: int | None = None
-    wdl_loss: int | None = None
-
-    # Per-candidate mover-frame WDL triples for arrow tiers 1, 2, 3.
-    wdl_win_1:  int | None = None
-    wdl_draw_1: int | None = None
-    wdl_loss_1: int | None = None
-    wdl_win_2:  int | None = None
-    wdl_draw_2: int | None = None
-    wdl_loss_2: int | None = None
-    wdl_win_3:  int | None = None
-    wdl_draw_3: int | None = None
-    wdl_loss_3: int | None = None
-
 
 @dataclass
 class GameAnalysisDataV2:

@@ -4,9 +4,6 @@
   {# JSON data containers — read by JS below, not executed #}
   {# board-frames-json: list[dict] — each entry is {svg, arrows, ply, san, last_move_uci, classification} #}
   <script type="application/json" id="board-frames-json">{{ frames_json|safe }}</script>
-  {# board-arrows-json removed (Task 7, #209): arrows are now embedded per-frame above #}
-  {# board-san-json removed (#210 M3): SAN is embedded per-frame in frames[ply].san #}
-  {# board-isbest-json removed (#210 M2): is_best_map was dead code; not read by any JS #}
 
   {# Top player label #}
   <div class="player-label{% if top_side == 'White' %} player-label-no-top{% endif %}{% if top_side == 'Black' %} player-label-no-bottom{% endif %}">
@@ -41,7 +38,6 @@
     <button class="board-btn" id="board-btn-next" title="Next">&#x25B6;&#xFE0E;</button>
     <button class="board-btn" id="board-btn-end" title="End">&#x23ED;</button>
     <input type="range" id="board-slider" min="0" max="{{ total_frames|add:'-1' }}" value="0" style="flex:1;max-width:220px;accent-color:var(--color-gold);">
-    {# #212 v4: ply-label removed — wrapped onto two lines and the "(ply N)" form was confusing. The moves strip below shows the current move via the .is-active chip. #}
   </div>
 
 </div>
@@ -81,7 +77,6 @@
   var SVG_NS = 'http://www.w3.org/2000/svg';
   var SAME_ORIGIN_ARROW_SPACING = 9;
   var frames = JSON.parse(document.getElementById('board-frames-json').textContent);
-  // arrowsByPly removed (Task 7, #209): arrows are now embedded in each frame dict.
   var boardOrientation = '{{ orientation }}';
   var overlayViewboxSize = parseFloat('{{ overlay_viewbox_size }}');
   var overlayBoardMargin = parseFloat('{{ overlay_board_margin }}');
@@ -91,8 +86,6 @@
   var svgWrap = document.getElementById('board-svg-wrap');
   var arrowOverlay = document.getElementById('board-arrow-overlay');
   var slider = document.getElementById('board-slider');
-  // ply-label element removed (#212 v4) — kept as null for any historical reference.
-  var plyLabel = null;
   var btnStart = document.getElementById('board-btn-start');
   var btnPrev = document.getElementById('board-btn-prev');
   var btnPlay = document.getElementById('board-btn-play');

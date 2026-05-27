@@ -268,7 +268,6 @@ def board_partial(request: HttpRequest, slug: str) -> HttpResponse:
         "slug": slug,
         "orientation": orientation,
         "frames_json": json.dumps(board_data["frames"]),
-        # arrow_data_json dropped — arrows are now embedded per-frame.
         "total_frames": board_data["total_frames"],
         "top_player": board_data["top_player"],
         "top_sym": board_data["top_sym"],
@@ -555,10 +554,8 @@ def engine_line_partial(request: HttpRequest, slug: str) -> HttpResponse:
         ply=params.ply,
     )
 
-    arrow_labels_by_ply: dict[int, list[str]] = {}
     return render(request, "games/_engine_line_partial.html", {
         "frames_json": json.dumps(frames),
-        "arrow_labels_json": json.dumps(arrow_labels_by_ply),
         "san_list_json": json.dumps(san_list),
         "bot_label": bot_label,
         "total_frames": len(frames),
@@ -850,8 +847,9 @@ def pgn_partial(request: HttpRequest, slug: str) -> HttpResponse:
         slug: The game slug identifying which game to render.
 
     Returns:
-        HttpResponse: Rendered _pgn_table.html with ``pgn_moves`` context — a list
-        of dicts with keys: ply, san, color ("white"/"black"), move_number, classification.
+        HttpResponse: Rendered _pgn_table.html with ``pgn_move_pairs`` context — a
+        list of dicts grouping each move number's white/black move dicts (keys:
+        ply, san, color, move_number, sf_classification, lc0_classification).
     """
     data = _load_or_404(slug)
     by_ply_sf = {m.ply: m.classification for m in data.sf_moves}
@@ -904,6 +902,5 @@ def pgn_partial(request: HttpRequest, slug: str) -> HttpResponse:
             pgn_move_pairs.append(current_pair)
         current_pair[m["color"]] = m
     return render(request, "games/partials/_pgn_table.html", {
-        "pgn_moves": moves,
         "pgn_move_pairs": pgn_move_pairs,
     })

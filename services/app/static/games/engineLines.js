@@ -437,7 +437,7 @@
  * Setup Engine Lines board controls when an engine line board is rendered.
  * This is called from within the engine-line partial template.
  */
-window.setupEngineLineBoard = function (framesJson, arrowLabelsJson, sanListJson, totalFrames) {
+window.setupEngineLineBoard = function (framesJson, sanListJson, totalFrames) {
   var frames = JSON.parse(framesJson || '[]');
   var sanList = JSON.parse(sanListJson || '[]');
   var totalFrames = frames.length;

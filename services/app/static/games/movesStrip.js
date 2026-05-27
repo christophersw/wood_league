@@ -47,13 +47,6 @@
   var prefersReducedMotion = window.matchMedia &&
     window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  // Boot marker so the user can verify in DevTools console that the new file
-  // is loaded (i.e. the browser isn't serving a cached pgnTable.js from
-  // pre-#212). If you don't see this line in DevTools, hard-refresh.
-  if (window.console && typeof window.console.log === "function") {
-    window.console.log("[movesStrip] loaded");
-  }
-
   /**
    * Resolve which engine's classifications should drive the chip top-bar +
    * badge right now, based on the board arrow-toggle state.
