@@ -29,28 +29,6 @@
     </span>
   </header>
 
-  {# Whole-game average winning chances — White's perspective, shown once at top #}
-  {% with gw=wdl.white %}
-  {% if gw.win or gw.draw or gw.loss %}
-  <div class="card-qwrap" style="margin-bottom:1.15rem;">
-    <div class="card-qcap">Avg. Winning Chances for Whole Game <span class="hint" tabindex="0">— what's this?</span></div>
-    <div class="card-gwc" aria-label="Average winning chances for the whole game, White's perspective">
-      {% if gw.win %}<div class="seg gwc-white{% if white_outcome.kind == 'win' %} gwc-actual{% endif %}" style="flex:{{ gw.win }}" title="{% if white_outcome.kind == 'win' %}White won the game{% else %}White wins{% endif %}">{% if white_outcome.kind == 'win' %}🏆 {% endif %}{% widthratio gw.win 1 100 %}%</div>{% endif %}
-      {% if gw.draw %}<div class="seg gwc-draw{% if white_outcome.kind == 'draw' %} gwc-actual{% endif %}" style="flex:{{ gw.draw }}" title="{% if white_outcome.kind == 'draw' %}Game drawn{% else %}Draw{% endif %}">{% if white_outcome.kind == 'draw' %}🤝 {% endif %}{% widthratio gw.draw 1 100 %}%</div>{% endif %}
-      {% if gw.loss %}<div class="seg gwc-black{% if white_outcome.kind == 'loss' %} gwc-actual{% endif %}" style="flex:{{ gw.loss }}" title="{% if white_outcome.kind == 'loss' %}Black won the game{% else %}Black wins{% endif %}">{% if white_outcome.kind == 'loss' %}🏆 {% endif %}{% widthratio gw.loss 1 100 %}%</div>{% endif %}
-    </div>
-    <div class="card-pop card-legend card-legend--down">
-      <h4>Avg. winning chances</h4>
-      {% if white_outcome %}<p>{% if white_outcome.kind == 'draw' %}The game was drawn.{% elif white_outcome.kind == 'loss' %}Black won the game in the end.{% else %}White won the game in the end.{% endif %} Averaged over the whole game:</p>{% endif %}
-      <div class="lrow"><span class="sw" style="background:var(--color-near-white);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--color-peat) 30%,transparent)"></span><span class="lg"></span><span class="lt"><b>White</b> winning chance — <b>{% widthratio gw.win 1 100 %}%</b></span></div>
-      <div class="lrow"><span class="sw" style="background:var(--color-slate)"></span><span class="lg"></span><span class="lt"><b>Draw</b> chance — <b>{% widthratio gw.draw 1 100 %}%</b></span></div>
-      <div class="lrow"><span class="sw" style="background:var(--color-ebony)"></span><span class="lg"></span><span class="lt"><b>Black</b> winning chance — <b>{% widthratio gw.loss 1 100 %}%</b></span></div>
-      <span class="calc">Elo-adjusted — these odds reflect the players' estimated skill difference at the start of the game, not even-strength chances.</span>
-    </div>
-  </div>
-  {% endif %}
-  {% endwith %}
-
   {# ── White side ───────────────────────────────────────────────────────── #}
   <div class="wc-card__side">
     <div class="wc-card__side-title">{{ side_labels.0.1 }} · White{% if white_outcome %} · <span class="card-outcome card-outcome--{{ white_outcome.kind }}">{{ white_outcome.label }}</span>{% endif %}</div>
