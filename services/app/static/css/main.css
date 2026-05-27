@@ -1497,4 +1497,19 @@
   .lc0-wdl-cls-strip .cls-cell { flex: 1 1 0; min-width: 1px; cursor: pointer; }
   .lc0-wdl-cls-strip .cls-cell:hover { outline: 1px solid var(--color-forest); outline-offset: -1px; }
   .lc0-wdl-cls-strip .cls-cell--unclassified { background: transparent; }
+
+  /* Flip-perspective button — same chip-style envelope as the .arrow-tg
+     chips so it reads as a sibling control in the Position card header (#216). */
+  .arrow-tg--flip {
+    cursor: pointer;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.02em;
+    background: transparent;
+    border: 1px solid var(--color-card-border-soft);
+    padding: 2px 8px;
+    border-radius: 4px;
+  }
+  .arrow-tg--flip:hover { background: color-mix(in srgb, var(--color-gold) 18%, transparent); }
+  .arrow-tg--flip:focus-visible { outline: 2px solid var(--color-forest); outline-offset: 1px; }
 }
