@@ -1489,4 +1489,12 @@
   .scorechip--lc0 .scorechip__k { background: var(--color-denim); }
   .scorechip__v { font-family: var(--font-serif); font-size: 1.05rem; font-weight: 700; color: var(--color-ebony); padding: 2px 8px 4px; font-variant-numeric: tabular-nums; }
   .scorechip__v.bad { color: var(--color-vermilion-bright); }
+
+  /* LC0 WDL classification strip — sibling to #lc0-wdl-chart, populated by
+     lc0Wdl.js (#216). Each cell uses .move-annotation-<cls> for its
+     background; unclassified cells are transparent. */
+  .lc0-wdl-cls-strip { display: flex; gap: 0; height: 12px; margin: 2px 0 0; }
+  .lc0-wdl-cls-strip .cls-cell { flex: 1 1 0; min-width: 1px; cursor: pointer; }
+  .lc0-wdl-cls-strip .cls-cell:hover { outline: 1px solid var(--color-forest); outline-offset: -1px; }
+  .lc0-wdl-cls-strip .cls-cell--unclassified { background: transparent; }
 }

@@ -1,4 +1,7 @@
 {% load static %}
+{# _chart_lc0_wdl.html — LC0 WDL stacked-area chart partial. #}
+{# Changelog: #}
+{#   2026-05-27 (#216): add per-ply classification strip beneath chart. #}
 <section class="wc-chart" data-chart="lc0-wdl">
   <header class="wc-chart__head">
     <h3>LC0 Win / Draw / Loss</h3>
@@ -22,6 +25,8 @@
     </details>
   </header>
   <div id="lc0-wdl-chart"></div>
+  <div id="lc0-wdl-cls-strip" class="lc0-wdl-cls-strip" role="list"
+       aria-label="LC0 per-ply move quality"></div>
   {{ payload|json_script:"lc0-wdl-data" }}
   <script src="{% static 'games/charts/lc0Wdl.js' %}"></script>
 </section>

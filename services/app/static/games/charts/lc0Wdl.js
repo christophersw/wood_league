@@ -9,6 +9,7 @@
 //
 // Changelog:
 //   2026-05-21 (#186): Lifted from analysis.html inline script; wired to lc0-wdl-data.
+//   2026-05-27 (#216): add per-ply classification strip beneath the WDL area.
 
 (function () {
   var rawPayload = JSON.parse(document.getElementById("lc0-wdl-data").textContent || "null");
@@ -175,5 +176,29 @@
           }, [0, 1, 2]);
         }
       });
+
+      // Per-ply classification strip (#216) — sibling to the Plotly div.
+      // One cell per analysed ply, colored via the shared move-annotation-<cls>
+      // palette in main.css. Click sets the shared ply.
+      var stripEl = document.getElementById("lc0-wdl-cls-strip");
+      if (stripEl) {
+        var sanByPly = {};
+        rawPayload.forEach(function (d) { sanByPly[Number(d.ply)] = d.san; });
+        rawPayload.forEach(function (d) {
+          var cls = (d.classification || "").toLowerCase();
+          var cell = document.createElement("div");
+          cell.className = "cls-cell" + (cls ? " move-annotation-" + cls : " cls-cell--unclassified");
+          var ply = Number(d.ply);
+          var humanCls = cls ? cls.charAt(0).toUpperCase() + cls.slice(1) : "—";
+          cell.title = "Ply " + ply + " · " + (sanByPly[ply] || "") + " · " + humanCls;
+          cell.setAttribute("role", "listitem");
+          cell.addEventListener("click", function () {
+            if (window.WoodLeagueAnalysis) {
+              window.WoodLeagueAnalysis.setPly(ply);
+            }
+          });
+          stripEl.appendChild(cell);
+        });
+      }
     });
 })();
