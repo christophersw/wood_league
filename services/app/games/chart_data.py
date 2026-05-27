@@ -6,6 +6,7 @@ Description:
 
 Changelog:
     2026-05-21 (#186): Initial.
+    2026-05-27 (#216): lc0_wdl_payload emits per-ply ``classification`` key.
 """
 from __future__ import annotations
 
@@ -53,6 +54,19 @@ def sf_cp_payload(data: GameAnalysisDataV2) -> list[dict]:
 
 
 def lc0_wdl_payload(data: GameAnalysisDataV2) -> list[dict]:
+    """Build the LC0 WDL chart payload.
+
+    Each entry carries the White-frame WDL triple plus the per-move
+    base-severity classification used by the bottom-of-chart classification
+    strip in lc0Wdl.js.
+
+    Params:
+        data: GameAnalysisDataV2 — the analysed game.
+
+    Returns:
+        list[dict]: One dict per analysed move, keys ``ply``, ``wdl_win``,
+        ``wdl_draw``, ``wdl_loss``, ``san``, ``classification``.
+    """
     return [
         {
             "ply": m.ply,
@@ -60,6 +74,7 @@ def lc0_wdl_payload(data: GameAnalysisDataV2) -> list[dict]:
             "wdl_draw": m.wdl_draw_adj,
             "wdl_loss": m.wdl_loss_adj,
             "san": m.san,
+            "classification": (m.base_severity or "").lower(),
         }
         for m in data.lc0_moves
     ]

@@ -1,5 +1,12 @@
 """
-Tests for chart_data module.
+Title: test_chart_data.py — Tests for the chart_data module
+Description:
+    Verifies that chart_data payload builders produce correctly shaped dicts
+    for the Win%, SF CP, and LC0 WDL charts.
+
+Changelog:
+    2026-05-21 (#186): Initial.
+    2026-05-27 (#216): Add test_lc0_wdl_payload_includes_classification.
 """
 import pytest
 
@@ -42,3 +49,14 @@ def test_lc0_wdl_payload_uses_white_frame_adj(new_schema_game_factory):
     assert payload[0]["wdl_win"] == data.lc0_moves[0].wdl_win_adj
     assert payload[0]["wdl_draw"] == data.lc0_moves[0].wdl_draw_adj
     assert payload[0]["wdl_loss"] == data.lc0_moves[0].wdl_loss_adj
+
+
+def test_lc0_wdl_payload_includes_classification(new_schema_game_factory):
+    """Each ply entry carries a `classification` string from base_severity, lowercased."""
+    data = get_game_analysis_v2(new_schema_game_factory().slug)
+    payload = lc0_wdl_payload(data)
+    assert payload
+    for row in payload:
+        assert isinstance(row["classification"], str)
+    # Pin the .lower() normalisation against a known fixture value (ply 1 = "best").
+    assert payload[0]["classification"] == "best"
