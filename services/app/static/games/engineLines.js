@@ -214,6 +214,14 @@
       window.WoodLeagueMovePanels.sync();
     }
 
+    // Reset the branching-context label back to the em-dash placeholder so
+    // the card header doesn't show a stale "SF branched from ply 12 (+1.5)"
+    // after the user closes the line. (#212 v6 live-review.)
+    var contextEl = document.getElementById('engine-lines-context');
+    if (contextEl) {
+      contextEl.textContent = '—';
+    }
+
     _setEngineLineControlsEnabled(false);
     _notifyEngineLines();
   }
@@ -294,6 +302,23 @@
         var sf = (engine || 'sf').toLowerCase() === 'sf';
         card.classList.toggle('engine-line-plate--sf', sf);
         card.classList.toggle('engine-line-plate--lc0', !sf);
+      }
+
+      // Write the branching context into #engine-lines-context — e.g.
+      //   "SF branched from ply 12 (+1.5)"
+      //   "LC0 branched from ply 8 (+11%)"
+      // Delta text is whatever the arrow carried (already engine-appropriate:
+      // pawn delta for SF, win-% delta for LC0). (#212 v6 live-review.)
+      var contextEl = document.getElementById('engine-lines-context');
+      if (contextEl) {
+        var engineLabel = (engine || 'sf').toLowerCase() === 'lc0' ? 'LC0' : 'SF';
+        // The request_ply on the arrow is the zero-based pre-move ply; show
+        // the player-facing ply number, which is one greater (the ply of
+        // the move being explored).
+        var requestPly = parseInt(ply, 10);
+        var displayPly = isNaN(requestPly) ? '?' : (requestPly + 1);
+        var deltaSuffix = deltaText ? ' (' + deltaText + ')' : '';
+        contextEl.textContent = engineLabel + ' branched from ply ' + displayPly + deltaSuffix;
       }
 
       _setEngineLineRequestState(true, '');
