@@ -35,6 +35,15 @@
   padding: 8px 12px;
   user-select: none;
 }
+.moves-panel-summary .moves-engine-tag {
+  font-size: 0.62rem;
+  letter-spacing: 0.06em;
+  color: var(--color-peat);
+  text-transform: none;
+  margin-left: 6px;
+  font-weight: 400;
+}
+.moves-panel-summary .moves-engine-name { font-weight: 700; color: var(--color-rust); }
 .moves-panel-summary::-webkit-details-marker { display: none; }
 .moves-panel-summary::before {
   content: "▸";
@@ -65,16 +74,20 @@
   gap: 0.3rem;
   transition: background 0.1s ease;
 }
-.moves-strip .moves-mv .moves-num {
+/* Move-number prefix — now lives between chip pairs as a flex sibling,
+   shared by both white and black chips of the same move number
+   (#212 v4 live-review item 2). Aligns vertically with the chip text. */
+.moves-strip > .moves-num {
   font-family: var(--font-mono);
-  font-size: 0.6rem;
+  font-size: 0.7rem;
   color: var(--color-peat);
   font-weight: 600;
   letter-spacing: 0.02em;
-  /* Empty (Black's non-first move) → collapse the span entirely. */
-  min-width: 0;
+  padding: 0.18rem 0.05rem 0.15rem 0.3rem;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
 }
-.moves-strip .moves-mv .moves-num:empty { display: none; }
 .moves-strip .moves-mv .moves-san {
   color: var(--color-ebony);
   font-weight: 700;

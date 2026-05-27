@@ -1,43 +1,34 @@
 {# Title: _pgn_table.html — Main-board moves strip partial #}
 {# Description: #}
 {#     HTMX partial rendering the collapsible "Moves" panel shown directly #}
-{#     under the main game board. Each move is a focusable chip-shaped button #}
-{#     (.move-chip.moves-mv) carrying the whole notation (e.g. "3. Nf3 ?!") #}
-{#     plus its absolute ply in data-ply. #}
-{# #}
-{#     Per-engine source: each chip carries BOTH SF and LC0 classifications in #}
-{#     data-sf-cls / data-lc0-cls and BOTH badge variants in .moves-badge--sf / #}
-{#     .moves-badge--lc0 spans. movesStrip.js reads the board arrow-toggle state #}
-{#     (#board-sf-toggle / #board-lc0-toggle) and swaps the active engine's #}
-{#     classification onto the chip + reveals the matching badge via the #}
-{#     .moves-source--sf / .moves-source--lc0 class on the strip nav. Default #}
-{#     is SF (the per-engine source-toggle CSS hides the lc0 badge until JS #}
-{#     flips the source class). #}
-{# #}
-{#     movesStrip.js is loaded once from analysis.html's extra_js block, not #}
-{#     from inside this partial. It uses document-level click delegation + a #}
-{#     WoodLeagueAnalysis subscription that both survive HTMX swaps. #}
+{#     under the main game board. Each move-pair shares one move-number span #}
+{#     followed by up to two chip-shaped buttons (white + black). Each chip #}
+{#     carries the SAN, both engines' classifications, and both engines' #}
+{#     annotation badges; movesStrip.js (loaded once from analysis.html) #}
+{#     reveals the active engine's view based on the board arrow-toggle state. #}
 {# Context: #}
-{#     pgn_moves (list[dict]) — each entry has: ply, move_number, color, san, #}
-{#         classification (= sf_classification, kept for backward compat), #}
-{#         sf_classification, lc0_classification. #}
+{#     pgn_moves (list[dict]) — flat per-ply list, kept for backward compat. #}
+{#     pgn_move_pairs (list[dict]) — grouped by move number for the strip; #}
+{#         each entry has number, white, black, leading_color. #}
 {# Changelog: #}
+{#     2026-05-26 (#212 v4): move-number span lifted out of the chip body so #}
+{#                       it sits between move pairs (1. [white] [black] #}
+{#                       2. [white] [black] …) instead of duplicating inside #}
+{#                       both chips of a pair. Summary now carries a dynamic #}
+{#                       "(showing SF/LC0 move quality)" subtitle. #}
 {#     2026-05-26 (#212 v3): emit both SF + LC0 classifications and badge #}
-{#                       variants per chip so JS can swap the visible engine #}
-{#                       to follow the board's arrow-toggle state. #}
+{#                       variants per chip so JS can swap the visible engine. #}
 {#     2026-05-26 (#212 v2): wrap the strip in a collapsible <details open> #}
-{#                       panel, fold the move-number prefix into the chip body, #}
-{#                       reuse .move-chip + .move-annotation-{cls} for the #}
-{#                       classification top-bar treatment. #}
+{#                       panel, reuse .move-chip + .move-annotation-{cls}. #}
 {#     2026-05-26 (#212): replaced <details>Moves</details> + two-column table #}
-{#                       with an inline chip strip; relocated slot under main board. #}
+{#                       with an inline chip strip; relocated slot under board. #}
 {#     2026-05-21 (#186): Task 14 — lifted from inline analysis.html into partial. #}
 
 <details open id="pgn-panel" class="moves-panel">
-  <summary class="moves-panel-summary">Moves</summary>
+  <summary class="moves-panel-summary">Moves <span class="moves-engine-tag">(showing <span class="moves-engine-name">SF</span> move quality)</span></summary>
   <nav id="pgn-moves" class="moves-strip moves-source--sf" aria-label="Game moves">
-    {% for move in pgn_moves %}
-      <button type="button" class="move-chip moves-mv {% if move.sf_classification %}move-annotation-{{ move.sf_classification|lower }}{% else %}moves-mv--unanalyzed{% endif %}" data-ply="{{ move.ply }}" data-sf-cls="{{ move.sf_classification|default_if_none:''|lower }}" data-lc0-cls="{{ move.lc0_classification|default_if_none:''|lower }}"><span class="moves-num">{% if move.color == "white" %}{{ move.move_number }}.{% elif forloop.first %}{{ move.move_number }}…{% endif %}</span><span class="moves-san">{{ move.san }}</span><span class="moves-badge moves-badge--sf">{% include "games/partials/_move_annotation.html" with classification=move.sf_classification %}</span><span class="moves-badge moves-badge--lc0">{% include "games/partials/_move_annotation.html" with classification=move.lc0_classification %}</span></button>
+    {% for pair in pgn_move_pairs %}
+      <span class="moves-num">{{ pair.number }}{% if forloop.first and pair.leading_color == "black" %}…{% else %}.{% endif %}</span>{% if pair.white %}<button type="button" class="move-chip moves-mv {% if pair.white.sf_classification %}move-annotation-{{ pair.white.sf_classification|lower }}{% else %}moves-mv--unanalyzed{% endif %}" data-ply="{{ pair.white.ply }}" data-sf-cls="{{ pair.white.sf_classification|default_if_none:''|lower }}" data-lc0-cls="{{ pair.white.lc0_classification|default_if_none:''|lower }}"><span class="moves-san">{{ pair.white.san }}</span><span class="moves-badge moves-badge--sf">{% include "games/partials/_move_annotation.html" with classification=pair.white.sf_classification %}</span><span class="moves-badge moves-badge--lc0">{% include "games/partials/_move_annotation.html" with classification=pair.white.lc0_classification %}</span></button>{% endif %}{% if pair.black %}<button type="button" class="move-chip moves-mv {% if pair.black.sf_classification %}move-annotation-{{ pair.black.sf_classification|lower }}{% else %}moves-mv--unanalyzed{% endif %}" data-ply="{{ pair.black.ply }}" data-sf-cls="{{ pair.black.sf_classification|default_if_none:''|lower }}" data-lc0-cls="{{ pair.black.lc0_classification|default_if_none:''|lower }}"><span class="moves-san">{{ pair.black.san }}</span><span class="moves-badge moves-badge--sf">{% include "games/partials/_move_annotation.html" with classification=pair.black.sf_classification %}</span><span class="moves-badge moves-badge--lc0">{% include "games/partials/_move_annotation.html" with classification=pair.black.lc0_classification %}</span></button>{% endif %}
     {% empty %}
       <span class="moves-empty">No moves recorded.</span>
     {% endfor %}

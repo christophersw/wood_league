@@ -864,4 +864,29 @@ def pgn_partial(request: HttpRequest, slug: str) -> HttpResponse:
             "sf_classification": by_ply_sf.get(ply),
             "lc0_classification": by_ply_lc0.get(ply),
         })
-    return render(request, "games/partials/_pgn_table.html", {"pgn_moves": moves})
+
+    # Group by move number for the moves-strip template, so the move-number
+    # prefix can render once per pair instead of inside both the white and
+    # black chips of the same number (#212 v4 live-review item 2).
+    #
+    # Each pair: {number: int, white: move|None, black: move|None,
+    #             leading_color: "white"|"black"} — leading_color is what the
+    # first ply in this pair was, used by the template to decide between
+    # "{n}." (white-leads) and "{n}…" (black-leads, only on first pair when
+    # the PGN starts mid-position with Black to move).
+    pgn_move_pairs: list[dict] = []
+    current_pair: dict | None = None
+    for m in moves:
+        if current_pair is None or current_pair["number"] != m["move_number"]:
+            current_pair = {
+                "number": m["move_number"],
+                "white": None,
+                "black": None,
+                "leading_color": m["color"],
+            }
+            pgn_move_pairs.append(current_pair)
+        current_pair[m["color"]] = m
+    return render(request, "games/partials/_pgn_table.html", {
+        "pgn_moves": moves,
+        "pgn_move_pairs": pgn_move_pairs,
+    })

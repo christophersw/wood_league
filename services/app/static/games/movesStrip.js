@@ -75,7 +75,8 @@
   /**
    * Apply the active engine's classification to every chip: swap the chip's
    * move-annotation-{cls} class and flip the strip-level .moves-source--{sf,lc0}
-   * class so CSS reveals the matching badge variant.
+   * class so CSS reveals the matching badge variant. Also updates the summary
+   * line's "(showing X move quality)" engine name (#212 v4 live-review item 1).
    */
   function applyEngineSource() {
     var strip = document.getElementById(STRIP_ID);
@@ -83,6 +84,10 @@
     var engine = activeEngine();
     strip.classList.toggle("moves-source--sf", engine === "sf");
     strip.classList.toggle("moves-source--lc0", engine === "lc0");
+
+    // Update the panel summary's engine name span (e.g. "SF" → "LC0").
+    var label = document.querySelector("#pgn-panel .moves-engine-name");
+    if (label) label.textContent = engine === "sf" ? "SF" : "LC0";
 
     var attr = engine === "sf" ? "sfCls" : "lc0Cls";
     strip.querySelectorAll(".moves-mv").forEach(function (chip) {
