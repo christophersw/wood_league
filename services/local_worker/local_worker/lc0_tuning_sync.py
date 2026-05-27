@@ -11,17 +11,10 @@ Description:
     object-storage failure must never interrupt analysis — the worker
     just recalibrates as it does today (issue #150).
 
-    Per-network draw-rate measurements (issue #159) are stored in the same
-    lc0_tuning.json file under a ``draw_rate`` section keyed by network
-    name.  push_draw_rate / pull_draw_rate manage that section with the
-    same fail-soft discipline.
 Changelog:
     2026-05-17: Initial creation (issue #150).
-    2026-05-19: Add push_draw_rate / pull_draw_rate for per-network draw-rate
-                persistence in the existing lc0_tuning.json store (issue #159).
-    2026-05-19: push_draw_rate now writes via tmp→replace (atomic) matching
-                lc0_tuning.save_cache idiom; fix sample stdev in lc0_draw_rate
-                (issue #159 B1).
+    2026-05-27 (#214): Drop dead per-network draw-rate references from header
+                (draw-rate is now a worker-side constant in lc0_calibration).
 """
 from __future__ import annotations
 

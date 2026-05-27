@@ -32,7 +32,6 @@ import typer
 from local_worker._shared import LONG_RUNNING_COMMANDS
 from local_worker.commands import analyze as analyze_cmd
 from local_worker.commands import cache_merge_cmd
-from local_worker.commands import calibrate_draw_rate_cmd
 from local_worker.commands import info as info_cmd
 from local_worker.commands import lc0_tuning_pull_cmd
 from local_worker.commands import logs as logs_cmd
@@ -144,7 +143,6 @@ app.command()(info_cmd.version)
 app.command()(info_cmd.status)
 app.command("submit-log")(submit_log_cmd.submit_log)
 app.command("cache-merge")(cache_merge_cmd.cache_merge)
-app.command("calibrate-draw-rate")(calibrate_draw_rate_cmd.calibrate_draw_rate)
 app.command("plan-sf-fanout")(plan_sf_fanout_cmd.plan_sf_fanout)
 app.command("lc0-tuning-pull")(lc0_tuning_pull_cmd.lc0_tuning_pull)
 

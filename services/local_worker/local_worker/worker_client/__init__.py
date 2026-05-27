@@ -6,7 +6,7 @@ Description:
 Changelog:
     2026-05-10: Copied from packages/shared to make local_worker self-contained for PyPI
 """
-from .client import NeedsCalibrationError, WorkerClient, WorkerClientError
+from .client import WorkerClient, WorkerClientError
 from .models import Job
 
-__all__ = ["WorkerClient", "WorkerClientError", "NeedsCalibrationError", "Job"]
+__all__ = ["WorkerClient", "WorkerClientError", "Job"]

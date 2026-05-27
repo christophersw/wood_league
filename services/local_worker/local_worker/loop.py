@@ -27,9 +27,11 @@ Changelog:
                 unpack was silently caught and degraded every run to
                 cold-start with draw_rate=0.0, which the server's
                 min_value=0.001 validator then rejected with HTTP 400).
-                _run_lc0_job now sources draw_rate_reference from
-                job.draw_rate_reference (app-attached at checkout from
-                the NetworkCalibration row); 0.5 fallback when None.
+    2026-05-27 (#214): drop job.draw_rate_reference plumbing — the
+                NetworkCalibration table + 409 NEEDS_CALIBRATION pre-flight
+                were removed and the worker now pins draw_rate_reference
+                to the ``LC0_DRAW_RATE_REFERENCE`` constant in
+                ``local_worker.analysis.lc0_calibration``.
 """
 from __future__ import annotations
 
@@ -39,12 +41,11 @@ import socket
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone as _dt_timezone
-from typing import Any, Callable, Optional
+from typing import Callable, Optional
 
 import chess.engine
 
 from local_worker.worker_client import (
-    NeedsCalibrationError,
     WorkerClient,
     WorkerClientError,
 )
@@ -54,7 +55,6 @@ from local_worker.analysis.lc0 import (
     build_lc0_payload,
     launch_engine as lc0_launch_engine,
 )
-from local_worker.analysis.lc0_draw_rate import measure_draw_rate
 from local_worker.analysis.eval_cache import EvalCache
 from local_worker._shared import data_dir
 from local_worker.config import Settings
@@ -68,53 +68,6 @@ _HEARTBEAT_INTERVAL = 30.0
 # wrongly (e.g. the #141 nodes=None→depth=20 bug). Below this we fail
 # the job loudly rather than write statistically meaningless analysis.
 _MIN_LC0_NODES = 1000
-
-
-def handle_needs_calibration(
-    *,
-    engine: Any,
-    error: NeedsCalibrationError,
-    client: Any,
-    worker_id: str,
-) -> None:
-    """Run the lc0 draw-rate sampler on demand and POST the result (#161 Phase B).
-
-    Invoked by the run loop when an lc0 checkout returns 409 NEEDS_CALIBRATION.
-    Drives ``measure_draw_rate`` with the exact settings the app supplied in
-    ``error.sampler_settings``, then sends the measurement via
-    ``client.submit_network_calibration``. The next checkout retry succeeds
-    once the calibration row lands (idempotent: racing workers see
-    ``created=False`` and the loop still proceeds).
-
-    Args:
-        engine: A live ``chess.engine.SimpleEngine`` (or compatible) ready to
-            ``analyse`` — typically the warm lc0 engine used for production
-            jobs.
-        error: The ``NeedsCalibrationError`` raised by ``client.checkout``.
-        client: A ``WorkerClient`` (or compatible stub) used to submit the
-            measurement.
-        worker_id: This worker's identifier (recorded on the row).
-
-    Returns:
-        None. The caller retries checkout after this returns.
-    """
-    settings = error.sampler_settings
-    result = measure_draw_rate(
-        engine,
-        network=error.network_name,
-        sem_target=float(settings["sem_target"]),
-        max_samples=int(settings["max_positions"]),
-        nodes=int(settings["nodes"]),
-    )
-    client.submit_network_calibration(
-        network_name=error.network_name,
-        settings_hash=error.settings_hash,
-        draw_rate_reference=result.draw_rate_reference,
-        sample_size=result.n_samples,
-        sem=result.stderr,
-        sampler_version=error.sampler_version,
-        worker_id=worker_id,
-    )
 
 
 def build_heartbeat_status(stats: "WorkerStats") -> str:
@@ -321,10 +274,9 @@ def _run_lc0_job(
     analyser with the warm engine (if provided), and submits the result. Returns
     False and fails the job if the node budget is below the minimum floor.
 
-    The draw-rate reference is sourced from ``job.draw_rate_reference`` —
-    the app attaches it at checkout from the ``NetworkCalibration`` row
-    (#161 Phase B). A missing value (None) falls back to 0.5, matching
-    ``analyze_pgn``'s own default; both are above the server's 0.001 floor.
+    The draw-rate reference comes from the worker-side constant
+    ``LC0_DRAW_RATE_REFERENCE`` (#214) — ``analyze_pgn`` reads it from
+    ``lc0_calibration`` by default.
 
     Args:
         job: Job dataclass from WorkerClient.checkout().
@@ -363,15 +315,6 @@ def _run_lc0_job(
     # Elo-aware calibration / classification, so we no longer forward
     # Elos or a fallback into analyze_pgn. _resolve_job_elos() is kept
     # for the app-side rating plumbing tests but is not called here.
-    # Source of truth for draw_rate_reference is the app: it attaches
-    # the calibrated value at checkout from the NetworkCalibration row
-    # (#161 Phase B). When a network is uncalibrated the app raises 409
-    # NEEDS_CALIBRATION and the worker's sampler runs upstream of this
-    # call, so a None here is a legacy / belt-and-suspenders path only.
-    draw_rate = (
-        job.draw_rate_reference if job.draw_rate_reference is not None
-        else 0.5
-    )
     cache = _open_eval_cache(settings)
     try:
         result = lc0_analyze(
@@ -385,7 +328,6 @@ def _run_lc0_job(
             eval_cache=cache,
             engine=lc0_engine,
             network_name_override=lc0_network_name,
-            draw_rate_reference=draw_rate,
         )
     finally:
         if cache is not None:
@@ -622,28 +564,7 @@ def run_batch(
                         batch_size=1,
                         game_id=game_id,
                         dispatch_mode="pull",
-                        network_name=warm_network_name if engine == "lc0" else "",
                     )
-                except NeedsCalibrationError as exc:
-                    if warm_engine is None:
-                        log.error(
-                            "lc0 NEEDS_CALIBRATION for %s but no warm engine available",
-                            exc.network_name,
-                        )
-                        break
-                    log.info(
-                        "lc0 NEEDS_CALIBRATION: running sampler for %s @ %s",
-                        exc.network_name, exc.settings_hash[:8],
-                    )
-                    try:
-                        handle_needs_calibration(
-                            engine=warm_engine, error=exc,
-                            client=client, worker_id=worker_id,
-                        )
-                    except Exception:  # noqa: BLE001
-                        log.exception("calibration sampler/submit failed")
-                        break
-                    continue  # retry checkout immediately
                 except WorkerClientError as exc:
                     log.error("Checkout failed for %s: %s", engine, exc)
                     break

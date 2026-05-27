@@ -9,7 +9,8 @@ Changelog:
     2026-05-06: Auto-configure ALLOWED_HOSTS with Railway health check domain
                 to fix DisallowedHost errors during health checks
     2026-05-19 (#159): Add WL_LC0_FALLBACK_ELO, WL_LC0_CONTEMPT_MAX,
-                       WL_LC0_CONTEMPT_ATTENUATION, WL_LC0_DRAW_RATE_SEM_TARGET
+                       WL_LC0_CONTEMPT_ATTENUATION
+    2026-05-27 (#214): Drop WL_LC0_DRAW_RATE_* sampler settings (constant 0.62)
 """
 import os
 from pathlib import Path
@@ -237,24 +238,6 @@ WL_LC0_CONTEMPT_MAX = 420.0
 # WL_LC0_CONTEMPT_ATTENUATION: mirrors lc0's WDLContemptAttenuation.
 #   Multiplier applied to the Elo-difference term when computing contempt.
 WL_LC0_CONTEMPT_ATTENUATION = 1.0
-
-# WL_LC0_DRAW_RATE_SEM_TARGET: target standard error of the mean for the
-#   per-network draw-rate sampler. The worker uses this to decide how many
-#   calibration samples to collect before trusting its draw-rate estimate.
-WL_LC0_DRAW_RATE_SEM_TARGET = 0.005
-
-# WL_LC0_DRAW_RATE_NODES: nodes per sampled position when measuring a network's
-#   population draw rate. Larger = lower per-position variance but slower.
-WL_LC0_DRAW_RATE_NODES = 800
-
-# WL_LC0_DRAW_RATE_MAX_POSITIONS: ceiling on positions sampled before the
-#   sampler gives up on hitting WL_LC0_DRAW_RATE_SEM_TARGET.
-WL_LC0_DRAW_RATE_MAX_POSITIONS = 10000
-
-# WL_LC0_DRAW_RATE_SAMPLER_VERSION: opaque version tag for the sampler
-#   algorithm. Bumping it invalidates every existing NetworkCalibration row
-#   (the (network_name, settings_hash) key changes), forcing a re-measure.
-WL_LC0_DRAW_RATE_SAMPLER_VERSION = "v1"
 
 # RunPod serverless dispatch settings
 RUNPOD_API_KEY = os.environ.get("RUNPOD_API_KEY", "")

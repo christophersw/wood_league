@@ -17,14 +17,12 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from accounts.models import User
-from analysis.calibration_hash import current_lc0_settings_hash
 from analysis.models import (
     AnalysisJob,
     GameAnalysis,
     Lc0GameAnalysis,
     Lc0MoveAnalysis,
     MoveAnalysis,
-    NetworkCalibration,
 )
 from api.models import WorkerAPIKey
 from games.models import Game
@@ -87,19 +85,6 @@ class Lc0CompleteEndpointTests(_BaseCompleteCase):
     """POST /complete (lc0) — raw payload → derived persistence."""
 
     engine = "lc0"
-
-    def setUp(self):
-        super().setUp()
-        # A NetworkCalibration row is not required for the complete path —
-        # but having one mirrors steady-state, since checkout would have
-        # consulted it. Phase G doesn't read it here.
-        NetworkCalibration.objects.create(
-            network_name="BT4-1740",
-            settings_hash=current_lc0_settings_hash(),
-            draw_rate_reference=0.58,
-            sample_size=4321, sem=0.0049,
-            sampler_version="v1", submitted_by_worker_id="w-prev",
-        )
 
     def _post(self, body):
         return self.client.post(

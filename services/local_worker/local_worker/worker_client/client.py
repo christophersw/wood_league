@@ -26,68 +26,20 @@ _MAX_RETRIES = 3
 _RETRY_BACKOFF = [1.0, 2.0, 4.0]
 
 
-def _maybe_raise_needs_calibration(resp: httpx.Response) -> None:
-    """Inspect a 409 response and raise NeedsCalibrationError when it applies.
-
-    Args:
-        resp: The httpx Response under inspection. Non-409 responses and
-            409 responses that aren't NEEDS_CALIBRATION are no-ops.
-
-    Raises:
-        NeedsCalibrationError: When the body parses as JSON with
-            ``error == "NEEDS_CALIBRATION"``.
-    """
-    if resp.status_code != 409:
-        return
-    try:
-        body = resp.json()
-    except ValueError:
-        return
-    if not isinstance(body, dict) or body.get("error") != "NEEDS_CALIBRATION":
-        return
-    raise NeedsCalibrationError(
-        network_name=body["network_name"],
-        settings_hash=body["settings_hash"],
-        sampler_settings=body["sampler_settings"],
-        sampler_version=body["sampler_version"],
-    )
-
-
 class WorkerClientError(Exception):
-    """Raised when the API returns an error response."""
+    """Raised when the API returns an error response.
 
-
-class NeedsCalibrationError(WorkerClientError):
-    """Raised when the app rejects an lc0 checkout pending calibration.
-
-    Issue #161 Phase B: the API responds 409 with
-    ``{"error": "NEEDS_CALIBRATION", "network_name": ..., "settings_hash": ...,
-    "sampler_settings": {...}, "sampler_version": ...}``. The worker handles
-    this by running the calibration sampler with the supplied settings,
-    POSTing the result, then retrying checkout.
+    Attributes:
+        status_code: HTTP status code if the failure came from a response
+            (``None`` for transport/retry-exhaustion failures). Callers can
+            use this to handle specific codes — e.g. checkout treats a 409
+            from a stale app deployment as "no jobs available right now"
+            rather than a fatal error.
     """
 
-    def __init__(
-        self,
-        *,
-        network_name: str,
-        settings_hash: str,
-        sampler_settings: dict,
-        sampler_version: str,
-    ) -> None:
-        """Capture the 409 body so the run loop can drive the sampler.
-
-        Args:
-            network_name: Resolved lc0 network identifier.
-            settings_hash: Canonical sampler-settings hash to echo on POST.
-            sampler_settings: Canonical settings dict the worker must use.
-            sampler_version: Sampler-version tag from the app.
-        """
-        super().__init__(f"NEEDS_CALIBRATION for {network_name}")
-        self.network_name = network_name
-        self.settings_hash = settings_hash
-        self.sampler_settings = sampler_settings
-        self.sampler_version = sampler_version
+    def __init__(self, message: str, *, status_code: int | None = None) -> None:
+        super().__init__(message)
+        self.status_code = status_code
 
 
 class WorkerClient:
@@ -133,13 +85,18 @@ class WorkerClient:
             if resp.status_code < 400:
                 return resp.json()
             if resp.status_code >= 500:
-                last_exc = WorkerClientError(f'HTTP {resp.status_code}: {resp.text[:200]}')
+                last_exc = WorkerClientError(
+                    f'HTTP {resp.status_code}: {resp.text[:200]}',
+                    status_code=resp.status_code,
+                )
                 log.warning('5xx from API (attempt %d): %s', attempt, resp.status_code)
                 if attempt < _MAX_RETRIES:
                     time.sleep(backoff)
                 continue
-            _maybe_raise_needs_calibration(resp)
-            raise WorkerClientError(f'HTTP {resp.status_code}: {resp.text[:200]}')
+            raise WorkerClientError(
+                f'HTTP {resp.status_code}: {resp.text[:200]}',
+                status_code=resp.status_code,
+            )
         raise WorkerClientError(f'API unavailable after {_MAX_RETRIES} attempts') from last_exc
 
     def checkout(
@@ -150,7 +107,6 @@ class WorkerClient:
         batch_size: int = 1,
         game_id: str | None = None,
         dispatch_mode: str = 'pull',
-        network_name: str = '',
     ) -> list[Job]:
         """Claim up to batch_size pending analysis jobs for the given engine.
 
@@ -160,17 +116,12 @@ class WorkerClient:
             batch_size: Number of jobs to claim (default 1).
             game_id: Optional specific game to claim.
             dispatch_mode: 'pull' for local workers; 'runpod' for the dispatcher.
-            network_name: For lc0 only: resolved network identifier. Sent so
-                the app can pre-flight NetworkCalibration (#161 Phase B); a
-                blank value preserves the legacy call shape.
 
         Returns:
             List of Job dataclasses (empty if queue is empty).
 
         Raises:
-            NeedsCalibrationError: When the app returns 409 NEEDS_CALIBRATION
-                because the supplied lc0 network has no calibration row.
-            WorkerClientError: For any other 4xx / 5xx-after-retries failure.
+            WorkerClientError: On any 4xx / 5xx-after-retries failure.
         """
         payload: dict[str, Any] = {
             'engine': engine,
@@ -180,9 +131,20 @@ class WorkerClient:
         }
         if game_id is not None:
             payload['game_id'] = game_id
-        if network_name:
-            payload['network_name'] = network_name
-        data = self._post('/api/v1/jobs/checkout/', payload)
+        try:
+            data = self._post('/api/v1/jobs/checkout/', payload)
+        except WorkerClientError as exc:
+            # During a rolling deploy an old app pod may still emit
+            # 409 NEEDS_CALIBRATION (the pre-#214 pre-flight). Treat that
+            # as "no jobs available right now" so the worker keeps polling
+            # instead of breaking the engine loop until the deploy settles.
+            if exc.status_code == 409:
+                log.warning(
+                    'checkout: 409 from app (likely stale pre-#214 calibration '
+                    'pre-flight); treating as no jobs available'
+                )
+                return []
+            raise
         return [
             Job(
                 id=j['id'],
@@ -193,7 +155,6 @@ class WorkerClient:
                 nodes=j.get('nodes'),
                 white_rating=j.get('white_rating'),
                 black_rating=j.get('black_rating'),
-                draw_rate_reference=j.get('draw_rate_reference'),
             )
             for j in data.get('jobs', [])
         ]
@@ -240,48 +201,6 @@ class WorkerClient:
             {'worker_id': worker_id, 'error': error},
         )
         return data.get('status', 'failed')
-
-    def submit_network_calibration(
-        self,
-        *,
-        network_name: str,
-        settings_hash: str,
-        draw_rate_reference: float,
-        sample_size: int,
-        sem: float,
-        sampler_version: str,
-        worker_id: str,
-    ) -> dict:
-        """Submit a completed lc0 draw-rate measurement (#161 Phase A).
-
-        Args:
-            network_name: Resolved lc0 network identifier.
-            settings_hash: Lowercase hex sha256 of canonical sampler settings.
-            draw_rate_reference: Measured draw probability in (0.001, 0.999).
-            sample_size: Positions sampled before convergence/cap.
-            sem: Standard error of the mean achieved by the sampler.
-            sampler_version: Echoed from settings.WL_LC0_DRAW_RATE_SAMPLER_VERSION.
-            worker_id: Unique worker identifier (recorded on the row).
-
-        Returns:
-            Parsed JSON body. ``created`` is True if this writer was first,
-            False if an existing row was kept (idempotent no-op).
-
-        Raises:
-            WorkerClientError: On 4xx, 5xx after retries, or network failure.
-        """
-        return self._post(
-            '/api/v1/network_calibrations/',
-            {
-                'network_name': network_name,
-                'settings_hash': settings_hash,
-                'draw_rate_reference': draw_rate_reference,
-                'sample_size': sample_size,
-                'sem': sem,
-                'sampler_version': sampler_version,
-                'worker_id': worker_id,
-            },
-        )
 
     def heartbeat(
         self, *, worker_id: str, engine: str, status_message: str = '',
