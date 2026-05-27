@@ -211,7 +211,7 @@
         tickvals: tickvals,
         ticktext: ticktext,
       },
-      margin: { l: 55, r: 20, t: 56, b: 60 },
+      margin: { l: 55, r: 20, t: 20, b: 60 },
       height: chartHeight,
       paper_bgcolor: "rgba(0,0,0,0)",
       plot_bgcolor: theme.colors.plotBg,
@@ -222,13 +222,6 @@
         font: { color: theme.colors.textBold, family: theme.fonts.mono, size: 12 },
       },
       shapes: buildShapes(perspective),
-      annotations: [{
-        text: "Stockfish Evaluation",
-        xref: "paper", yref: "paper",
-        x: 0.5, y: 1.10, xanchor: "center",
-        showarrow: false,
-        font: { size: 14, color: theme.colors.textBold, family: theme.fonts.title },
-      }],
     };
   }
 
