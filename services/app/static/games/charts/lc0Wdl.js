@@ -172,17 +172,19 @@
         }
       });
 
-      // Per-ply classification strip (#216) — sibling to the Plotly div.
-      // One cell per analysed ply, colored via the shared move-annotation-<cls>
-      // palette in main.css. Click sets the shared ply.
+      // Per-ply classification strip (#216) — sibling to the Plotly div,
+      // visually integrated with the chart via main.css positioning. Each
+      // cell carries its classification class only when its ply belongs to
+      // the perspective player; opposing-side cells are neutral so the eye
+      // focuses on the player's own quality.
       var stripEl = document.getElementById("lc0-wdl-cls-strip");
       if (stripEl) {
         var sanByPly = {};
         rawPayload.forEach(function (d) { sanByPly[Number(d.ply)] = d.san; });
+        var cells = [];
         rawPayload.forEach(function (d) {
           var cls = (d.classification || "").toLowerCase();
           var cell = document.createElement("div");
-          cell.className = "cls-cell" + (cls ? " move-annotation-" + cls : " cls-cell--unclassified");
           var ply = Number(d.ply);
           var humanCls = cls ? cls.charAt(0).toUpperCase() + cls.slice(1) : "—";
           cell.title = "Ply " + ply + " · " + (sanByPly[ply] || "") + " · " + humanCls;
@@ -193,7 +195,32 @@
             }
           });
           stripEl.appendChild(cell);
+          cells.push({ el: cell, ply: ply, cls: cls });
         });
+
+        // Paint cells given a perspective. Only the perspective player's
+        // plies carry their classification colour; the rest fall back to
+        // the neutral `.cls-cell--unclassified` style. Ply parity: odd =
+        // White's move, even = Black's.
+        function paintStrip(perspective) {
+          cells.forEach(function (c) {
+            var isWhiteMove = (c.ply % 2) === 1;
+            var isPerspectiveMove = perspective === "white" ? isWhiteMove : !isWhiteMove;
+            c.el.className = "cls-cell" + (
+              isPerspectiveMove && c.cls
+                ? " move-annotation-" + c.cls
+                : " cls-cell--unclassified"
+            );
+          });
+        }
+        paintStrip(currentPerspective);
+        WoodLeagueAnalysis.subscribe(function (state) {
+          if (state.perspective !== stripEl.dataset.lastPerspective) {
+            stripEl.dataset.lastPerspective = state.perspective;
+            paintStrip(state.perspective);
+          }
+        });
+        stripEl.dataset.lastPerspective = currentPerspective;
       }
     });
 })();

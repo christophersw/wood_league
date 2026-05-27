@@ -1493,7 +1493,10 @@
   /* LC0 WDL classification strip — sibling to #lc0-wdl-chart, populated by
      lc0Wdl.js (#216). Each cell uses .move-annotation-<cls> for its
      background; unclassified cells are transparent. */
-  .lc0-wdl-cls-strip { display: flex; gap: 0; height: 12px; margin: 2px 0 0; }
+  /* Strip is visually integrated with the LC0 chart: aligned horizontally to
+     Plotly's plot area (margins l:36, r:8) and flush against the chart so it
+     reads as part of the chart, not a separate widget below it. */
+  .lc0-wdl-cls-strip { display: flex; gap: 0; height: 10px; margin: 0 8px 0 36px; }
   .lc0-wdl-cls-strip .cls-cell { flex: 1 1 0; min-width: 1px; cursor: pointer; }
   .lc0-wdl-cls-strip .cls-cell:hover { outline: 1px solid var(--color-forest); outline-offset: -1px; }
   .lc0-wdl-cls-strip .cls-cell--unclassified { background: transparent; }
