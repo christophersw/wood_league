@@ -10,6 +10,7 @@
 {#     rules in static/css/main.css (also used by _card_sf.html). #}
 {# Changelog: #}
 {#     2026-05-22 (#208): Du Bois plate restyle to match the SF card. #}
+{#     2026-05-27 (#216): mount LC0 WDL chart slot at card bottom. #}
 
 <section class="wc-card wc-card--lc0" aria-label="Leela Chess Zero analysis">
   <header class="wc-card__head">
@@ -146,4 +147,10 @@
     {% endif %}
     {% endwith %}
   </div>
+
+  {# Chart slot — LC0 WDL chart relocated into the card (#216). #}
+  <div class="wc-card__chart-slot"
+       hx-get="{% url 'games_chart_lc0_wdl_partial' data.slug %}"
+       hx-trigger="load"
+       hx-swap="innerHTML">Loading LC0 chart…</div>
 </section>
