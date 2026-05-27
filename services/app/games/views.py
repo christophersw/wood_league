@@ -201,6 +201,21 @@ def game_analysis(request: HttpRequest, slug: str) -> HttpResponse:
     initial_perspective = request.GET.get("perspective", "white")
     if initial_perspective not in {"white", "black"}:
         initial_perspective = "white"
+    # Engine-line card info-tooltip metadata — same shape the SF + LC0 stat
+    # cards use, exposed here so the Engine Line card header can render its
+    # own ⓘ popup that swaps content based on which engine's line is shown.
+    sf_tooltip_meta = {
+        "engine_depth": data.sf_engine_depth,
+        "analyzed_at": data.sf_analyzed_at,
+    }
+    lc0_tooltip_meta = {
+        "network_name": data.lc0_network_name,
+        "engine_nodes": data.lc0_engine_nodes,
+        "contempt": data.lc0_contempt,
+        "draw_rate_reference": data.lc0_draw_rate_reference,
+        "calibration_elo": data.lc0_calibration_elo,
+        "analyzed_at": data.lc0_analyzed_at,
+    }
     return render(request, "games/analysis.html", {
         "game": game,
         "data": data,
@@ -208,6 +223,8 @@ def game_analysis(request: HttpRequest, slug: str) -> HttpResponse:
         "initial_ply": initial_ply,
         "initial_perspective": initial_perspective,
         "move_annotations": ANNOTATIONS,
+        "sf_tooltip_meta": sf_tooltip_meta,
+        "lc0_tooltip_meta": lc0_tooltip_meta,
     })
 
 

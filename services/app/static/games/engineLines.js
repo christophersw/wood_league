@@ -286,6 +286,16 @@
         baseMainLinePly: parseInt(ply, 10) + 1,
       };
 
+      // Swap the engine-line card's source class so the info-tooltip popup
+      // (analysis.html: .engine-line-info-pop--sf / --lc0) shows the matching
+      // engine's run info. (#212 v5 live-review.)
+      var card = document.getElementById('engine-line-card');
+      if (card) {
+        var sf = (engine || 'sf').toLowerCase() === 'sf';
+        card.classList.toggle('engine-line-plate--sf', sf);
+        card.classList.toggle('engine-line-plate--lc0', !sf);
+      }
+
       _setEngineLineRequestState(true, '');
 
       var url = '/_partials/games/' + slug + '/engine-line/?ply=' + ply +

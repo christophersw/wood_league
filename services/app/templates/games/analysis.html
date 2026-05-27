@@ -20,6 +20,12 @@
 .engine-line-inline .eln-mv.is-active { background: color-mix(in srgb, var(--color-gold) 35%, transparent); box-shadow: inset 0 -2px 0 var(--color-forest); }
 .engine-line-inline .eln-empty { font-family: var(--font-mono); font-size: 0.72rem; color: var(--color-peat); opacity: 0.7; }
 .engine-lines-idle { display:flex; align-items:center; justify-content:center; text-align:center; min-height:120px; padding:0 16px; line-height:1.5; border-top:2.5px solid var(--color-ebony); font-family:var(--font-mono); font-size:.72rem; color:var(--color-peat); }
+/* Engine-line card info tooltip — only one popup is visible at a time based
+   on which engine's line is currently shown. Default is SF (the engine-line
+   card mounts with .engine-line-plate--sf; engineLines.js swaps to --lc0
+   when an LC0 arrow is opened). #212 v5 live-review. */
+.engine-line-plate--sf .engine-line-info-pop--lc0 { display: none; }
+.engine-line-plate--lc0 .engine-line-info-pop--sf { display: none; }
 .moves-strip-slot { padding: 0; }
 /* Collapsible Moves panel — mirrors the engine-line continuation <details>
    pattern but lives in the Position card under the main board. */
@@ -186,10 +192,33 @@
            hx-get="/_partials/games/{{ game.slug }}/pgn/"
            hx-trigger="load" hx-swap="innerHTML">Loading moves…</div>
     </section>
-    <section class="wc-card engine-line-plate" aria-label="Engine line explorer">
+    <section class="wc-card engine-line-plate engine-line-plate--sf" id="engine-line-card" aria-label="Engine line explorer">
       <header class="wc-card__head">
         <h3>Engine Line</h3>
         <span id="engine-lines-context" class="engine-line-plate__ctx">—</span>
+        {# Info tooltip — mirrors the SF/LC0 stat-card popups; engineLines.js #}
+        {# toggles engine-line-plate--sf / --lc0 on the <section> to swap which #}
+        {# popup is rendered. (#212 v5 live-review.) #}
+        <span class="card-info engine-line-card-info" tabindex="0" aria-label="Engine line run info">ⓘ
+          <div class="card-pop card-info-pop engine-line-info-pop engine-line-info-pop--sf">
+            <h4>Stockfish — Run info</h4>
+            <dl>
+              <dt>Depth</dt><dd>{{ sf_tooltip_meta.engine_depth|default:"—" }}</dd>
+              <dt>Analyzed</dt><dd>{{ sf_tooltip_meta.analyzed_at|default:"—" }}</dd>
+            </dl>
+          </div>
+          <div class="card-pop card-info-pop engine-line-info-pop engine-line-info-pop--lc0">
+            <h4>Leela Chess Zero — Run info</h4>
+            <dl>
+              <dt>Network</dt><dd>{{ lc0_tooltip_meta.network_name|default:"—" }}</dd>
+              <dt>Nodes</dt><dd>{{ lc0_tooltip_meta.engine_nodes|default:"—" }}</dd>
+              <dt>Contempt</dt><dd>{{ lc0_tooltip_meta.contempt|default:"0" }}</dd>
+              <dt>Draw ref</dt><dd>{% if lc0_tooltip_meta.draw_rate_reference %}{{ lc0_tooltip_meta.draw_rate_reference|floatformat:3 }}{% else %}—{% endif %}</dd>
+              <dt>Cal. Elo</dt><dd>{{ lc0_tooltip_meta.calibration_elo|default:"—" }}</dd>
+              <dt>Analyzed</dt><dd>{{ lc0_tooltip_meta.analyzed_at|default:"—" }}</dd>
+            </dl>
+          </div>
+        </span>
       </header>
       <div id="engine-lines-shell" style="position:relative;">
         <div id="engine-lines-idle" class="engine-lines-idle">
