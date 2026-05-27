@@ -27,7 +27,19 @@ _RETRY_BACKOFF = [1.0, 2.0, 4.0]
 
 
 class WorkerClientError(Exception):
-    """Raised when the API returns an error response."""
+    """Raised when the API returns an error response.
+
+    Attributes:
+        status_code: HTTP status code if the failure came from a response
+            (``None`` for transport/retry-exhaustion failures). Callers can
+            use this to handle specific codes — e.g. checkout treats a 409
+            from a stale app deployment as "no jobs available right now"
+            rather than a fatal error.
+    """
+
+    def __init__(self, message: str, *, status_code: int | None = None) -> None:
+        super().__init__(message)
+        self.status_code = status_code
 
 
 class WorkerClient:
@@ -73,12 +85,18 @@ class WorkerClient:
             if resp.status_code < 400:
                 return resp.json()
             if resp.status_code >= 500:
-                last_exc = WorkerClientError(f'HTTP {resp.status_code}: {resp.text[:200]}')
+                last_exc = WorkerClientError(
+                    f'HTTP {resp.status_code}: {resp.text[:200]}',
+                    status_code=resp.status_code,
+                )
                 log.warning('5xx from API (attempt %d): %s', attempt, resp.status_code)
                 if attempt < _MAX_RETRIES:
                     time.sleep(backoff)
                 continue
-            raise WorkerClientError(f'HTTP {resp.status_code}: {resp.text[:200]}')
+            raise WorkerClientError(
+                f'HTTP {resp.status_code}: {resp.text[:200]}',
+                status_code=resp.status_code,
+            )
         raise WorkerClientError(f'API unavailable after {_MAX_RETRIES} attempts') from last_exc
 
     def checkout(
@@ -113,7 +131,20 @@ class WorkerClient:
         }
         if game_id is not None:
             payload['game_id'] = game_id
-        data = self._post('/api/v1/jobs/checkout/', payload)
+        try:
+            data = self._post('/api/v1/jobs/checkout/', payload)
+        except WorkerClientError as exc:
+            # During a rolling deploy an old app pod may still emit
+            # 409 NEEDS_CALIBRATION (the pre-#214 pre-flight). Treat that
+            # as "no jobs available right now" so the worker keeps polling
+            # instead of breaking the engine loop until the deploy settles.
+            if exc.status_code == 409:
+                log.warning(
+                    'checkout: 409 from app (likely stale pre-#214 calibration '
+                    'pre-flight); treating as no jobs available'
+                )
+                return []
+            raise
         return [
             Job(
                 id=j['id'],

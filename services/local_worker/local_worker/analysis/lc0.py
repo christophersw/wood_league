@@ -48,7 +48,10 @@ import chess
 import chess.engine
 import chess.pgn
 
-from .lc0_calibration import LC0_DRAW_RATE_REFERENCE
+from .lc0_calibration import (
+    LC0_DRAW_RATE_REFERENCE,
+    warn_if_network_mismatches_calibration,
+)
 from .lc0_tuning import get_tuned_opts
 from ..lc0_tuning_sync import push_after_calibrate
 from .eval_cache import (
@@ -546,9 +549,10 @@ def launch_engine(
 
     Pays the cold-start cost (process launch, weights load, CUDA backend,
     syzygy reopen, tuner calibration) exactly once. Returns ``(engine,
-    network_name)``. As of #161 Phase H the draw-rate calibration is the
-    app's responsibility (NetworkCalibration table + 409 NEEDS_CALIBRATION
-    flow); the worker no longer measures or caches it on launch.
+    network_name)``. As of #214 the draw-rate reference is a worker-side
+    constant (``LC0_DRAW_RATE_REFERENCE`` in
+    ``local_worker.analysis.lc0_calibration``) paired with the BT4 network
+    config; the worker no longer measures, caches, or fetches it on launch.
 
     Args:
         lc0_path: Absolute path to the lc0 binary.
@@ -582,6 +586,10 @@ def launch_engine(
         except Exception:  # noqa: BLE001
             pass
         raise
+    # #214 guard: the pinned LC0_DRAW_RATE_REFERENCE is a BT4-specific
+    # constant; warn loudly if the resolved network is not BT4 so a silent
+    # network swap doesn't bias WDL calibration for every analysed game.
+    warn_if_network_mismatches_calibration(network_name)
     return engine, network_name
 
 

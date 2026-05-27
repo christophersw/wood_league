@@ -27,9 +27,11 @@ Changelog:
                 unpack was silently caught and degraded every run to
                 cold-start with draw_rate=0.0, which the server's
                 min_value=0.001 validator then rejected with HTTP 400).
-                _run_lc0_job now sources draw_rate_reference from
-                job.draw_rate_reference (app-attached at checkout from
-                the NetworkCalibration row); 0.5 fallback when None.
+    2026-05-27 (#214): drop job.draw_rate_reference plumbing — the
+                NetworkCalibration table + 409 NEEDS_CALIBRATION pre-flight
+                were removed and the worker now pins draw_rate_reference
+                to the ``LC0_DRAW_RATE_REFERENCE`` constant in
+                ``local_worker.analysis.lc0_calibration``.
 """
 from __future__ import annotations
 
