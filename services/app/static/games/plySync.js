@@ -6,6 +6,7 @@
  *   query string. Subscribers register a callback that fires on any state change.
  *
  * Changelog:
+ *   2026-05-27 (#216): add togglePerspective() helper.
  *   2026-05-04 (#16): Created as part of game analysis page rewrite
  */
 
@@ -52,6 +53,14 @@
       _perspective = perspective;
       _syncUrl();
       _notify();
+    },
+
+    /**
+     * Toggle perspective between "white" and "black".
+     * Convenience wrapper around setPerspective. Notifies subscribers and syncs URL.
+     */
+    togglePerspective: function () {
+      this.setPerspective(_perspective === "white" ? "black" : "white");
     },
 
     /**
