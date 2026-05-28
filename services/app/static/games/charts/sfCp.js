@@ -128,11 +128,9 @@
         ? theme.colors.whiteAdvantage
         : theme.colors.blackAdvantage);
 
-      // Classification colour ONLY when this ply belongs to the perspective
-      // player; otherwise fall back to the zone-based side colour.
-      var isWhiteMove = (p.ply % 2) === 1;
-      var isPerspectiveMove = perspective === "white" ? isWhiteMove : !isWhiteMove;
-      if (isPerspectiveMove && p.cls) {
+      // Both players' deltas carry the classification colour when present;
+      // unclassified plies fall back to the zone-based side colour.
+      if (p.cls) {
         delta.push(resolveAnnotationColor(p.cls));
       } else {
         delta.push(p.display <= 0
@@ -246,7 +244,7 @@
         x: plies,
         y: baseY,
         type: "bar",
-        marker: { color: colors.base, opacity: 0.55 },
+        marker: { color: colors.base },
         hoverinfo: "skip",
         showlegend: false,
         name: "Previous",
