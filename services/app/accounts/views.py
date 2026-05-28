@@ -10,6 +10,7 @@ Description:
 Changelog:
     2026-05-08: Added file header to meet documentation standards
     2026-05-28: Added email-only login_request view with enumeration safety and throttling
+    2026-05-28: Added login_link_consume view for magic-link token redemption
 """
 
 from django.conf import settings
@@ -81,6 +82,43 @@ def password_login_view(request):
         messages.error(request, "Invalid email or password.")
 
     return render(request, "accounts/login.html", {"form": form})
+
+
+@ratelimit(key="ip", rate="20/h", method="GET", block=True)
+def login_link_consume(request, token: str):
+    """
+    Consume a magic link token and start an authenticated session.
+
+    Tries the token against the login purpose first, then the invite purpose,
+    because both share the same URL pattern. Logs the matched user in and
+    redirects to the ``next`` query parameter or ``settings.LOGIN_REDIRECT_URL``.
+    Renders the expired-link page when the token is invalid or already used.
+
+    Args:
+        request: Django HttpRequest.
+        token (str): Raw (unhashed) magic-link token from the URL.
+
+    Returns:
+        HttpResponseRedirect on success, or a 200 rendered
+        ``accounts/login_link_expired.html`` on failure.
+
+    Side effects:
+        Marks the matching LoginLink record as consumed. Creates a Django session.
+    """
+    svc = MagicLinkService()
+    user = svc.consume_link(token, purpose=LoginLink.PURPOSE_LOGIN)
+    if user is None:
+        # Invite links share the same URL pattern; try that purpose too.
+        user = svc.consume_link(token, purpose=LoginLink.PURPOSE_INVITE)
+    if user is None:
+        return render(request, "accounts/login_link_expired.html", status=200)
+
+    # ModelBackend is first in AUTHENTICATION_BACKENDS; set explicitly because
+    # User.objects.get() returns an instance with no backend attribute.
+    user.backend = "accounts.backends.LegacyPbkdf2Backend"
+    auth.login(request, user)
+    next_url = request.GET.get("next") or settings.LOGIN_REDIRECT_URL
+    return redirect(next_url)
 
 
 def logout_view(request):

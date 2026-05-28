@@ -33,3 +33,27 @@ class LoginRequestViewTests(TestCase):
         self.client.post(reverse("accounts:login"), {"email": "t@example.com"})
         self.client.post(reverse("accounts:login"), {"email": "t@example.com"})
         self.assertEqual(len(mail.outbox), 1)
+
+
+class LoginLinkConsumeTests(TestCase):
+    def setUp(self):
+        from accounts.magic_link_service import MagicLinkService
+        self.user = User.objects.create_user(email="c@example.com", password=None)
+        self.svc = MagicLinkService()
+
+    def test_valid_token_logs_in_and_redirects(self):
+        _, raw = self.svc.issue_link(self.user, purpose="login")
+        resp = self.client.get(reverse("accounts:login_link", args=[raw]))
+        self.assertEqual(resp.status_code, 302)
+        self.assertTrue(resp.wsgi_request.user.is_authenticated)
+
+    def test_invalid_token_renders_expired_page(self):
+        resp = self.client.get(reverse("accounts:login_link", args=["bogus"]))
+        self.assertContains(resp, "expired or already used", status_code=200)
+
+    def test_consumed_token_cannot_be_reused(self):
+        _, raw = self.svc.issue_link(self.user, purpose="login")
+        self.client.get(reverse("accounts:login_link", args=[raw]))
+        self.client.logout()
+        resp = self.client.get(reverse("accounts:login_link", args=[raw]))
+        self.assertContains(resp, "expired or already used")

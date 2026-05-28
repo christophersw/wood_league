@@ -1,0 +1,53 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Link Expired — Wood League Chess</title>
+  <link rel="stylesheet" href="{% static 'css/tailwind.css' %}">
+</head>
+<body class="login-shell">
+
+  <div class="login-card">
+
+    {# ── Masthead ──────────────────────────────────────────────────────── #}
+    <div class="login-masthead">
+      <span class="login-masthead-rule"></span>
+      <h1 class="login-masthead-title">Wood League</h1>
+      <p class="login-masthead-sub">Chess · Analytics</p>
+    </div>
+
+    {# ── Expired notice + re-request form ─────────────────────────────── #}
+    <div class="login-form-area">
+      <p class="login-form-title">Link expired or already used</p>
+
+      <p style="margin-bottom:1.5rem;font-family:var(--font-mono);font-size:.72rem;color:var(--color-peat);">
+        This link has expired or already been used. Request a new sign-in link to continue.
+      </p>
+
+      <form method="post" action="{% url 'accounts:login' %}" novalidate>
+        {% csrf_token %}
+
+        <div style="margin-bottom:1.5rem;">
+          <label for="id_email" class="wc-label">Email</label>
+          <input type="email"
+                 id="id_email"
+                 name="email"
+                 autocomplete="email"
+                 autofocus
+                 class="wc-input"
+                 placeholder="you@example.com">
+        </div>
+
+        <button type="submit" class="wc-btn wc-btn-solid"
+                style="width:100%;text-align:center;">
+          Send me a new login link
+        </button>
+      </form>
+    </div>
+
+  </div>
+
+</body>
+</html>
