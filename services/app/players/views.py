@@ -6,19 +6,23 @@ Description:
     and inviting members to create login accounts. Admin-only access.
 
 Changelog:
+    2026-05-28: Add member_send_invite for magic-link invite endpoint (#218)
     2026-05-08: Added file header to meet documentation standards
 """
 
 from __future__ import annotations
 
+from django.contrib import messages
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.db import IntegrityError
-from django.http import HttpRequest, HttpResponse
+from django.http import HttpRequest, HttpResponse, HttpResponseBadRequest, HttpResponseForbidden
 from django.utils.html import escape
-from django.shortcuts import get_object_or_404, render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_GET, require_POST, require_http_methods
 
-from accounts.models import User
+from accounts.email_service import EmailService
+from accounts.magic_link_service import MagicLinkService
+from accounts.models import LoginLink, User
 from games.models import GameParticipant
 
 from .models import Player
@@ -161,3 +165,52 @@ def invite_member(request: HttpRequest, pk: int) -> HttpResponse:
         "player": player,
         "email": player.email,
     })
+
+
+# ── Send / Resend magic-link invite ───────────────────────────────────────────
+
+@login_required
+@require_POST
+def member_send_invite(request: HttpRequest, player_id: int) -> HttpResponse:
+    """Issue or resend a welcome+invite magic link for the given player.
+
+    Args:
+        request: Authenticated HTTP POST request. Must be from an admin user.
+        player_id: Primary key of the Player to invite.
+
+    Returns:
+        HttpResponseForbidden if caller is not admin.
+        HttpResponseBadRequest if player not found or has no email.
+        Redirect to players:members_list on success or throttle.
+
+    Side effects:
+        Creates a User account if none exists for the player email.
+        Invalidates any prior unconsumed invite links for that user.
+        Sends a welcome+invite email containing the magic link.
+    """
+    if request.user.role != "admin":
+        return HttpResponseForbidden("Admin only.")
+
+    player = Player.objects.filter(pk=player_id).first()
+    if player is None:
+        return HttpResponseBadRequest("Unknown player.")
+    if not player.email:
+        return HttpResponseBadRequest("Player has no email on file.")
+
+    email = player.email.strip().lower()
+    user, _ = User.objects.get_or_create(
+        email=email, defaults={"role": "member", "is_active": True},
+    )
+    if not user.has_usable_password():
+        user.set_unusable_password()
+        user.save(update_fields=["password"])
+
+    svc = MagicLinkService()
+    if not svc.throttle_check(user):
+        messages.info(request, "An invite was sent recently. Please wait a minute and try again.")
+        return redirect("players:members_list")
+
+    _, raw = svc.issue_link(user, purpose=LoginLink.PURPOSE_INVITE, created_by=request.user)
+    EmailService().send_invite_email(user, player, raw, invited_by=request.user)
+    messages.success(request, f"Invite sent to {email}.")
+    return redirect("players:members_list")
