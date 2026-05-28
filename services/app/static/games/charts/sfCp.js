@@ -99,14 +99,30 @@
    * Returns:
    *   Array of CSS colour strings, one per point.
    */
-  function buildColors(perspective) {
-    return rawPoints.map(function (p) {
-      var isWhiteMove = (p.ply % 2) === 1;
-      var isPerspectiveMove = perspective === "white" ? isWhiteMove : !isWhiteMove;
-      return isPerspectiveMove
-        ? resolveAnnotationColor(p.cls)
-        : theme.colors.barDefault;
-    });
+  /**
+   * Per-segment colour arrays for the stacked bar chart (#216).
+   *
+   * Each segment is coloured by which side it represents in WHITE-frame cp,
+   * invariant of the current display perspective:
+   *   - positive cp (white advantage) → white
+   *   - negative cp (black advantage) → black
+   * Ply 1's base segment defaults to white (starting position is even; the
+   * "previous" position is no-one's advantage, but we need to pick a value).
+   *
+   * Returns:
+   *   { base: string[], delta: string[] }
+   */
+  function buildSegmentColors() {
+    var base = [];
+    var delta = [];
+    var prevRaw = 0;
+    for (var i = 0; i < rawPoints.length; i++) {
+      var curRaw = rawPoints[i].cp;
+      base.push(prevRaw >= 0 ? theme.colors.whiteAdvantage : theme.colors.blackAdvantage);
+      delta.push(curRaw >= 0 ? theme.colors.whiteAdvantage : theme.colors.blackAdvantage);
+      prevRaw = curRaw;
+    }
+    return { base: base, delta: delta };
   }
 
   /**
@@ -205,12 +221,13 @@
       deltaY.push(pts[i].display - prev);
       prev = pts[i].display;
     }
+    var colors = buildSegmentColors();
     return [
       {
         x: plies,
         y: baseY,
         type: "bar",
-        marker: { color: theme.colors.barDefault, opacity: 0.35 },
+        marker: { color: colors.base, opacity: 0.55 },
         hoverinfo: "skip",
         showlegend: false,
         name: "Previous",
@@ -219,11 +236,9 @@
         x: plies,
         y: deltaY,
         type: "bar",
-        marker: { color: buildColors(perspective) },
+        marker: { color: colors.delta },
         customdata: pts.map(function (p, idx) {
-          var delta = deltaY[idx] / 100;  // pawns, in display orientation
-          // Reverse the display inversion so delta sign reads in cp-units:
-          // negative display = positive cp (advantage for the bottom side).
+          var delta = deltaY[idx] / 100;
           var cpDelta = -delta;
           var dsign = cpDelta >= 0 ? "+" : "-";
           return [
@@ -275,18 +290,19 @@
       margin: { l: 36, r: 8, t: 20, b: 60 },
       height: chartHeight,
       paper_bgcolor: "rgba(0,0,0,0)",
-      plot_bgcolor: theme.colors.plotBg,
+      // Uniform mid-grey plot background contrasts equally with the white
+      // and black advantage bars (#216) — replaces the prior half-light /
+      // half-dark zone shading, which is now redundant once bars carry the
+      // side colour directly.
+      plot_bgcolor: "#9a9a9a",
       font: { color: theme.colors.text, family: theme.fonts.serif },
       hovermode: "x unified",
-      // Stacked bars with mixed-sign deltas — Plotly's "relative" mode
-      // stacks positive and negative independently, which is what we want
-      // since the delta can go either way relative to the running base.
       barmode: "relative",
+      bargap: 0,
       hoverlabel: {
         bgcolor: "white", bordercolor: theme.colors.textBold,
         font: { color: theme.colors.textBold, family: theme.fonts.mono, size: 12 },
       },
-      shapes: buildShapes(perspective),
     };
   }
 
@@ -330,14 +346,15 @@
       if (state.perspective !== currentPerspective) {
         currentPerspective = state.perspective;
         var traces = buildTraces(currentPerspective);
-        // Restyle base (0) and delta (1) bar traces in lock-step.
+        // Restyle base (0) and delta (1) bar traces in lock-step. Colours
+        // are white-frame invariant, so marker.color stays the same — but
+        // y values flip with the display inversion.
         Plotly.restyle(div, {
           x: [traces[0].x, traces[1].x],
           y: [traces[0].y, traces[1].y],
         }, [0, 1]);
         Plotly.restyle(div, {
           customdata: [traces[1].customdata],
-          "marker.color": [traces[1].marker.color],
         }, [1]);
         Plotly.relayout(div, buildLayout(currentPerspective));
       }
