@@ -203,7 +203,14 @@
       return [player, p.san, sign, Math.abs(cp).toFixed(2)];
     });
 
+    // Only the perspective player's plies get classification color; the
+    // opposing side is painted the dark theme color so the eye reads the
+    // viewer's accuracy first (#216).
+    var perspectiveParity = perspective === "white" ? 1 : 0;
+    var OPPOSING_COLOR = theme.colors.textBold;
     var colors = pts.map(function (p) {
+      var isOwnSide = (p.ply % 2) === perspectiveParity;
+      if (!isOwnSide) return OPPOSING_COLOR;
       return p.cls ? resolveAnnotationColor(p.cls) : BAR_GREEN;
     });
 
@@ -347,6 +354,7 @@
         // are rebuilt via the relayout below.
         Plotly.restyle(div, {
           y: [traces[0].y],
+          "marker.color": [traces[0].marker.color],
           customdata: [traces[0].customdata],
         }, [0]);
         Plotly.relayout(div, buildLayout(currentPerspective));
