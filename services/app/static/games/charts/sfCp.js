@@ -307,10 +307,9 @@
       margin: { l: 36, r: 8, t: 20, b: 60 },
       height: chartHeight,
       paper_bgcolor: "rgba(0,0,0,0)",
-      // Cream-toned plot background — same tint as the LC0 chart's draw
-      // band so the two charts read as a set. Dark enough that the white
-      // advantage bars contrast against it (#216).
-      plot_bgcolor: theme.colors.wdlDraw,
+      // Dark-cream plot background — light enough to feel warm, dark enough
+      // for the white advantage bars to read clearly (#216).
+      plot_bgcolor: "#d8c69a",
       font: { color: theme.colors.text, family: theme.fonts.serif },
       hovermode: "x unified",
       barmode: "relative",
