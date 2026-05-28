@@ -6,7 +6,7 @@ Description:
     new link of the same purpose invalidates any prior unconsumed links
     for that user.
 Changelog:
-    2026-05-28: Initial.
+    2026-05-28: Initial, add consume_link.
 """
 from __future__ import annotations
 
@@ -59,3 +59,33 @@ class MagicLinkService:
                 created_by=created_by,
             )
         return link, raw
+
+    def consume_link(self, raw_token: str, purpose: str) -> User | None:
+        """Consume a magic link. Returns the User on success, None otherwise."""
+        if not raw_token:
+            return None
+        token_hash = self._hash(raw_token)
+        now = timezone.now()
+        try:
+            link = LoginLink.objects.select_related("user").get(token_hash=token_hash)
+        except LoginLink.DoesNotExist:
+            return None
+        if link.purpose != purpose:
+            return None
+        if link.consumed_at is not None:
+            return None
+        if link.expires_at < now:
+            return None
+        if not link.user.is_active:
+            return None
+
+        # Atomic mark-consumed: only succeed if still unconsumed.
+        updated = LoginLink.objects.filter(
+            pk=link.pk, consumed_at__isnull=True,
+        ).update(consumed_at=now)
+        if updated == 0:
+            return None
+
+        link.user.last_login = now
+        link.user.save(update_fields=["last_login"])
+        return link.user
