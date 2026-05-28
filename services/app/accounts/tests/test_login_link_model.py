@@ -6,6 +6,7 @@ Changelog:
 """
 from datetime import timedelta
 
+from django.db import IntegrityError
 from django.test import TestCase
 from django.utils import timezone
 
@@ -36,7 +37,7 @@ class LoginLinkModelTests(TestCase):
             purpose="login",
             expires_at=timezone.now() + timedelta(minutes=15),
         )
-        with self.assertRaises(Exception):
+        with self.assertRaises(IntegrityError):
             LoginLink.objects.create(
                 user=user,
                 token_hash="b" * 64,
