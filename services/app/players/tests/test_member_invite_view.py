@@ -1,7 +1,9 @@
 """
 Title: test_member_invite_view.py — Tests for admin invite endpoint.
-Description: Covers permissions, missing email, first invite, and resend.
-Changelog: 2026-05-28: Initial.
+Description: Covers permissions, missing email, first invite, resend, and members list UI.
+Changelog:
+    2026-05-28: Add MembersListUITests for invite button column (#218)
+    2026-05-28: Initial.
 """
 from unittest.mock import patch
 
@@ -46,3 +48,23 @@ class MemberInviteViewTests(TestCase):
         self.client.post(reverse("players:member_send_invite", args=[self.player_with_email.id]))
         active = LoginLink.objects.filter(purpose="invite", consumed_at__isnull=True).count()
         self.assertEqual(active, 1)
+
+
+class MembersListUITests(TestCase):
+    """Tests for the invite button column on the members list page."""
+
+    def test_disabled_button_when_email_missing(self):
+        """Members without email show a disabled Send invite button with tooltip."""
+        admin = User.objects.create_user(email="a2@x.com", password="pw12345678", role="admin")
+        Player.objects.create(username="noemail", email=None)
+        self.client.force_login(admin)
+        resp = self.client.get(reverse("players:members_list"))
+        self.assertContains(resp, 'disabled title="Add an email')
+
+    def test_send_invite_button_when_email_present(self):
+        """Members with email show an active Send invite button."""
+        admin = User.objects.create_user(email="a3@x.com", password="pw12345678", role="admin")
+        Player.objects.create(username="hasmail", email="x@x.com")
+        self.client.force_login(admin)
+        resp = self.client.get(reverse("players:members_list"))
+        self.assertContains(resp, "Send invite")

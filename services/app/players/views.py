@@ -6,6 +6,7 @@ Description:
     and inviting members to create login accounts. Admin-only access.
 
 Changelog:
+    2026-05-28: Add invite button column with status to members list (#218)
     2026-05-28: Add member_send_invite for magic-link invite endpoint (#218)
     2026-05-08: Added file header to meet documentation standards
 """
@@ -40,18 +41,38 @@ def _admin_login_required(view):
 @_admin_login_required
 @require_GET
 def members_list(request: HttpRequest) -> HttpResponse:
-    """Display table of all club members with login status."""
-    players = Player.objects.order_by("username")
-    login_emails = set(
-        User.objects.values_list("email", flat=True)
-    )
+    """Display members with login + invite status; admins can send/resend invites.
+
+    Args:
+        request: Authenticated HTTP GET request. Must be from an admin user.
+
+    Returns:
+        Rendered members list page with per-player invite and login state.
+    """
+    players = Player.objects.all().order_by("username")
+    emails = [p.email.lower() for p in players if p.email]
+    users_by_email = {u.email: u for u in User.objects.filter(email__in=emails)}
+
     rows = []
     for p in players:
+        user = users_by_email.get((p.email or "").lower())
+        latest_invite = None
+        if user is not None:
+            latest_invite = (
+                LoginLink.objects
+                .filter(user=user, purpose=LoginLink.PURPOSE_INVITE)
+                .order_by("-created_at").first()
+            )
         rows.append({
             "player": p,
-            "has_login": bool(p.email and p.email in login_emails),
+            "user": user,
+            "has_login": bool(p.email and p.email.lower() in users_by_email),
+            "has_logged_in": bool(user and user.last_login),
+            "invited_at": latest_invite.created_at if latest_invite else None,
         })
-    return render(request, "players/members.html", {"rows": rows})
+
+    is_admin = getattr(request.user, "role", None) == "admin"
+    return render(request, "players/members.html", {"rows": rows, "is_admin": is_admin})
 
 
 # ── Add member ────────────────────────────────────────────────────────────────
