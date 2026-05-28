@@ -16,9 +16,14 @@ from django.urls import reverse
 
 _PUBLIC_PATHS = frozenset([
     "/auth/login/",
+    "/auth/login/password/",
     "/auth/logout/",
     "/healthz/",  # Railway deploy healthcheck — no auth, no SSL redirect
 ])
+
+_PUBLIC_PREFIXES = (
+    "/auth/login/link/",
+)
 
 
 class LoginRequiredMiddleware:
@@ -41,7 +46,11 @@ class LoginRequiredMiddleware:
         if request.path.startswith('/api/v1/'):
             return self.get_response(request)
 
-        if request.path not in _PUBLIC_PATHS and not request.user.is_authenticated:
+        is_public = (
+            request.path in _PUBLIC_PATHS
+            or request.path.startswith(_PUBLIC_PREFIXES)
+        )
+        if not is_public and not request.user.is_authenticated:
             login_url = reverse("accounts:login")
             return redirect(f"{login_url}?next={request.path}")
 

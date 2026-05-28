@@ -36,7 +36,7 @@ class EmailService:
             Absolute URL string pointing to the magic-link login endpoint.
         """
         base = self.settings.app_base_url.rstrip("/")
-        return f"{base}/login/link/{raw_token}/"
+        return f"{base}/auth/login/link/{raw_token}/"
 
     def _send(self, *, subject: str, to: str, text: str, html: str) -> None:
         """Send a multi-alternative (text + HTML) email.
