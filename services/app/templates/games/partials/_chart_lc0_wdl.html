@@ -2,31 +2,34 @@
 {# _chart_lc0_wdl.html — LC0 WDL stacked-area chart partial. #}
 {# Changelog: #}
 {#   2026-05-27 (#216): add per-ply classification strip beneath chart. #}
+{#   2026-05-27 (#216): right-justified hover-card tooltip; drop subtitle. #}
 <section class="wc-chart" data-chart="lc0-wdl">
-  <header class="wc-chart__head">
-    <h3>LC0 Win / Draw / Loss</h3>
-    <p class="wc-chart__sub">
-      {% if network_name %}{{ network_name }} &mdash; {% endif %}Calibrated to {{ draw_rate_reference|floatformat:2|default:"?" }} draw rate (<a href="https://github.com/christophersw/wood_league/issues/159" target="_blank" rel="noopener noreferrer">#159</a>).
-    </p>
-    <details class="chart-info-tooltip">
-      <summary aria-label="How this chart is computed">ⓘ</summary>
-      <div>
-        <p><strong>What you&rsquo;re seeing:</strong></p>
+  <header class="wc-chart__head" style="display:flex;align-items:baseline;">
+    <h3 style="margin:0;">LC0 Win / Draw / Loss</h3>
+    <span class="card-info" tabindex="0" aria-label="How this chart is computed"
+          style="margin-left:auto;">ⓘ
+      <div class="card-pop card-info-pop">
+        <h4>How to read this chart</h4>
         <p>
-          LC0&rsquo;s neural-network probability distribution rescaled to a calibration draw rate (#159).
-          Bottom band = White wins, middle = draw, top = Black wins.
-          Always read in White-frame.
+          LC0&rsquo;s neural-network probability distribution per ply. The
+          three bands always sum to 100%: one side&rsquo;s win chance on
+          the bottom, draw chance in the middle, the other side&rsquo;s
+          win chance on top. Flipping the board swaps which side is on
+          which side.
         </p>
         <p>
-          The three bands always sum to 100%. Click any ply to jump to that position on the board.
-          Use the perspective toggle to flip the board; the band colours swap to match.
+          The strip beneath the chart marks each ply&rsquo;s move quality
+          (best&nbsp;&rarr;&nbsp;blunder) using the same palette as the
+          cards above.
         </p>
+        <p>Click any band or strip cell to jump to that ply.</p>
       </div>
-    </details>
+    </span>
   </header>
   <div id="lc0-wdl-chart"></div>
   <div id="lc0-wdl-cls-strip" class="lc0-wdl-cls-strip" role="list"
        aria-label="LC0 per-ply move quality"></div>
+  <div id="lc0-wdl-cls-strip-label" class="lc0-wdl-cls-strip-label"></div>
   {{ payload|json_script:"lc0-wdl-data" }}
   <script src="{% static 'games/charts/lc0Wdl.js' %}"></script>
 </section>

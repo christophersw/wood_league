@@ -1507,16 +1507,25 @@
   .lc0-wdl-cls-strip .cls-cell { flex: 1 1 0; min-width: 1px; cursor: pointer; }
   .lc0-wdl-cls-strip .cls-cell:hover { outline: 1px solid var(--color-forest); outline-offset: -1px; }
   .lc0-wdl-cls-strip .cls-cell--unclassified { background: transparent; }
+  /* Caption directly under the classification strip naming whose moves
+     the coloured cells belong to (flips with perspective). */
+  .lc0-wdl-cls-strip-label {
+    display: block;
+    width: 100%;
+    margin: 8px 0 0;
+    text-align: center;
+    font-family: var(--font-serif);
+    font-size: 0.95rem;
+    color: var(--color-ebony);
+  }
 
-  /* In-card chart slot — cancel the card's horizontal padding (1.2rem each
-     side) so the SF/LC0 charts span nearly the full card width (#216). */
+  /* In-card chart slot — sits within the card's content padding, aligned
+     with the stat tiles and accuracy bars above it (#216). */
   .wc-card__chart-slot {
-    margin-left: -1.2rem;
-    margin-right: -1.2rem;
     margin-top: 0.75rem;
   }
   .wc-card__chart-slot .wc-chart { padding: 0; margin: 0; }
-  .wc-card__chart-slot .wc-chart__head { padding: 0 0.6rem; }
+  .wc-card__chart-slot .wc-chart__head { padding: 0; }
 
   /* Flip-perspective button — same chip-style envelope as the .arrow-tg
      chips so it reads as a sibling control in the Position card header (#216). */

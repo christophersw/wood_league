@@ -60,27 +60,52 @@
     var bottomLine = isWhite ? WHITE_LINE : BLACK_LINE;
     var topFill = isWhite ? BLACK_FILL : WHITE_FILL;
     var topLine = isWhite ? BLACK_LINE : WHITE_LINE;
+    // Rich per-ply customdata shared by all three band traces: [player, san,
+    // bottomLabel, bottom%, draw%, topLabel, top%]. Each band's hovertemplate
+    // shows the full WDL state so any hover lands on the same content.
+    var customdata = rawPayload.map(function (d, i) {
+      var ply = Number(d.ply);
+      var isWhiteMove = (ply % 2) === 1;
+      var player = isWhiteMove ? white : black;
+      return [
+        player,
+        d.san || "",
+        bottomLabel,
+        bottomWins[i].toFixed(1),
+        draws[i].toFixed(1),
+        topLabel,
+        topWins[i].toFixed(1),
+      ];
+    });
+    var richTemplate =
+      "<b>%{customdata[0]} played %{customdata[1]}</b><br>" +
+      "%{customdata[2]}: %{customdata[3]}%<br>" +
+      "Draw: %{customdata[4]}%<br>" +
+      "%{customdata[5]}: %{customdata[6]}%<extra></extra>";
     return [
       {
         x: plies, y: bottomWins, name: bottomLabel,
         type: "scatter", mode: "lines", stackgroup: "wdl",
         fill: "tozeroy", fillcolor: bottomFill,
         line: { color: bottomLine, width: 1.5 },
-        hovertemplate: bottomLabel + ": %{y:.1f}%<extra></extra>",
+        customdata: customdata,
+        hovertemplate: richTemplate,
       },
       {
         x: plies, y: draws, name: "Draw",
         type: "scatter", mode: "lines", stackgroup: "wdl",
         fill: "tonexty", fillcolor: DRAW_FILL,
         line: { color: DRAW_LINE, width: 1 },
-        hovertemplate: "Draw: %{y:.1f}%<extra></extra>",
+        customdata: customdata,
+        hovertemplate: richTemplate,
       },
       {
         x: plies, y: topWins, name: topLabel,
         type: "scatter", mode: "lines", stackgroup: "wdl",
         fill: "tonexty", fillcolor: topFill,
         line: { color: topLine, width: 1.5 },
-        hovertemplate: topLabel + ": %{y:.1f}%<extra></extra>",
+        customdata: customdata,
+        hovertemplate: richTemplate,
       },
     ];
   }
@@ -95,28 +120,31 @@
     var monoFont = { size: 11, color: theme.colors.text, family: theme.fonts.mono };
     return {
       xaxis: {
-        title: { text: "Ply", font: monoFont },
-        zeroline: false, gridcolor: theme.colors.grid, tickfont: monoFont,
+        zeroline: false, gridcolor: theme.colors.grid,
+        showticklabels: false,
       },
       yaxis: {
         title: { text: "Win / Draw / Loss (%)", font: monoFont },
         range: [0, 100], ticksuffix: "%",
         gridcolor: theme.colors.grid, tickfont: monoFont,
       },
-      legend: {
-        orientation: "h", y: -0.22,
-        font: { color: theme.colors.text, family: theme.fonts.serif, size: 12 },
-        bgcolor: "rgba(0,0,0,0)",
-      },
-      margin: { l: 36, r: 8, t: 20, b: 60 },
+      showlegend: false,
+      margin: { l: 36, r: 8, t: 20, b: 12 },
       height: chartHeight,
       paper_bgcolor: "rgba(0,0,0,0)",
       plot_bgcolor: theme.colors.plotBg,
       font: { color: theme.colors.text, family: theme.fonts.serif },
-      hovermode: "x unified",
+      // "closest" so each tooltip is fully owned by its hovertemplate —
+      // the "ply N" unified header is gone in favour of "PlayerName played
+      // SAN" baked into the band hovertext.
+      hovermode: "closest",
+      // Hover label styled to match the site's .card-pop tooltips:
+      // cream background, ebony border + text, EB Garamond serif body.
       hoverlabel: {
-        bgcolor: "white", bordercolor: theme.colors.textBold,
-        font: { color: theme.colors.textBold, family: theme.fonts.mono, size: 12 },
+        bgcolor: "#FAF7F0",
+        bordercolor: theme.colors.textBold,
+        font: { color: theme.colors.textBold, family: theme.fonts.serif, size: 13 },
+        align: "left",
       },
     };
   }
@@ -130,8 +158,73 @@
     line: { color: theme.colors.highlight, width: 2, dash: "dot" },
   };
 
+  /**
+   * Build a scatter trace of draw-character markers at plies that carry a
+   * non-empty `draw_character` (missed_win / losing_blunder / risky /
+   * simplification). Hover shows the character name and its description.
+   * Plies without a draw character are omitted from the trace.
+   */
+  /** Draw-character → CSS-variable hex from the retired chip palette. */
+  var DC_COLORS = {
+    missed_win: "#D63030",      // --color-vermilion-bright
+    losing_blunder: "#E08020",  // --color-ember
+    risky: "#F0C040",           // --color-saffron
+    simplification: "#5DA12A",  // --color-emerald
+  };
+  function resolveDcColor(dc) {
+    return DC_COLORS[dc] || theme.colors.barDefault;
+  }
+
+  var DC_LABEL = {
+    missed_win: "Missed Win<br>Let winning chances slip into a draw.",
+    losing_blunder: "Losing Blunder<br>Sharpened the position into something decisive.",
+    risky: "Risky<br>About as good, but avoidably sharpened.",
+    simplification: "Simplification<br>About as good, traded tension for calm.",
+  };
+
+  /**
+   * Build the draw-character marker trace for the given perspective. Only
+   * plies belonging to the perspective player are shown; dots are solid
+   * and coloured by the move-quality classification.
+   */
+  function buildDrawCharacterTrace(perspective) {
+    var rows = rawPayload.filter(function (d) {
+      if (!d.draw_character) return false;
+      var isWhiteMove = (Number(d.ply) % 2) === 1;
+      return perspective === "white" ? isWhiteMove : !isWhiteMove;
+    });
+    return {
+      x: rows.map(function (d) { return Number(d.ply); }),
+      y: rows.map(function () { return 50; }),
+      customdata: rows.map(function (d) {
+        var ply = Number(d.ply);
+        var isWhiteMove = (ply % 2) === 1;
+        var player = isWhiteMove ? white : black;
+        return [
+          player,
+          d.san || "",
+          DC_LABEL[d.draw_character] || d.draw_character,
+        ];
+      }),
+      mode: "markers",
+      type: "scatter",
+      showlegend: false,
+      marker: {
+        size: 12,
+        color: rows.map(function (d) { return resolveDcColor(d.draw_character); }),
+      },
+      hovertemplate:
+        "<b>%{customdata[0]} played %{customdata[1]}</b><br>" +
+        "%{customdata[2]}<extra></extra>",
+      name: "Draw character",
+    };
+  }
+
   var currentPerspective = WoodLeagueAnalysis.getState().perspective;
-  var initTraces = buildTraces(currentPerspective).concat([highlight]);
+  var initTraces = buildTraces(currentPerspective).concat([
+    highlight,
+    buildDrawCharacterTrace(currentPerspective),
+  ]);
 
   Plotly.newPlot(div, initTraces, buildLayout(), { displaylogo: false, responsive: true })
     .then(function () {
@@ -163,12 +256,24 @@
             name: [newTraces[0].name, newTraces[1].name, newTraces[2].name],
             fillcolor: [newTraces[0].fillcolor, newTraces[1].fillcolor, newTraces[2].fillcolor],
             "line.color": [newTraces[0].line.color, newTraces[1].line.color, newTraces[2].line.color],
+            customdata: [
+              newTraces[0].customdata,
+              newTraces[1].customdata,
+              newTraces[2].customdata,
+            ],
             hovertemplate: [
               newTraces[0].hovertemplate,
               newTraces[1].hovertemplate,
               newTraces[2].hovertemplate,
             ],
           }, [0, 1, 2]);
+
+          // Rebuild the draw-character marker trace (trace 4). Plies in the
+          // trace differ between perspectives, so the array length can
+          // change — delete + add is more reliable than restyle here.
+          Plotly.deleteTraces(div, [4]).then(function () {
+            return Plotly.addTraces(div, buildDrawCharacterTrace(currentPerspective));
+          });
         }
       });
 
@@ -212,6 +317,11 @@
                 : " cls-cell--unclassified"
             );
           });
+          var labelEl = document.getElementById("lc0-wdl-cls-strip-label");
+          if (labelEl) {
+            var name = perspective === "white" ? white : black;
+            labelEl.textContent = name + "'s move quality and key moments";
+          }
         }
         paintStrip(currentPerspective);
         WoodLeagueAnalysis.subscribe(function (state) {

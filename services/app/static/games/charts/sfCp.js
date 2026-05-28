@@ -49,7 +49,7 @@
 
   // Fixed in-card height (#216): chart lives inside the SF stat card, so
   // it must not grow with ply count or it overflows the card.
-  var chartHeight = 240;
+  var chartHeight = 282;
 
   /**
    * Resolve a move-quality classification to its actual CSS background colour
@@ -83,49 +83,6 @@
       : theme.colors.barDefault;
     colorCache[cls] = resolved;
     return resolved;
-  }
-
-  /**
-   * Build the bar colour array from move-quality class colours.
-   *
-   * Only bars representing moves made by the perspective player are coloured;
-   * the opposing side's bars use the chart's neutral default so the eye
-   * focuses on the player's own move quality (#216).
-   * Ply parity: odd = White's move, even = Black's.
-   *
-   * Params:
-   *   perspective (string): "white" or "black".
-   *
-   * Returns:
-   *   Array of CSS colour strings, one per point.
-   */
-  /**
-   * Per-segment colour arrays for the stacked bar chart (#216).
-   *
-   * Each segment is coloured by which side it represents in WHITE-frame cp,
-   * invariant of the current display perspective:
-   *   - positive cp (white advantage) → white
-   *   - negative cp (black advantage) → black
-   * Ply 1's base segment defaults to white (starting position is even; the
-   * "previous" position is no-one's advantage, but we need to pick a value).
-   *
-   * Returns:
-   *   { base: string[], delta: string[] }
-   */
-  function buildSegmentColors() {
-    // Base (previous score, historical) is solid dark green; side info now
-    // reads from the zone-tinted background, not the bar colour. Delta
-    // carries the move-quality classification colour when classified, so
-    // the "this move's contribution" segment pops out.
-    var BAR_GREEN = "#1A3A2A";  // --color-forest
-    var base = [];
-    var delta = [];
-    for (var i = 0; i < rawPoints.length; i++) {
-      var p = rawPoints[i];
-      base.push(BAR_GREEN);
-      delta.push(p.cls ? resolveAnnotationColor(p.cls) : BAR_GREEN);
-    }
-    return { base: base, delta: delta };
   }
 
   /**
@@ -168,27 +125,39 @@
    * Returns:
    *   Array of Plotly shape objects.
    */
+  /**
+   * Build solid "endcap" rectangles at the tip of each classified bar —
+   * same visual treatment as the chips' top-border. Each cap spans the
+   * bar's full x width and extends from the bar tip inward toward zero
+   * by roughly 5px (converted to y-units via the chart's height-to-range
+   * ratio), so the cap sits ON TOP of the bar rather than straddling it.
+   */
   function buildShapes(perspective) {
-    // Zone tints: white-advantage zone gets a very light cream, almost
-    // white; black-advantage zone gets a dark gray. The zones swap with
-    // perspective (white-adv zone is at the bottom in white perspective,
-    // top in black perspective).
-    var WHITE_ZONE = "#FBF7EE";
-    var BLACK_ZONE = "#6B6B6B";
-    var bottomFill = perspective === "white" ? WHITE_ZONE : BLACK_ZONE;
-    var topFill = perspective === "white" ? BLACK_ZONE : WHITE_ZONE;
-    return [
-      {
-        type: "rect", xref: "paper", yref: "y",
-        x0: 0, x1: 1, y0: -DISPLAY_CAP, y1: 0,
-        fillcolor: bottomFill, line: { width: 0 }, layer: "below",
-      },
-      {
-        type: "rect", xref: "paper", yref: "y",
-        x0: 0, x1: 1, y0: 0, y1: DISPLAY_CAP,
-        fillcolor: topFill, line: { width: 0 }, layer: "below",
-      },
-    ];
+    var pts = getPointsForPerspective(perspective);
+    // Approximate 5px in y-units. Plot area ≈ chartHeight - top/bottom
+    // margins; y range is 2 * DISPLAY_CAP.
+    var plotAreaPx = chartHeight - 26 - 40;
+    var capPx = 5;
+    var capY = (capPx / plotAreaPx) * (2 * DISPLAY_CAP);
+    var shapes = [];
+    for (var i = 0; i < pts.length; i++) {
+      var p = pts[i];
+      if (!p.cls) continue;
+      // For positive display the bar grows upward; cap extends downward
+      // from the tip. For negative display the bar grows downward; cap
+      // extends upward. sign(0) → +1 (cosmetic; zero-bars have no tip).
+      var sign = p.display >= 0 ? 1 : -1;
+      shapes.push({
+        type: "rect", xref: "x", yref: "y",
+        x0: p.ply - 0.5, x1: p.ply + 0.5,
+        y0: p.display,
+        y1: p.display - capY * sign,
+        fillcolor: resolveAnnotationColor(p.cls),
+        line: { width: 0 },
+        layer: "above",
+      });
+    }
+    return shapes;
   }
 
   /**
@@ -215,53 +184,41 @@
    * Returns:
    *   Array of two Plotly bar traces (base first, delta on top).
    */
+  /**
+   * Build the cumulative-cp bar trace. Classification is rendered via the
+   * line "endcap" shapes (see buildShapes), not as a separate scatter.
+   */
   function buildTraces(perspective) {
     var pts = getPointsForPerspective(perspective);
     var plies = pts.map(function (p) { return p.ply; });
-    var baseY = [];
-    var deltaY = [];
-    var prev = 0;
-    for (var i = 0; i < pts.length; i++) {
-      baseY.push(prev);
-      deltaY.push(pts[i].display - prev);
-      prev = pts[i].display;
-    }
-    var colors = buildSegmentColors();
+    var BAR_GREEN = "#1A3A2A";
+
+    var customdata = pts.map(function (p) {
+      var isWhiteMove = (p.ply % 2) === 1;
+      var player = isWhiteMove
+        ? (window.ANALYSIS_DATA && window.ANALYSIS_DATA.white) || "White"
+        : (window.ANALYSIS_DATA && window.ANALYSIS_DATA.black) || "Black";
+      var cp = p.cp / 100;
+      var sign = cp >= 0 ? "+" : "-";
+      return [player, p.san, sign, Math.abs(cp).toFixed(2)];
+    });
+
+    var colors = pts.map(function (p) {
+      return p.cls ? resolveAnnotationColor(p.cls) : BAR_GREEN;
+    });
+
     return [
       {
         x: plies,
-        y: baseY,
+        y: pts.map(function (p) { return p.display; }),
         type: "bar",
-        marker: { color: colors.base },
-        hoverinfo: "skip",
-        showlegend: false,
-        name: "Previous",
-      },
-      {
-        x: plies,
-        y: deltaY,
-        type: "bar",
-        marker: { color: colors.delta },
-        customdata: pts.map(function (p, idx) {
-          var delta = deltaY[idx] / 100;
-          var cpDelta = -delta;
-          var dsign = cpDelta >= 0 ? "+" : "-";
-          var isWhiteMove = (p.ply % 2) === 1;
-          var player = isWhiteMove
-            ? (window.ANALYSIS_DATA && window.ANALYSIS_DATA.white) || "White"
-            : (window.ANALYSIS_DATA && window.ANALYSIS_DATA.black) || "Black";
-          return [
-            p.san,
-            dsign,
-            Math.abs(cpDelta).toFixed(2),
-            player,
-          ];
-        }),
+        marker: { color: colors },
+        customdata: customdata,
         hovertemplate:
-          "%{customdata[3]} played %{customdata[0]} " +
-          "(Δ %{customdata[1]}%{customdata[2]})<extra></extra>",
-        name: "Δ",
+          "%{customdata[0]} played %{customdata[1]} " +
+          "(%{customdata[2]}%{customdata[3]} pawns)<extra></extra>",
         showlegend: false,
+        name: "Eval",
       },
     ];
   }
@@ -307,12 +264,17 @@
       // palette family as the chips and card surfaces (#216).
       plot_bgcolor: "#FBF7EE",
       font: { color: theme.colors.text, family: theme.fonts.serif },
-      hovermode: "x unified",
-      barmode: "relative",
+      // "closest" instead of "x unified" so each bar's tooltip is owned
+      // by its hovertemplate — no separate "ply N" header on top.
+      hovermode: "closest",
       bargap: 0,
+      // Hover label styled to match the site's .card-pop tooltips:
+      // cream background, ebony border + text, EB Garamond serif body.
       hoverlabel: {
-        bgcolor: "white", bordercolor: theme.colors.textBold,
-        font: { color: theme.colors.textBold, family: theme.fonts.mono, size: 12 },
+        bgcolor: "#FAF7F0",
+        bordercolor: theme.colors.textBold,
+        font: { color: theme.colors.textBold, family: theme.fonts.serif, size: 13 },
+        align: "left",
       },
       annotations: [
         {
@@ -375,21 +337,18 @@
      * Updates the ply marker and re-renders the chart when perspective flips.
      */
     WoodLeagueAnalysis.subscribe(function (state) {
-      // Move the ply marker (trace index 2 after the two bar traces).
-      Plotly.restyle(div, { x: [[state.ply, state.ply]], y: [[-DISPLAY_CAP, DISPLAY_CAP]] }, [2]);
+      // Move the ply marker (trace index 1 — after the single bar trace).
+      Plotly.restyle(div, { x: [[state.ply, state.ply]], y: [[-DISPLAY_CAP, DISPLAY_CAP]] }, [1]);
 
       if (state.perspective !== currentPerspective) {
         currentPerspective = state.perspective;
         var traces = buildTraces(currentPerspective);
-        // Restyle base (0) and delta (1) bar traces. Only y values flip
-        // with perspective — colours are side-bound and invariant.
+        // Bar trace y flips with perspective; the colored endcap shapes
+        // are rebuilt via the relayout below.
         Plotly.restyle(div, {
-          x: [traces[0].x, traces[1].x],
-          y: [traces[0].y, traces[1].y],
-        }, [0, 1]);
-        Plotly.restyle(div, {
-          customdata: [traces[1].customdata],
-        }, [1]);
+          y: [traces[0].y],
+          customdata: [traces[0].customdata],
+        }, [0]);
         Plotly.relayout(div, buildLayout(currentPerspective));
       }
     });

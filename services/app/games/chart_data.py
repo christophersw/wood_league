@@ -39,7 +39,8 @@ def lc0_wdl_payload(data: GameAnalysisDataV2) -> list[dict]:
 
     Returns:
         list[dict]: One dict per analysed move, keys ``ply``, ``wdl_win``,
-        ``wdl_draw``, ``wdl_loss``, ``san``, ``classification``.
+        ``wdl_draw``, ``wdl_loss``, ``san``, ``classification``,
+        ``draw_character``.
     """
     return [
         {
@@ -49,6 +50,7 @@ def lc0_wdl_payload(data: GameAnalysisDataV2) -> list[dict]:
             "wdl_loss": m.wdl_loss_adj,
             "san": m.san,
             "classification": (m.base_severity or "").lower(),
+            "draw_character": (m.draw_character or "").lower().replace(" ", "_"),
         }
         for m in data.lc0_moves
     ]

@@ -75,18 +75,6 @@
       </div>
     </div>
 
-    {# Draw character (subordinate dot chips) — only shown when present #}
-    {% with dc=draw_character_counts.white %}
-    {% if dc.missed_win or dc.losing_blunder or dc.risky or dc.simplification %}
-    <div class="card-qcap" style="margin-top:.6rem;">Draw character</div>
-    <div class="card-chiprow card-chiprow--muted">
-      {% if dc.simplification %}<span class="card-dchip" tabindex="0"><span class="dot dc-simplification"></span>Simplification <span class="n">{{ dc.simplification }}</span><span class="card-pop card-dchip-tip"><b class="t">Simplification</b>About as good a move, trading tension for a calmer, drawish game.</span></span>{% endif %}
-      {% if dc.risky %}<span class="card-dchip" tabindex="0"><span class="dot dc-risky"></span>Risky <span class="n">{{ dc.risky }}</span><span class="card-pop card-dchip-tip"><b class="t">Risky</b>About as good a move, but it avoidably sharpened the position.</span></span>{% endif %}
-      {% if dc.losing_blunder %}<span class="card-dchip" tabindex="0"><span class="dot dc-losing_blunder"></span>Losing Blunder <span class="n">{{ dc.losing_blunder }}</span><span class="card-pop card-dchip-tip"><b class="t">Losing Blunder</b>A big loss that also sharpened the position into something decisive.</span></span>{% endif %}
-      {% if dc.missed_win %}<span class="card-dchip" tabindex="0"><span class="dot dc-missed_win"></span>Missed Win <span class="n">{{ dc.missed_win }}</span><span class="card-pop card-dchip-tip"><b class="t">Missed Win</b>Let real winning chances slip into a draw.</span></span>{% endif %}
-    </div>
-    {% endif %}
-    {% endwith %}
   </div>
 
   {# ── Black side ───────────────────────────────────────────────────────── #}
@@ -134,18 +122,6 @@
       </div>
     </div>
 
-    {# Draw character (subordinate dot chips) — only shown when present #}
-    {% with dc=draw_character_counts.black %}
-    {% if dc.missed_win or dc.losing_blunder or dc.risky or dc.simplification %}
-    <div class="card-qcap" style="margin-top:.6rem;">Draw character</div>
-    <div class="card-chiprow card-chiprow--muted">
-      {% if dc.simplification %}<span class="card-dchip" tabindex="0"><span class="dot dc-simplification"></span>Simplification <span class="n">{{ dc.simplification }}</span><span class="card-pop card-dchip-tip"><b class="t">Simplification</b>About as good a move, trading tension for a calmer, drawish game.</span></span>{% endif %}
-      {% if dc.risky %}<span class="card-dchip" tabindex="0"><span class="dot dc-risky"></span>Risky <span class="n">{{ dc.risky }}</span><span class="card-pop card-dchip-tip"><b class="t">Risky</b>About as good a move, but it avoidably sharpened the position.</span></span>{% endif %}
-      {% if dc.losing_blunder %}<span class="card-dchip" tabindex="0"><span class="dot dc-losing_blunder"></span>Losing Blunder <span class="n">{{ dc.losing_blunder }}</span><span class="card-pop card-dchip-tip"><b class="t">Losing Blunder</b>A big loss that also sharpened the position into something decisive.</span></span>{% endif %}
-      {% if dc.missed_win %}<span class="card-dchip" tabindex="0"><span class="dot dc-missed_win"></span>Missed Win <span class="n">{{ dc.missed_win }}</span><span class="card-pop card-dchip-tip"><b class="t">Missed Win</b>Let real winning chances slip into a draw.</span></span>{% endif %}
-    </div>
-    {% endif %}
-    {% endwith %}
   </div>
 
   {# Chart slot — LC0 WDL chart relocated into the card (#216). #}

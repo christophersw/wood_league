@@ -58,7 +58,7 @@ def test_sf_cp_partial_contains_payload_and_tooltip(client, new_schema_game_fact
     assert resp.status_code == 200
     assert "sf-cp-data" in body                          # json_script tag id
     assert "Stockfish centipawn evaluation" in body      # section title
-    assert "underlying engine signal" in body            # tooltip body text
+    assert "How to read this chart" in body              # tooltip header (#216)
     assert "sfCp.js" in body                             # static JS reference
 
 
@@ -75,7 +75,7 @@ def test_lc0_wdl_partial_contains_payload_and_tooltip(client, new_schema_game_fa
     assert resp.status_code == 200
     assert "lc0-wdl-data" in body                         # json_script tag id
     assert "LC0 Win / Draw / Loss" in body                # chart section title
-    assert "draw rate" in body                            # calibration draw-rate subtitle text
+    assert "How to read this chart" in body               # tooltip header (#216)
     assert "lc0Wdl.js" in body                            # static JS reference
 
 

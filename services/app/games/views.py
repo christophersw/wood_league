@@ -59,6 +59,7 @@ from games.chart_data import lc0_wdl_payload, sf_cp_payload
 from games.chip_data import chips_for_ply
 from games.models import Game
 from games.move_annotations import ANNOTATIONS
+from players.models import Player
 from games.services_v2 import (
     GameAnalysisDataV2,
     Lc0MoveRow,
@@ -173,6 +174,54 @@ def _fallback_game_continuation_sans(
     return list(moves_list[request_ply + 1:])
 
 
+def _logged_in_player_username(request: HttpRequest) -> str | None:
+    """Return the club-player username for the logged-in user, or None.
+
+    Looks up :class:`Player` by case-insensitive email match against the
+    request user's email. Returns ``None`` for anonymous users, users
+    without an email, or users not registered as club players.
+    """
+    user = getattr(request, "user", None)
+    if user is None or not user.is_authenticated:
+        return None
+    email = getattr(user, "email", "")
+    if not email:
+        return None
+    player = Player.objects.filter(email__iexact=email).first()
+    if player is None:
+        return None
+    return player.username or None
+
+
+def _resolve_initial_perspective(request: HttpRequest, game: Game) -> str:
+    """Pick which side (white/black) the analysis page should open from.
+
+    Priority:
+        1. Explicit ``?perspective=white|black`` query string — user override.
+        2. Logged-in user matches one of the players — open from their side.
+        3. Default ``"white"``.
+
+    Params:
+        request (HttpRequest): The HTTP request (query string + user).
+        game (Game): The game being viewed.
+
+    Returns:
+        str: Either ``"white"`` or ``"black"``.
+    """
+    explicit = request.GET.get("perspective", "").lower()
+    if explicit in {"white", "black"}:
+        return explicit
+    username = _logged_in_player_username(request)
+    if username is None:
+        return "white"
+    username = username.lower()
+    if (game.white_username or "").lower() == username:
+        return "white"
+    if (game.black_username or "").lower() == username:
+        return "black"
+    return "white"
+
+
 def game_analysis(request: HttpRequest, slug: str) -> HttpResponse:
     """Render the thin shell for the analysis page.
 
@@ -198,9 +247,7 @@ def game_analysis(request: HttpRequest, slug: str) -> HttpResponse:
             "game": game, "no_data": True, "reanalyze": True,
         })
     initial_ply = int(request.GET.get("ply", 0) or 0)
-    initial_perspective = request.GET.get("perspective", "white")
-    if initial_perspective not in {"white", "black"}:
-        initial_perspective = "white"
+    initial_perspective = _resolve_initial_perspective(request, game)
     # Engine-line card info-tooltip metadata — same shape the SF + LC0 stat
     # cards use, exposed here so the Engine Line card header can render its
     # own ⓘ popup that swaps content based on which engine's line is shown.
