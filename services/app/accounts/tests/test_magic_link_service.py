@@ -7,7 +7,7 @@ import hashlib
 from datetime import timedelta
 from django.test import TestCase
 from django.utils import timezone
-from accounts.models import LoginLink, User
+from accounts.models import User
 from accounts.magic_link_service import MagicLinkService
 
 
