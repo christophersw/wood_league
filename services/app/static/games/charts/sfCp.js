@@ -113,25 +113,33 @@
    *   { base: string[], delta: string[] }
    */
   function buildSegmentColors(perspective) {
+    // Colour by display zone so the perspective player's advantage (always
+    // at the bottom of the chart) reads as the light "whiteAdvantage" tint
+    // and the opponent's advantage (top) reads as the dark "blackAdvantage"
+    // tint — regardless of perspective. Flipping perspective re-paints the
+    // segments so the light/dark assignment tracks the perspective player.
+    var pts = getPointsForPerspective(perspective);
     var base = [];
     var delta = [];
-    var prevRaw = 0;
-    for (var i = 0; i < rawPoints.length; i++) {
-      var p = rawPoints[i];
-      var curRaw = p.cp;
-      // Base segment always carries the side colour for the previous score:
-      // it's historical, not "this move's contribution".
-      base.push(prevRaw >= 0 ? theme.colors.whiteAdvantage : theme.colors.blackAdvantage);
-      // Delta segment: classification colour ONLY when this ply is the
-      // perspective player's move; otherwise side colour for the new state.
+    var prevDisplay = 0;
+    for (var i = 0; i < pts.length; i++) {
+      var p = pts[i];
+      base.push(prevDisplay <= 0
+        ? theme.colors.whiteAdvantage
+        : theme.colors.blackAdvantage);
+
+      // Classification colour ONLY when this ply belongs to the perspective
+      // player; otherwise fall back to the zone-based side colour.
       var isWhiteMove = (p.ply % 2) === 1;
       var isPerspectiveMove = perspective === "white" ? isWhiteMove : !isWhiteMove;
       if (isPerspectiveMove && p.cls) {
         delta.push(resolveAnnotationColor(p.cls));
       } else {
-        delta.push(curRaw >= 0 ? theme.colors.whiteAdvantage : theme.colors.blackAdvantage);
+        delta.push(p.display <= 0
+          ? theme.colors.whiteAdvantage
+          : theme.colors.blackAdvantage);
       }
-      prevRaw = curRaw;
+      prevDisplay = p.display;
     }
     return { base: base, delta: delta };
   }
@@ -357,18 +365,16 @@
       if (state.perspective !== currentPerspective) {
         currentPerspective = state.perspective;
         var traces = buildTraces(currentPerspective);
-        // Restyle base (0) and delta (1) bar traces in lock-step. Colours
-        // are white-frame invariant, so marker.color stays the same — but
-        // y values flip with the display inversion.
+        // Restyle base (0) and delta (1) bar traces in lock-step. Both y
+        // values AND colours flip with perspective: the zone-based light/
+        // dark assignment tracks the perspective player.
         Plotly.restyle(div, {
           x: [traces[0].x, traces[1].x],
           y: [traces[0].y, traces[1].y],
+          "marker.color": [traces[0].marker.color, traces[1].marker.color],
         }, [0, 1]);
         Plotly.restyle(div, {
           customdata: [traces[1].customdata],
-          // Delta colours depend on perspective (classification colour only
-          // for the perspective player's plies), so restyle them on flip.
-          "marker.color": [traces[1].marker.color],
         }, [1]);
         Plotly.relayout(div, buildLayout(currentPerspective));
       }
