@@ -6,19 +6,24 @@ Description:
     and inviting members to create login accounts. Admin-only access.
 
 Changelog:
+    2026-05-28: Add invite button column with status to members list (#218)
+    2026-05-28: Add member_send_invite for magic-link invite endpoint (#218)
     2026-05-08: Added file header to meet documentation standards
 """
 
 from __future__ import annotations
 
+from django.contrib import messages
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.db import IntegrityError
-from django.http import HttpRequest, HttpResponse
+from django.http import HttpRequest, HttpResponse, HttpResponseBadRequest, HttpResponseForbidden
 from django.utils.html import escape
-from django.shortcuts import get_object_or_404, render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_GET, require_POST, require_http_methods
 
-from accounts.models import User
+from accounts.email_service import EmailService
+from accounts.magic_link_service import MagicLinkService
+from accounts.models import LoginLink, User
 from games.models import GameParticipant
 
 from .models import Player
@@ -36,18 +41,38 @@ def _admin_login_required(view):
 @_admin_login_required
 @require_GET
 def members_list(request: HttpRequest) -> HttpResponse:
-    """Display table of all club members with login status."""
-    players = Player.objects.order_by("username")
-    login_emails = set(
-        User.objects.values_list("email", flat=True)
-    )
+    """Display members with login + invite status; admins can send/resend invites.
+
+    Args:
+        request: Authenticated HTTP GET request. Must be from an admin user.
+
+    Returns:
+        Rendered members list page with per-player invite and login state.
+    """
+    players = Player.objects.all().order_by("username")
+    emails = [p.email.lower() for p in players if p.email]
+    users_by_email = {u.email: u for u in User.objects.filter(email__in=emails)}
+
     rows = []
     for p in players:
+        user = users_by_email.get((p.email or "").lower())
+        latest_invite = None
+        if user is not None:
+            latest_invite = (
+                LoginLink.objects
+                .filter(user=user, purpose=LoginLink.PURPOSE_INVITE)
+                .order_by("-created_at").first()
+            )
         rows.append({
             "player": p,
-            "has_login": bool(p.email and p.email in login_emails),
+            "user": user,
+            "has_login": bool(p.email and p.email.lower() in users_by_email),
+            "has_logged_in": bool(user and user.last_login),
+            "invited_at": latest_invite.created_at if latest_invite else None,
         })
-    return render(request, "players/members.html", {"rows": rows})
+
+    is_admin = getattr(request.user, "role", None) == "admin"
+    return render(request, "players/members.html", {"rows": rows, "is_admin": is_admin})
 
 
 # ── Add member ────────────────────────────────────────────────────────────────
@@ -128,36 +153,50 @@ def delete_member(request: HttpRequest, pk: int) -> HttpResponse:
 
 # ── Invite member (create login) ──────────────────────────────────────────────
 
-@_admin_login_required
+# ── Send / Resend magic-link invite ───────────────────────────────────────────
+
+@login_required
 @require_POST
-def invite_member(request: HttpRequest, pk: int) -> HttpResponse:
-    """Create a login account for a player with email and password, assigning a role."""
-    player = get_object_or_404(Player, pk=pk)
+def member_send_invite(request: HttpRequest, player_id: int) -> HttpResponse:
+    """Issue or resend a welcome+invite magic link for the given player.
+
+    Args:
+        request: Authenticated HTTP POST request. Must be from an admin user.
+        player_id: Primary key of the Player to invite.
+
+    Returns:
+        HttpResponseForbidden if caller is not admin.
+        HttpResponseBadRequest if player not found or has no email.
+        Redirect to players:members_list on success or throttle.
+
+    Side effects:
+        Creates a User account if none exists for the player email.
+        Invalidates any prior unconsumed invite links for that user.
+        Sends a welcome+invite email containing the magic link.
+    """
+    if request.user.role != "admin":
+        return HttpResponseForbidden("Admin only.")
+
+    player = Player.objects.filter(pk=player_id).first()
+    if player is None:
+        return HttpResponseBadRequest("Unknown player.")
     if not player.email:
-        return HttpResponse(
-            '<p class="font-mono text-sm text-crimson">Player has no email set.</p>',
-            status=422,
-        )
+        return HttpResponseBadRequest("Player has no email on file.")
 
-    password = request.POST.get("password", "").strip()
-    role = request.POST.get("role", "member")
-    if role not in ("member", "admin"):
-        role = "member"
+    email = player.email.strip().lower()
+    user, _ = User.objects.get_or_create(
+        email=email, defaults={"role": "member", "is_active": True},
+    )
+    if not user.has_usable_password():
+        user.set_unusable_password()
+        user.save(update_fields=["password"])
 
-    if len(password) < 8:
-        return HttpResponse(
-            '<p class="font-mono text-sm text-crimson">Password must be at least 8 characters.</p>',
-            status=422,
-        )
+    svc = MagicLinkService()
+    if not svc.throttle_check(user):
+        messages.info(request, "An invite was sent recently. Please wait a minute and try again.")
+        return redirect("players:members_list")
 
-    if User.objects.filter(email=player.email).exists():
-        return HttpResponse(
-            '<p class="font-mono text-sm text-crimson">A login already exists for this email.</p>',
-            status=422,
-        )
-
-    User.objects.create_user(email=player.email, password=password, role=role)
-    return render(request, "players/_invite_result.html", {
-        "player": player,
-        "email": player.email,
-    })
+    _, raw = svc.issue_link(user, purpose=LoginLink.PURPOSE_INVITE, created_by=request.user)
+    EmailService().send_invite_email(user, player, raw, invited_by=request.user)
+    messages.success(request, f"Invite sent to {email}.")
+    return redirect("players:members_list")

@@ -1,11 +1,13 @@
 """
-Title: models.py — Custom user model
+Title: models.py — Custom user model and authentication models
 Description:
     Defines the custom User model for Wood League Chess with email as the primary
     identifier instead of username. Includes role-based permissions (admin, moderator, player)
     and account status tracking. The UserManager provides create_user and create_superuser methods.
+    Also defines LoginLink for passwordless magic-link authentication.
 
 Changelog:
+    2026-05-28: Add LoginLink model for magic-link auth (#218)
     2026-05-08: Added file header to meet documentation standards
 """
 
@@ -74,3 +76,39 @@ class User(AbstractBaseUser):
     def has_module_perms(self, app_label):
         """Return True if the user has permissions to access the given app module."""
         return self.role == "admin"
+
+
+class LoginLink(models.Model):
+    """Single-use magic link for passwordless login or invite."""
+
+    PURPOSE_INVITE = "invite"
+    PURPOSE_LOGIN = "login"
+    PURPOSE_CHOICES = [(PURPOSE_INVITE, "Invite"), (PURPOSE_LOGIN, "Login")]
+
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="login_links"
+    )
+    token_hash = models.CharField(max_length=64, unique=True)
+    purpose = models.CharField(max_length=16, choices=PURPOSE_CHOICES)
+    expires_at = models.DateTimeField()
+    consumed_at = models.DateTimeField(null=True, blank=True)
+    created_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="login_links_issued",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        app_label = "accounts"
+        db_table = "login_links"
+        indexes = [
+            models.Index(fields=["user", "consumed_at"]),
+            models.Index(fields=["expires_at"]),
+        ]
+
+    def __str__(self):
+        """Return a string representation of the LoginLink."""
+        return f"LoginLink(user={self.user_id}, purpose={self.purpose})"

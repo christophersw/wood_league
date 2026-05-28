@@ -1,0 +1,7 @@
+Wood League Chess Club
+
+Your login link (expires in {{ ttl_minutes }} minutes, single use):
+
+{{ link_url }}
+
+If you didn't request this link, ignore this email.

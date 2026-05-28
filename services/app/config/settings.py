@@ -11,11 +11,14 @@ Changelog:
     2026-05-19 (#159): Add WL_LC0_FALLBACK_ELO, WL_LC0_CONTEMPT_MAX,
                        WL_LC0_CONTEMPT_ATTENUATION
     2026-05-27 (#214): Drop WL_LC0_DRAW_RATE_* sampler settings (constant 0.62)
+    2026-05-28 (#218): Add email backend wiring for magic-link login (Resend/console)
 """
 import os
 from pathlib import Path
 
 from decouple import Csv, config
+
+from app.config import get_settings
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -295,6 +298,22 @@ LOGGING = {
         },
     },
 }
+
+# Email configuration (magic link login)
+_s = get_settings()
+
+if _s.email_provider == "resend":
+    EMAIL_BACKEND = "anymail.backends.resend.EmailBackend"
+    ANYMAIL = {"RESEND_API_KEY": _s.resend_api_key}
+    INSTALLED_APPS = list(INSTALLED_APPS) + ["anymail"]
+else:
+    EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+
+DEFAULT_FROM_EMAIL = _s.email_from
+
+# Sessions: 2-week rolling sliding expiry (#218 magic-link login).
+SESSION_COOKIE_AGE = _s.session_ttl_days * 24 * 60 * 60
+SESSION_SAVE_EVERY_REQUEST = True
 
 if not DEBUG:
     CSRF_COOKIE_SECURE = True
