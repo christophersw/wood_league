@@ -45,6 +45,13 @@
   src: url('../fonts/playfairdisplaysc-700.woff2') format('woff2');
 }
 @font-face {
+  font-family: 'Playfair Display';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('../fonts/playfairdisplay.woff2') format('woff2');
+}
+@font-face {
   font-family: 'DM Mono';
   font-style: normal;
   font-weight: 400;
@@ -112,7 +119,7 @@
   --color-tint-draw:  rgba(139, 58, 42, 0.50);    /* chart WDL-draw fill */
 
   --font-serif:   "EB Garamond",         "Cormorant Garamond", Georgia,  serif;
-  --font-display: "Playfair Display SC", "Playfair Display",   Georgia,  serif;
+  --font-display: "Playfair Display", Georgia, serif;
   --font-mono:    "DM Mono",             "Courier New",        monospace;
 }
 

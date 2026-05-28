@@ -42,9 +42,10 @@
       wdlLoss:          readVar("--color-rust",            "#8B3A2A"),
     },
     fonts: {
-      mono:  readVar("--font-mono",  "DM Mono,monospace"),
-      serif: readVar("--font-serif", "EB Garamond,serif"),
-      title: "Georgia,serif",
+      mono:    readVar("--font-mono",    "DM Mono,monospace"),
+      serif:   readVar("--font-serif",   "EB Garamond,serif"),
+      display: readVar("--font-display", "Playfair Display SC,serif"),
+      title:   "Georgia,serif",
     },
   };
 })();

@@ -1,24 +1,24 @@
 {% load static %}
 <section class="wc-chart" data-chart="sf-cp">
-  <header class="wc-chart__head">
-    <h3>Stockfish centipawn evaluation</h3>
-    <p class="wc-chart__sub">Raw score, White-frame, capped at &plusmn;12 pawns.</p>
-    <details class="chart-info-tooltip">
-      <summary aria-label="How this chart is computed">ⓘ</summary>
-      <div>
-        <p><strong>What you&rsquo;re seeing:</strong></p>
+  <header class="wc-chart__head" style="display:flex;align-items:baseline;">
+    <h3 style="margin:0;">Stockfish centipawn evaluation</h3>
+    <span class="card-info" tabindex="0" aria-label="How this chart is computed"
+          style="margin-left:auto;">ⓘ
+      <div class="card-pop card-info-pop">
+        <h4>How to read this chart</h4>
         <p>
-          This is the underlying engine signal — Stockfish&rsquo;s raw centipawn score
-          for each move, expressed in pawn units from White&rsquo;s perspective.
-          Bars above zero favour White; bars below zero favour Black.
-          Scores beyond &plusmn;12 pawns (typically forced-mate sequences) are capped
-          so the chart remains readable.
+          Each bar stacks the previous ply&rsquo;s score (dark green) with
+          this move&rsquo;s change. The change segment carries the
+          move-quality colour so blunders, mistakes, and brilliancies pop.
         </p>
         <p>
-          For a probability-based view, see the LC0 WDL chart in the Leela card.
+          The y-axis runs 0&ndash;12 pawns in both directions. The top and
+          bottom labels say which side&rsquo;s advantage lives in each half;
+          flipping the board flips which side sits on top.
         </p>
+        <p>Click any bar to jump to that ply.</p>
       </div>
-    </details>
+    </span>
   </header>
   <div id="sf-cp-chart" style="height:240px"></div>
   {{ payload|json_script:"sf-cp-data" }}

@@ -112,32 +112,18 @@
    * Returns:
    *   { base: string[], delta: string[] }
    */
-  function buildSegmentColors(perspective) {
-    // Colour by display zone so the perspective player's advantage (always
-    // at the bottom of the chart) reads as the light "whiteAdvantage" tint
-    // and the opponent's advantage (top) reads as the dark "blackAdvantage"
-    // tint — regardless of perspective. Flipping perspective re-paints the
-    // segments so the light/dark assignment tracks the perspective player.
-    var pts = getPointsForPerspective(perspective);
+  function buildSegmentColors() {
+    // Base (previous score, historical) is solid dark green; side info now
+    // reads from the zone-tinted background, not the bar colour. Delta
+    // carries the move-quality classification colour when classified, so
+    // the "this move's contribution" segment pops out.
+    var BAR_GREEN = "#1A3A2A";  // --color-forest
     var base = [];
     var delta = [];
-    var prevDisplay = 0;
-    for (var i = 0; i < pts.length; i++) {
-      var p = pts[i];
-      base.push(prevDisplay <= 0
-        ? theme.colors.whiteAdvantage
-        : theme.colors.blackAdvantage);
-
-      // Both players' deltas carry the classification colour when present;
-      // unclassified plies fall back to the zone-based side colour.
-      if (p.cls) {
-        delta.push(resolveAnnotationColor(p.cls));
-      } else {
-        delta.push(p.display <= 0
-          ? theme.colors.whiteAdvantage
-          : theme.colors.blackAdvantage);
-      }
-      prevDisplay = p.display;
+    for (var i = 0; i < rawPoints.length; i++) {
+      var p = rawPoints[i];
+      base.push(BAR_GREEN);
+      delta.push(p.cls ? resolveAnnotationColor(p.cls) : BAR_GREEN);
     }
     return { base: base, delta: delta };
   }
@@ -183,12 +169,14 @@
    *   Array of Plotly shape objects.
    */
   function buildShapes(perspective) {
-    var bottomFill = perspective === "white"
-      ? theme.colors.whiteAdvantage
-      : theme.colors.blackAdvantage;
-    var topFill = perspective === "white"
-      ? theme.colors.blackAdvantage
-      : theme.colors.whiteAdvantage;
+    // Zone tints: white-advantage zone gets a very light cream, almost
+    // white; black-advantage zone gets a dark gray. The zones swap with
+    // perspective (white-adv zone is at the bottom in white perspective,
+    // top in black perspective).
+    var WHITE_ZONE = "#FBF7EE";
+    var BLACK_ZONE = "#6B6B6B";
+    var bottomFill = perspective === "white" ? WHITE_ZONE : BLACK_ZONE;
+    var topFill = perspective === "white" ? BLACK_ZONE : WHITE_ZONE;
     return [
       {
         type: "rect", xref: "paper", yref: "y",
@@ -238,7 +226,7 @@
       deltaY.push(pts[i].display - prev);
       prev = pts[i].display;
     }
-    var colors = buildSegmentColors(perspective);
+    var colors = buildSegmentColors();
     return [
       {
         x: plies,
@@ -258,18 +246,20 @@
           var delta = deltaY[idx] / 100;
           var cpDelta = -delta;
           var dsign = cpDelta >= 0 ? "+" : "-";
+          var isWhiteMove = (p.ply % 2) === 1;
+          var player = isWhiteMove
+            ? (window.ANALYSIS_DATA && window.ANALYSIS_DATA.white) || "White"
+            : (window.ANALYSIS_DATA && window.ANALYSIS_DATA.black) || "Black";
           return [
             p.san,
-            p.cp >= 0 ? "+" : "",
-            Math.abs(p.cp / 100).toFixed(2),
             dsign,
             Math.abs(cpDelta).toFixed(2),
+            player,
           ];
         }),
         hovertemplate:
-          "Ply %{x}: %{customdata[0]} " +
-          "(eval %{customdata[1]}%{customdata[2]} · " +
-          "Δ %{customdata[3]}%{customdata[4]})<extra></extra>",
+          "%{customdata[3]} played %{customdata[0]} " +
+          "(Δ %{customdata[1]}%{customdata[2]})<extra></extra>",
         name: "Δ",
         showlegend: false,
       },
@@ -289,14 +279,19 @@
     var monoFont = { size: 11, color: theme.colors.text, family: theme.fonts.mono };
     // Pawn-unit tick labels (e.g. "+5", "-5") instead of raw centipawns, so
     // the y-axis stays narrow enough to match the LC0 chart's left margin (#216).
+    // Butterfly axis: magnitudes are positive in both directions; the
+    // top-of-chart annotation names which side the upper half belongs to.
     var tickvals = [-1200, -600, 0, 600, 1200];
     var ticktext = tickvals.map(function (v) {
       if (v === 0) return "0";
-      var sign = v > 0 ? "+" : "-";
-      return sign + (Math.abs(v) / 100);
+      return "+" + (Math.abs(v) / 100);
     });
+    // In white perspective the top half is Black-advantage (positive
+    // display) and the bottom is White-advantage; black perspective swaps.
+    var topLabel = perspective === "white" ? "Black Advantage" : "White Advantage";
+    var bottomLabel = perspective === "white" ? "White Advantage" : "Black Advantage";
     return {
-      xaxis: { title: { text: "Ply", font: monoFont }, zeroline: false, showgrid: false, tickfont: monoFont },
+      xaxis: { zeroline: false, showgrid: false, showticklabels: false },
       yaxis: {
         zeroline: true, zerolinecolor: theme.colors.textBold,
         showgrid: false,
@@ -304,12 +299,13 @@
         tickvals: tickvals,
         ticktext: ticktext,
       },
-      margin: { l: 36, r: 8, t: 20, b: 60 },
+      margin: { l: 36, r: 8, t: 26, b: 40 },
       height: chartHeight,
       paper_bgcolor: "rgba(0,0,0,0)",
-      // Dark-cream plot background — light enough to feel warm, dark enough
-      // for the white advantage bars to read clearly (#216).
-      plot_bgcolor: "#d8c69a",
+      // Dark-cream plot background matching the move-chip parchment tone
+      // (--color-parchment, #F5F0E8) so the chart sits in the same warm
+      // palette family as the chips and card surfaces (#216).
+      plot_bgcolor: "#FBF7EE",
       font: { color: theme.colors.text, family: theme.fonts.serif },
       hovermode: "x unified",
       barmode: "relative",
@@ -318,6 +314,23 @@
         bgcolor: "white", bordercolor: theme.colors.textBold,
         font: { color: theme.colors.textBold, family: theme.fonts.mono, size: 12 },
       },
+      annotations: [
+        {
+          text: topLabel,
+          xref: "paper", yref: "paper",
+          x: 0.5, y: 1.0, xanchor: "center", yanchor: "bottom",
+          showarrow: false,
+          font: { size: 12, color: theme.colors.textBold, family: theme.fonts.display },
+        },
+        {
+          text: bottomLabel,
+          xref: "paper", yref: "paper",
+          x: 0.5, y: 0, xanchor: "center", yanchor: "top",
+          yshift: -22,
+          showarrow: false,
+          font: { size: 12, color: theme.colors.textBold, family: theme.fonts.display },
+        },
+      ],
     };
   }
 
@@ -333,14 +346,21 @@
 
   var currentPerspective = WoodLeagueAnalysis.getState().perspective;
 
+  // Force-load Playfair Display SC before Plotly renders so the SVG
+  // annotation text (top/bottom "Advantage" labels) doesn't paint with the
+  // serif fallback and stick.
+  var fontReady = (document.fonts && document.fonts.load)
+    ? document.fonts.load('12px "Playfair Display"')
+    : Promise.resolve();
+
   // Trace order: 0 = base (previous score), 1 = delta (this move's change),
   // 2 = ply highlight marker.
-  Plotly.newPlot(
+  fontReady.then(function () { return Plotly.newPlot(
     div,
     buildTraces(currentPerspective).concat([highlight]),
     buildLayout(currentPerspective),
     { displaylogo: false, responsive: true }
-  ).then(function () {
+  ); }).then(function () {
     /**
      * Click on any bar (base or delta) to jump shared ply state to that ply.
      */
@@ -361,13 +381,11 @@
       if (state.perspective !== currentPerspective) {
         currentPerspective = state.perspective;
         var traces = buildTraces(currentPerspective);
-        // Restyle base (0) and delta (1) bar traces in lock-step. Both y
-        // values AND colours flip with perspective: the zone-based light/
-        // dark assignment tracks the perspective player.
+        // Restyle base (0) and delta (1) bar traces. Only y values flip
+        // with perspective — colours are side-bound and invariant.
         Plotly.restyle(div, {
           x: [traces[0].x, traces[1].x],
           y: [traces[0].y, traces[1].y],
-          "marker.color": [traces[0].marker.color, traces[1].marker.color],
         }, [0, 1]);
         Plotly.restyle(div, {
           customdata: [traces[1].customdata],
