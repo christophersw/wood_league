@@ -14,6 +14,7 @@ import hashlib
 import secrets
 from datetime import timedelta
 
+from django.db import transaction
 from django.utils import timezone
 
 from app.config import get_settings
@@ -44,16 +45,17 @@ class MagicLinkService:
     ) -> tuple[LoginLink, str]:
         """Issue a new magic link for user. Returns (LoginLink, raw_token)."""
         now = timezone.now()
-        LoginLink.objects.filter(
-            user=user, purpose=purpose, consumed_at__isnull=True,
-        ).update(consumed_at=now)
+        with transaction.atomic():
+            LoginLink.objects.filter(
+                user=user, purpose=purpose, consumed_at__isnull=True,
+            ).update(consumed_at=now)
 
-        raw = secrets.token_urlsafe(32)
-        link = LoginLink.objects.create(
-            user=user,
-            token_hash=self._hash(raw),
-            purpose=purpose,
-            expires_at=now + self._ttl(purpose),
-            created_by=created_by,
-        )
+            raw = secrets.token_urlsafe(32)
+            link = LoginLink.objects.create(
+                user=user,
+                token_hash=self._hash(raw),
+                purpose=purpose,
+                expires_at=now + self._ttl(purpose),
+                created_by=created_by,
+            )
         return link, raw
