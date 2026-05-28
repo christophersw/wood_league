@@ -301,7 +301,7 @@
       xaxis: { title: { text: "Ply", font: monoFont }, zeroline: false, showgrid: false, tickfont: monoFont },
       yaxis: {
         zeroline: true, zerolinecolor: theme.colors.textBold,
-        showgrid: true, gridcolor: theme.colors.grid,
+        showgrid: false,
         tickfont: monoFont,
         tickvals: tickvals,
         ticktext: ticktext,
@@ -309,11 +309,10 @@
       margin: { l: 36, r: 8, t: 20, b: 60 },
       height: chartHeight,
       paper_bgcolor: "rgba(0,0,0,0)",
-      // Uniform mid-grey plot background contrasts equally with the white
-      // and black advantage bars (#216) — replaces the prior half-light /
-      // half-dark zone shading, which is now redundant once bars carry the
-      // side colour directly.
-      plot_bgcolor: "#9a9a9a",
+      // Cream-toned plot background — same tint as the LC0 chart's draw
+      // band so the two charts read as a set. Dark enough that the white
+      // advantage bars contrast against it (#216).
+      plot_bgcolor: theme.colors.wdlDraw,
       font: { color: theme.colors.text, family: theme.fonts.serif },
       hovermode: "x unified",
       barmode: "relative",
