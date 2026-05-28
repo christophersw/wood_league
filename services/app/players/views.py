@@ -153,41 +153,6 @@ def delete_member(request: HttpRequest, pk: int) -> HttpResponse:
 
 # ── Invite member (create login) ──────────────────────────────────────────────
 
-@_admin_login_required
-@require_POST
-def invite_member(request: HttpRequest, pk: int) -> HttpResponse:
-    """Create a login account for a player with email and password, assigning a role."""
-    player = get_object_or_404(Player, pk=pk)
-    if not player.email:
-        return HttpResponse(
-            '<p class="font-mono text-sm text-crimson">Player has no email set.</p>',
-            status=422,
-        )
-
-    password = request.POST.get("password", "").strip()
-    role = request.POST.get("role", "member")
-    if role not in ("member", "admin"):
-        role = "member"
-
-    if len(password) < 8:
-        return HttpResponse(
-            '<p class="font-mono text-sm text-crimson">Password must be at least 8 characters.</p>',
-            status=422,
-        )
-
-    if User.objects.filter(email=player.email).exists():
-        return HttpResponse(
-            '<p class="font-mono text-sm text-crimson">A login already exists for this email.</p>',
-            status=422,
-        )
-
-    User.objects.create_user(email=player.email, password=password, role=role)
-    return render(request, "players/_invite_result.html", {
-        "player": player,
-        "email": player.email,
-    })
-
-
 # ── Send / Resend magic-link invite ───────────────────────────────────────────
 
 @login_required

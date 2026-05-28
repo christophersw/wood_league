@@ -16,6 +16,7 @@ Changelog:
 from django.conf import settings
 from django.contrib import auth, messages
 from django.shortcuts import redirect, render
+from django.utils.http import url_has_allowed_host_and_scheme
 from django_ratelimit.decorators import ratelimit
 
 from .email_service import EmailService
@@ -113,11 +114,15 @@ def login_link_consume(request, token: str):
     if user is None:
         return render(request, "accounts/login_link_expired.html", status=200)
 
-    # ModelBackend is first in AUTHENTICATION_BACKENDS; set explicitly because
-    # User.objects.get() returns an instance with no backend attribute.
-    user.backend = "accounts.backends.LegacyPbkdf2Backend"
+    # Record the magic-link path in the session's backend slot rather than the
+    # legacy password backend, which would corrupt the audit trail.
+    user.backend = "django.contrib.auth.backends.ModelBackend"
     auth.login(request, user)
-    next_url = request.GET.get("next") or settings.LOGIN_REDIRECT_URL
+    next_url = request.GET.get("next") or ""
+    if not url_has_allowed_host_and_scheme(
+        next_url, allowed_hosts={request.get_host()}, require_https=request.is_secure(),
+    ):
+        next_url = settings.LOGIN_REDIRECT_URL
     return redirect(next_url)
 
 

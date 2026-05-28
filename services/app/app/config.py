@@ -61,6 +61,7 @@ class Settings(BaseSettings):
     magic_link_login_ttl_minutes: int = 15
     magic_link_throttle_per_minute: int = 1
     magic_link_throttle_per_hour: int = 5
+    session_ttl_days: int = 14
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

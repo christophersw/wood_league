@@ -311,6 +311,10 @@ else:
 
 DEFAULT_FROM_EMAIL = _s.email_from
 
+# Sessions: 2-week rolling sliding expiry (#218 magic-link login).
+SESSION_COOKIE_AGE = _s.session_ttl_days * 24 * 60 * 60
+SESSION_SAVE_EVERY_REQUEST = True
+
 if not DEBUG:
     CSRF_COOKIE_SECURE = True
     SESSION_COOKIE_SECURE = True
