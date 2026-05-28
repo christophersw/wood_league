@@ -1,0 +1,42 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Confirm Sign In — Wood League Chess</title>
+  <link rel="stylesheet" href="{% static 'css/tailwind.css' %}">
+</head>
+<body class="login-shell">
+
+  <div class="login-card">
+
+    {# ── Masthead ──────────────────────────────────────────────────────── #}
+    <div class="login-masthead">
+      <span class="login-masthead-rule"></span>
+      <h1 class="login-masthead-title">Wood League</h1>
+      <p class="login-masthead-sub">Chess · Analytics</p>
+    </div>
+
+    {# ── Confirmation panel ────────────────────────────────────────────── #}
+    <div class="login-form-area" style="text-align:center;">
+      <p class="login-form-title">Confirm sign-in</p>
+
+      <p style="font-family:var(--font-mono);font-size:.72rem;color:var(--color-peat);line-height:1.6;margin-bottom:1.5rem;">
+        Click the button below to finish signing in.<br>
+        Your link can only be used once.
+      </p>
+
+      <form method="post" action="{% url 'accounts:login_link' token %}?next={{ next|urlencode }}" novalidate>
+        {% csrf_token %}
+        <button type="submit" class="wc-btn wc-btn-solid" style="width:100%;text-align:center;">
+          Sign in to Wood League
+        </button>
+      </form>
+    </div>
+
+  </div>
+
+</body>
+</html>
