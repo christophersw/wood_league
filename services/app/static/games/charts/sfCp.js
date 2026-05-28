@@ -112,14 +112,25 @@
    * Returns:
    *   { base: string[], delta: string[] }
    */
-  function buildSegmentColors() {
+  function buildSegmentColors(perspective) {
     var base = [];
     var delta = [];
     var prevRaw = 0;
     for (var i = 0; i < rawPoints.length; i++) {
-      var curRaw = rawPoints[i].cp;
+      var p = rawPoints[i];
+      var curRaw = p.cp;
+      // Base segment always carries the side colour for the previous score:
+      // it's historical, not "this move's contribution".
       base.push(prevRaw >= 0 ? theme.colors.whiteAdvantage : theme.colors.blackAdvantage);
-      delta.push(curRaw >= 0 ? theme.colors.whiteAdvantage : theme.colors.blackAdvantage);
+      // Delta segment: classification colour ONLY when this ply is the
+      // perspective player's move; otherwise side colour for the new state.
+      var isWhiteMove = (p.ply % 2) === 1;
+      var isPerspectiveMove = perspective === "white" ? isWhiteMove : !isWhiteMove;
+      if (isPerspectiveMove && p.cls) {
+        delta.push(resolveAnnotationColor(p.cls));
+      } else {
+        delta.push(curRaw >= 0 ? theme.colors.whiteAdvantage : theme.colors.blackAdvantage);
+      }
       prevRaw = curRaw;
     }
     return { base: base, delta: delta };
@@ -221,7 +232,7 @@
       deltaY.push(pts[i].display - prev);
       prev = pts[i].display;
     }
-    var colors = buildSegmentColors();
+    var colors = buildSegmentColors(perspective);
     return [
       {
         x: plies,
@@ -355,6 +366,9 @@
         }, [0, 1]);
         Plotly.restyle(div, {
           customdata: [traces[1].customdata],
+          // Delta colours depend on perspective (classification colour only
+          // for the perspective player's plies), so restyle them on flip.
+          "marker.color": [traces[1].marker.color],
         }, [1]);
         Plotly.relayout(div, buildLayout(currentPerspective));
       }
