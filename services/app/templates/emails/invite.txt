@@ -1,0 +1,11 @@
+Wood League Chess Club
+
+Welcome to Wood League
+
+You've been added to Wood League Chess Club by {{ invited_by_email }}.
+
+Click below to claim your account and start exploring your games:
+
+{{ link_url }}
+
+This link expires in {{ ttl_days }} days.
