@@ -86,3 +86,24 @@ class ConsumeLinkTests(TestCase):
         self.user.is_active = False
         self.user.save()
         self.assertIsNone(self.svc.consume_link(raw, purpose="login"))
+
+
+class ThrottleCheckTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(email="c@example.com", password=None)
+        self.svc = MagicLinkService()
+
+    def test_no_recent_links_allowed(self):
+        self.assertTrue(self.svc.throttle_check(self.user))
+
+    def test_one_in_last_minute_blocks(self):
+        self.svc.issue_link(self.user, purpose="login")
+        self.assertFalse(self.svc.throttle_check(self.user))
+
+    def test_five_in_last_hour_blocks(self):
+        for _ in range(5):
+            link, _ = self.svc.issue_link(self.user, purpose="login")
+            LoginLink.objects.filter(pk=link.pk).update(
+                created_at=timezone.now() - timedelta(minutes=2),
+            )
+        self.assertFalse(self.svc.throttle_check(self.user))

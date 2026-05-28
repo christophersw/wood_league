@@ -6,6 +6,7 @@ Description:
     new link of the same purpose invalidates any prior unconsumed links
     for that user.
 Changelog:
+    2026-05-28: Add throttle_check.
     2026-05-28: Initial, add consume_link.
 """
 from __future__ import annotations
@@ -89,3 +90,18 @@ class MagicLinkService:
         link.user.last_login = now
         link.user.save(update_fields=["last_login"])
         return link.user
+
+    def throttle_check(self, user: User) -> bool:
+        """Return True if a new link may be issued for user under the rate limits."""
+        now = timezone.now()
+        per_minute = self.settings.magic_link_throttle_per_minute
+        per_hour = self.settings.magic_link_throttle_per_hour
+        recent_minute = LoginLink.objects.filter(
+            user=user, created_at__gte=now - timedelta(minutes=1),
+        ).count()
+        if recent_minute >= per_minute:
+            return False
+        recent_hour = LoginLink.objects.filter(
+            user=user, created_at__gte=now - timedelta(hours=1),
+        ).count()
+        return recent_hour < per_hour
