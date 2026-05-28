@@ -1,0 +1,44 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Check your email — Wood League Chess</title>
+  <link rel="stylesheet" href="{% static 'css/tailwind.css' %}">
+</head>
+<body class="login-shell">
+
+  <div class="login-card">
+
+    {# ── Masthead ──────────────────────────────────────────────────────── #}
+    <div class="login-masthead">
+      <span class="login-masthead-rule"></span>
+      <h1 class="login-masthead-title">Wood League</h1>
+      <p class="login-masthead-sub">Chess · Analytics</p>
+    </div>
+
+    {# ── Confirmation panel ────────────────────────────────────────────── #}
+    <div class="login-form-area" style="text-align:center;">
+      <p class="login-form-title">Check your email</p>
+
+      <p style="font-family:var(--font-mono);font-size:.8rem;color:var(--color-peat);line-height:1.6;margin-bottom:1.25rem;">
+        If we have an account for
+        <strong>{{ email }}</strong>,
+        we sent a sign-in link.<br>
+        The link expires in 15&nbsp;minutes.
+      </p>
+
+      <p style="font-family:var(--font-mono);font-size:.7rem;color:var(--color-peat);opacity:.7;">
+        Didn't receive it?
+        <a href="{% url 'accounts:login' %}"
+           style="color:inherit;text-decoration:underline;">
+          Try again
+        </a>
+      </p>
+    </div>
+
+  </div>
+
+</body>
+</html>
