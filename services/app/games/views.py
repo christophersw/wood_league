@@ -16,7 +16,6 @@ Changelog:
                       and queue_analysis views; removed build_board_viewer_html usage
     2026-05-21 (#186): Wire card_sf_partial to build_sf_card_context; import cards module.
     2026-05-21 (#186): Wire card_lc0_partial to build_lc0_card_context with side_labels.
-    2026-05-21 (#186): Wire chart_winpct_partial to winpct_payload from chart_data.
     2026-05-21 (#186): Wire chart_sf_cp_partial to sf_cp_payload from chart_data.
     2026-05-21 (#186): Wire chips_partial to chips_for_ply from chip_data.
     2026-05-21 (#186): Task 14 — wire pgn_partial to walk PGN mainline and attach SF classifications.
@@ -39,6 +38,7 @@ Changelog:
                       get_game_analysis import) so the d1bb7f0 helper extraction
                       (_EngineLineParams / _parse_engine_line_request / _build_continuation_frames /
                       _engine_line_bot_label) runs on top of #209's deleted v1 surface.
+    2026-05-27 (#216): Task 8 — delete chart_winpct_partial view; remove winpct_payload import.
 """
 
 import io as _io
@@ -55,10 +55,11 @@ from django.shortcuts import get_object_or_404, render
 from analysis.models import AnalysisJob
 from games.board_builder import board_colors_for_move_classification, build_board_frames
 from games.cards import build_lc0_card_context, build_sf_card_context
-from games.chart_data import lc0_wdl_payload, sf_cp_payload, winpct_payload
+from games.chart_data import lc0_wdl_payload, sf_cp_payload
 from games.chip_data import chips_for_ply
 from games.models import Game
 from games.move_annotations import ANNOTATIONS
+from players.models import Player
 from games.services_v2 import (
     GameAnalysisDataV2,
     Lc0MoveRow,
@@ -173,6 +174,54 @@ def _fallback_game_continuation_sans(
     return list(moves_list[request_ply + 1:])
 
 
+def _logged_in_player_username(request: HttpRequest) -> str | None:
+    """Return the club-player username for the logged-in user, or None.
+
+    Looks up :class:`Player` by case-insensitive email match against the
+    request user's email. Returns ``None`` for anonymous users, users
+    without an email, or users not registered as club players.
+    """
+    user = getattr(request, "user", None)
+    if user is None or not user.is_authenticated:
+        return None
+    email = getattr(user, "email", "")
+    if not email:
+        return None
+    player = Player.objects.filter(email__iexact=email).first()
+    if player is None:
+        return None
+    return player.username or None
+
+
+def _resolve_initial_perspective(request: HttpRequest, game: Game) -> str:
+    """Pick which side (white/black) the analysis page should open from.
+
+    Priority:
+        1. Explicit ``?perspective=white|black`` query string — user override.
+        2. Logged-in user matches one of the players — open from their side.
+        3. Default ``"white"``.
+
+    Params:
+        request (HttpRequest): The HTTP request (query string + user).
+        game (Game): The game being viewed.
+
+    Returns:
+        str: Either ``"white"`` or ``"black"``.
+    """
+    explicit = request.GET.get("perspective", "").lower()
+    if explicit in {"white", "black"}:
+        return explicit
+    username = _logged_in_player_username(request)
+    if username is None:
+        return "white"
+    username = username.lower()
+    if (game.white_username or "").lower() == username:
+        return "white"
+    if (game.black_username or "").lower() == username:
+        return "black"
+    return "white"
+
+
 def game_analysis(request: HttpRequest, slug: str) -> HttpResponse:
     """Render the thin shell for the analysis page.
 
@@ -198,9 +247,7 @@ def game_analysis(request: HttpRequest, slug: str) -> HttpResponse:
             "game": game, "no_data": True, "reanalyze": True,
         })
     initial_ply = int(request.GET.get("ply", 0) or 0)
-    initial_perspective = request.GET.get("perspective", "white")
-    if initial_perspective not in {"white", "black"}:
-        initial_perspective = "white"
+    initial_perspective = _resolve_initial_perspective(request, game)
     # Engine-line card info-tooltip metadata — same shape the SF + LC0 stat
     # cards use, exposed here so the Engine Line card header can render its
     # own ⓘ popup that swaps content based on which engine's line is shown.
@@ -772,24 +819,6 @@ def chips_partial(request: HttpRequest, slug: str) -> HttpResponse:
     context["black_label"] = data.black_label
     return render(request, "games/partials/_move_chips.html", context)
 
-
-def chart_winpct_partial(request: HttpRequest, slug: str) -> HttpResponse:
-    """Render the Win% headline chart partial.
-
-    Builds the winpct payload (SF Lichess logistic + LC0 wdl_mu*100) and passes
-    it as ``payload`` to the template for embedding via json_script.
-
-    Params:
-        request (HttpRequest): The HTTP request.
-        slug (str): Game URL slug.
-
-    Returns:
-        Rendered _chart_winpct.html partial with serialized winpct data.
-    """
-    data = _load_or_404(slug)
-    return render(request, "games/partials/_chart_winpct.html", {
-        "payload": winpct_payload(data),
-    })
 
 
 def chart_sf_cp_partial(request: HttpRequest, slug: str) -> HttpResponse:

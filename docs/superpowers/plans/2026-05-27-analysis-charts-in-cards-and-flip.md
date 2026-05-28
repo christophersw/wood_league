@@ -109,20 +109,25 @@ Append to `services/app/games/tests/test_chart_data.py`:
 
 ```python
 def test_lc0_wdl_payload_includes_classification(lc0_data_with_classifications):
-    """Each ply entry carries a `classification` string."""
+    """Each ply entry carries a `classification` string sourced from base_severity."""
     from games.chart_data import lc0_wdl_payload
     payload = lc0_wdl_payload(lc0_data_with_classifications)
     assert payload, "fixture must produce at least one row"
+    allowed = {"", "best", "excellent", "good", "inaccuracy", "mistake", "blunder"}
     for row in payload:
         assert "classification" in row
         assert isinstance(row["classification"], str)
-        # Allowed values: empty string or one of the LC0 base-severity classes
-        assert row["classification"] in {
-            "", "best", "excellent", "good", "inaccuracy", "mistake", "blunder",
-        }
+        assert row["classification"] in allowed
+    # Guard against silent-empty-string failure: the fixture must inject at
+    # least one classified row and the payload must surface it. Without this
+    # check, an implementation that wires the wrong attribute and emits ""
+    # everywhere would still pass.
+    assert any(row["classification"] for row in payload), (
+        "fixture must produce at least one non-empty classification"
+    )
 ```
 
-You will need a fixture `lc0_data_with_classifications` that builds a minimal `GameAnalysisDataV2` with at least one classified `lc0_moves` row. Follow the pattern used in the existing fixtures in `services/app/games/tests/conftest.py` (find with `mcp__vexp__run_pipeline({task: "GameAnalysisDataV2 fixture lc0_moves classification"})`).
+`Lc0MoveRow` (services_v2.py:55-79) stores the classification as `base_severity` — there is no `classification` field. The fixture `lc0_data_with_classifications` must build a minimal `GameAnalysisDataV2` with at least one `lc0_moves` row whose `base_severity` is set (e.g. `"blunder"`). Follow the pattern used in the existing fixtures in `services/app/games/tests/conftest.py` (find with `mcp__vexp__run_pipeline({task: "GameAnalysisDataV2 fixture lc0_moves base_severity"})`).
 
 - [ ] **Step 3: Run test — expect failure**
 
@@ -143,7 +148,9 @@ def lc0_wdl_payload(data: GameAnalysisDataV2) -> list[dict]:
 
     Each entry carries the White-frame WDL triple plus the per-move
     base-severity classification used by the bottom-of-chart classification
-    strip in lc0Wdl.js.
+    strip in lc0Wdl.js. The exposed key is named ``classification`` to match
+    the SF chart payload's shape; the underlying source is
+    ``Lc0MoveRow.base_severity`` (services_v2.py).
 
     Params:
         data: GameAnalysisDataV2 — the analysed game.
@@ -159,7 +166,7 @@ def lc0_wdl_payload(data: GameAnalysisDataV2) -> list[dict]:
             "wdl_draw": m.wdl_draw_adj,
             "wdl_loss": m.wdl_loss_adj,
             "san": m.san,
-            "classification": (getattr(m, "classification", "") or "").lower(),
+            "classification": (m.base_severity or "").lower(),
         }
         for m in data.lc0_moves
     ]
@@ -279,14 +286,22 @@ Add just before the closing `</section>`:
 
 ```django
   <div class="wc-card__chart-slot"
-       hx-get="{% url 'partials:games_chart_sf_cp_partial' game.slug %}"
+       hx-get="{% url 'games_chart_sf_cp_partial' slug %}"
        hx-trigger="load"
        hx-swap="innerHTML">Loading SF chart…</div>
 ```
 
-The URL name comes from `services/app/games/partial_urls.py:23`. The partials app is mounted under namespace `partials` (verify via `mcp__vexp__run_pipeline({task: "partial_urls.py app_name"})`); if no namespace exists, the URL `{% url 'games_chart_sf_cp_partial' game.slug %}` is correct without prefix.
+URL-name source: `services/app/games/partial_urls.py:23`. `partial_urls.py` has **no** `app_name` and `config/urls.py:28` includes it without a `namespace=` kwarg, so the `partials:` prefix is **not** valid — use the bare URL name.
 
-The card template currently receives `game` in its context (check via the existing `tooltip_meta` references). If it does not, also update `build_sf_card_context` in `services/app/games/cards.py` to inject `game` (slug-only is enough).
+The card-partial context built by `card_sf_partial` (views.py:624-641) currently passes only `ctx` from `build_sf_card_context` plus `side_labels` and `data` — there is no `game` key. Add `slug` explicitly in the view (cheaper than threading the model):
+
+```python
+# services/app/games/views.py — card_sf_partial
+ctx["slug"] = slug
+return render(request, "games/partials/_card_sf.html", ctx)
+```
+
+Then the template tag `{% url 'games_chart_sf_cp_partial' slug %}` resolves.
 
 - [ ] **Step 4: Run — expect PASS**
 
@@ -333,12 +348,12 @@ Just before the closing `</section>`:
 
 ```django
   <div class="wc-card__chart-slot"
-       hx-get="{% url 'partials:games_chart_lc0_wdl_partial' game.slug %}"
+       hx-get="{% url 'games_chart_lc0_wdl_partial' slug %}"
        hx-trigger="load"
        hx-swap="innerHTML">Loading LC0 chart…</div>
 ```
 
-Mirror any context-injection fix from Task 3 (`game` slug passed to `build_lc0_card_context`).
+Mirror the context-injection fix from Task 3 — add `ctx["slug"] = slug` inside `card_lc0_partial` (views.py:644-661) before the `render(...)` call. No namespace prefix on `{% url %}` (see Task 3 note).
 
 - [ ] **Step 4: Run — expect PASS**
 
@@ -775,4 +790,4 @@ Return the PR URL.
 
 - **Placeholder scan:** none. All steps have either exact code or exact commands.
 
-- **Type consistency:** `togglePerspective` defined in Task 6 is used in Task 7's onclick handler. `classification` field added in Task 1 is consumed by Task 5's JS. URL name `partials:games_chart_sf_cp_partial` used in Tasks 3 + 4 (verify namespace early; if no `app_name` in `partial_urls.py`, drop the `partials:` prefix in both places). `move-annotation-<cls>` palette consumed in Task 5 is the same set already used by the SF/LC0 cards (`best | excellent | good | inaccuracy | mistake | blunder`), defined in `main.css`.
+- **Type consistency:** `togglePerspective` defined in Task 6 is used in Task 7's onclick handler. `classification` payload field added in Task 1 (sourced from `Lc0MoveRow.base_severity`, not a `classification` attribute — that field doesn't exist on the dataclass) is consumed by Task 5's JS. URL names `games_chart_sf_cp_partial` / `games_chart_lc0_wdl_partial` in Tasks 3 + 4 are used **without** a namespace prefix (`partial_urls.py` has no `app_name`; `config/urls.py:28` includes it without `namespace=`). The card-partial views (`card_sf_partial`, `card_lc0_partial`) must inject `ctx["slug"] = slug` so the `{% url ... slug %}` tags resolve. `move-annotation-<cls>` palette consumed in Task 5 is the same set already used by the SF/LC0 cards (`best | excellent | good | inaccuracy | mistake | blunder`), defined in `main.css`.

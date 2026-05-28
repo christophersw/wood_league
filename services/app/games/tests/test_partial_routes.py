@@ -3,7 +3,7 @@ Title: test_partial_routes.py — Route resolution for HTMX partials
 Description:
     Parametrized tests verify that all seven new analysis partial routes
     resolve and return 200 for new-schema games. Legacy games return 404.
-    Also contains content-level assertions for the Win%, SF cp, and LC0 WDL
+    Also contains content-level assertions for the SF cp, and LC0 WDL
     chart partials, and the PGN moves-strip chip shape (#212).
 
 Changelog:
@@ -13,6 +13,7 @@ Changelog:
     2026-05-21 (#186): Task 11 — add LC0 WDL partial content assertions.
     2026-05-25 (#208): Task 2 — add THIS MOVE identity + score-delta test.
     2026-05-26 (#212): Task 4 — add five moves-strip characterization tests.
+    2026-05-27 (#216): Task 8 — retire Win% chart; replace content test with 404 regression.
 """
 import pytest
 from django.urls import reverse
@@ -23,7 +24,6 @@ PARTIALS = [
     "games_card_sf_partial",
     "games_card_lc0_partial",
     "games_chips_partial",
-    "games_chart_winpct_partial",
     "games_chart_sf_cp_partial",
     "games_chart_lc0_wdl_partial",
     "games_pgn_partial",
@@ -38,21 +38,11 @@ def test_partial_route_resolves(client, new_schema_game_factory, name):
     assert resp.status_code == 200
 
 
-def test_winpct_partial_contains_payload_and_tooltip(client, new_schema_game_factory):
-    """Win% partial must embed JSON payload, axis title, tooltip text, and JS reference.
-
-    Params:
-        client: Django test client fixture.
-        new_schema_game_factory: Factory fixture producing a new-schema game.
-    """
+def test_winpct_route_is_gone(client, new_schema_game_factory):
+    """The winpct chart route is retired (#216)."""
     game = new_schema_game_factory()
     resp = client.get(f"/_partials/games/{game.slug}/charts/winpct/")
-    body = resp.content.decode()
-    assert resp.status_code == 200
-    assert "winpct-data" in body          # json_script tag id
-    assert "Win-for-White" in body        # axis / section title visible
-    assert "How this is computed" in body  # tooltip body heading
-    assert "winpct.js" in body             # static JS reference
+    assert resp.status_code == 404
 
 
 def test_sf_cp_partial_contains_payload_and_tooltip(client, new_schema_game_factory):
@@ -68,7 +58,7 @@ def test_sf_cp_partial_contains_payload_and_tooltip(client, new_schema_game_fact
     assert resp.status_code == 200
     assert "sf-cp-data" in body                          # json_script tag id
     assert "Stockfish centipawn evaluation" in body      # section title
-    assert "underlying engine signal" in body            # tooltip body text
+    assert "How to read this chart" in body              # tooltip header (#216)
     assert "sfCp.js" in body                             # static JS reference
 
 
@@ -85,7 +75,7 @@ def test_lc0_wdl_partial_contains_payload_and_tooltip(client, new_schema_game_fa
     assert resp.status_code == 200
     assert "lc0-wdl-data" in body                         # json_script tag id
     assert "LC0 Win / Draw / Loss" in body                # chart section title
-    assert "draw rate" in body                            # calibration draw-rate subtitle text
+    assert "How to read this chart" in body               # tooltip header (#216)
     assert "lc0Wdl.js" in body                            # static JS reference
 
 

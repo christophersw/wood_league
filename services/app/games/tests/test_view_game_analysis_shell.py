@@ -7,6 +7,7 @@ Description:
 
 Changelog:
     2026-05-21 (#186): Initial — Task 4 shell view + template tests.
+    2026-05-27 (#216): Task 8 — remove charts/winpct from partial fragment list.
 """
 import pytest
 from django.urls import reverse
@@ -26,8 +27,7 @@ def test_shell_returns_200_and_loads_partials(client, new_schema_game_factory):
     assert resp.status_code == 200
     body = resp.content.decode()
     # Each visual unit is wired with hx-get pointing at its partial URL.
-    for partial in ["cards/sf", "cards/lc0", "chips", "charts/winpct",
-                    "charts/sf-cp", "charts/lc0-wdl", "pgn"]:
+    for partial in ["cards/sf", "cards/lc0", "chips", "pgn"]:
         assert f"/_partials/games/{game.slug}/{partial}/" in body
     # Shell stays thin — no inline Plotly traces.
     assert body.count("Plotly.newPlot") == 0
@@ -92,3 +92,18 @@ def test_arrow_toggle_controls_present(client, new_schema_game_factory):
     assert 'id="board-lc0-toggle"' in body
     assert 'id="board-best-line-toggle"' in body
     assert body.count("checked") >= 2
+
+
+def test_analysis_page_has_flip_button(client, new_schema_game_factory):
+    """The Position card header renders a perspective-flip button (#216).
+
+    Parameters:
+        client: Django test client fixture.
+        new_schema_game_factory: Factory fixture producing a new-schema game.
+    """
+    game = new_schema_game_factory()
+    resp = client.get(reverse("games:analysis", args=[game.slug]))
+    assert resp.status_code == 200
+    body = resp.content.decode()
+    assert 'id="board-flip-btn"' in body
+    assert "Flip" in body

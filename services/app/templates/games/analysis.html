@@ -191,6 +191,13 @@
           <label class="arrow-tg arrow-tg--lc0"><input type="checkbox" id="board-lc0-toggle" checked onchange="window.boardApplyArrowVisibility && window.boardApplyArrowVisibility()"><span class="arrow-tg__dot"></span>LC0</label>
           <label class="arrow-tg arrow-tg--best"><input type="checkbox" id="board-best-line-toggle" onchange="window.boardApplyArrowVisibility && window.boardApplyArrowVisibility()"><span class="arrow-tg__box"></span>Best only</label>
         </div>
+        <button type="button" id="board-flip-btn"
+                class="arrow-tg arrow-tg--flip"
+                aria-label="Flip board perspective"
+                title="Flip board perspective"
+                onclick="window.WoodLeagueAnalysis && window.WoodLeagueAnalysis.togglePerspective()">
+          <span aria-hidden="true">⇅</span> Flip
+        </button>
         <span class="card-info" tabindex="0" aria-label="Analysis run info">ⓘ
           <div class="card-pop card-info-pop"><h4>Run info</h4><p>Engine arrows and move tags reflect the stored analysis for this game.</p></div>
         </span>
@@ -256,9 +263,6 @@
     </section>
   </div>
 
-  <div hx-get="/_partials/games/{{ game.slug }}/charts/winpct/" hx-trigger="load" hx-swap="innerHTML"></div>
-  <div hx-get="/_partials/games/{{ game.slug }}/charts/sf-cp/" hx-trigger="load" hx-swap="innerHTML"></div>
-  <div hx-get="/_partials/games/{{ game.slug }}/charts/lc0-wdl/" hx-trigger="load" hx-swap="innerHTML"></div>
 </div>
 
 {% include "games/_queue_modal.html" %}
@@ -311,8 +315,17 @@ window.ANALYSIS_DATA = {
   has_lc0: {{ data.has_lc0|yesno:"true,false" }},
 };
 WoodLeagueAnalysis.initFromUrl({ defaultPly: {{ initial_ply }}, defaultPerspective: "{{ initial_perspective }}" });
+var _lastPerspective = WoodLeagueAnalysis.getState().perspective;
 WoodLeagueAnalysis.subscribe(function (state) {
   document.body.dispatchEvent(new CustomEvent("ply-change", { detail: state }));
+  if (state.perspective !== _lastPerspective) {
+    _lastPerspective = state.perspective;
+    if (window.htmx) {
+      htmx.ajax("GET",
+        "/_partials/games/{{ game.slug }}/board/?orientation=" + state.perspective,
+        { target: "#board-container", swap: "innerHTML" });
+    }
+  }
 });
 </script>
 {% endif %}

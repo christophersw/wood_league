@@ -4,11 +4,17 @@ Description:
     Verifies that build_lc0_card_context correctly surfaces both classification
     levels (base_severity primary bar and draw_character subordinate bar),
     accuracy, WDL, avg Δμ, and tooltip metadata for the LC0 stat card partial.
+    Also includes rendered-HTML tests for the removed GWC whole-game strip and
+    the LC0 WDL chart HTMX slot.
 
 Changelog:
     2026-05-21 (#186): Initial — Task 7 LC0 stat card tests.
+    2026-05-27 (#216): Task 2 — assert GWC whole-game strip is absent from rendered card.
+    2026-05-27 (#216): Task 4 — assert LC0 WDL chart slot is present in rendered card.
 """
 import pytest
+from django.contrib.auth import get_user_model
+from django.urls import reverse
 
 from games.cards import build_lc0_card_context
 from games.services_v2 import get_game_analysis_v2
@@ -88,3 +94,52 @@ def test_lc0_card_tooltip_values_match_dataclass(new_schema_game_factory):
     assert ctx["tooltip_meta"]["network_name"] == data.lc0_network_name
     assert ctx["tooltip_meta"]["engine_nodes"] == data.lc0_engine_nodes
     assert ctx["tooltip_meta"]["draw_rate_reference"] == data.lc0_draw_rate_reference
+
+
+def test_lc0_card_no_whole_game_gwc_strip(client, new_schema_game_factory):
+    """The LC0 card partial must not render the whole-game GWC strip.
+
+    The 'Avg. Winning Chances for Whole Game' block and its .card-gwc container
+    were removed in #216 Task 2. This test GETs the rendered partial and asserts
+    neither the heading text nor the CSS class is present.
+
+    The view is gated by LoginRequiredMiddleware; the test logs in via
+    force_login so it receives a 200 rather than a 302 redirect.
+
+    Parameters:
+        client: Django test client fixture.
+        new_schema_game_factory: Factory fixture producing a new-schema game.
+    """
+    User = get_user_model()
+    user = User.objects.create_user(email="testuser_gwc@example.com", password="x")
+    client.force_login(user)
+
+    game = new_schema_game_factory()
+    resp = client.get(reverse("games_card_lc0_partial", args=[game.slug]))
+    body = resp.content.decode()
+    assert resp.status_code == 200
+    assert "Avg. Winning Chances for Whole Game" not in body
+    assert "card-gwc" not in body
+
+
+def test_lc0_card_renders_chart_slot(client, new_schema_game_factory):
+    """The LC0 card embeds an HTMX slot that loads the LC0 WDL chart (#216).
+
+    GETs the rendered LC0 card partial and asserts the chart-slot div is
+    present with the correct hx-get URL and hx-trigger attribute. The view
+    is gated by LoginRequiredMiddleware; the test logs in via force_login
+    so it receives a 200 rather than a 302 redirect.
+
+    Parameters:
+        client: Django test client fixture.
+        new_schema_game_factory: Factory fixture producing a new-schema game.
+    """
+    User = get_user_model()
+    user = User.objects.create_user(email="testuser_lc0_chart@example.com", password="x")
+    client.force_login(user)
+    game = new_schema_game_factory()
+    resp = client.get(reverse("games_card_lc0_partial", args=[game.slug]))
+    body = resp.content.decode()
+    assert resp.status_code == 200
+    assert f"/_partials/games/{game.slug}/charts/lc0-wdl/" in body
+    assert 'hx-trigger="load"' in body

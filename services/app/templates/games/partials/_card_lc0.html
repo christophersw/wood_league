@@ -10,6 +10,7 @@
 {#     rules in static/css/main.css (also used by _card_sf.html). #}
 {# Changelog: #}
 {#     2026-05-22 (#208): Du Bois plate restyle to match the SF card. #}
+{#     2026-05-27 (#216): mount LC0 WDL chart slot at card bottom. #}
 
 <section class="wc-card wc-card--lc0" aria-label="Leela Chess Zero analysis">
   <header class="wc-card__head">
@@ -28,28 +29,6 @@
       </div>
     </span>
   </header>
-
-  {# Whole-game average winning chances — White's perspective, shown once at top #}
-  {% with gw=wdl.white %}
-  {% if gw.win or gw.draw or gw.loss %}
-  <div class="card-qwrap" style="margin-bottom:1.15rem;">
-    <div class="card-qcap">Avg. Winning Chances for Whole Game <span class="hint" tabindex="0">— what's this?</span></div>
-    <div class="card-gwc" aria-label="Average winning chances for the whole game, White's perspective">
-      {% if gw.win %}<div class="seg gwc-white{% if white_outcome.kind == 'win' %} gwc-actual{% endif %}" style="flex:{{ gw.win }}" title="{% if white_outcome.kind == 'win' %}White won the game{% else %}White wins{% endif %}">{% if white_outcome.kind == 'win' %}🏆 {% endif %}{% widthratio gw.win 1 100 %}%</div>{% endif %}
-      {% if gw.draw %}<div class="seg gwc-draw{% if white_outcome.kind == 'draw' %} gwc-actual{% endif %}" style="flex:{{ gw.draw }}" title="{% if white_outcome.kind == 'draw' %}Game drawn{% else %}Draw{% endif %}">{% if white_outcome.kind == 'draw' %}🤝 {% endif %}{% widthratio gw.draw 1 100 %}%</div>{% endif %}
-      {% if gw.loss %}<div class="seg gwc-black{% if white_outcome.kind == 'loss' %} gwc-actual{% endif %}" style="flex:{{ gw.loss }}" title="{% if white_outcome.kind == 'loss' %}Black won the game{% else %}Black wins{% endif %}">{% if white_outcome.kind == 'loss' %}🏆 {% endif %}{% widthratio gw.loss 1 100 %}%</div>{% endif %}
-    </div>
-    <div class="card-pop card-legend card-legend--down">
-      <h4>Avg. winning chances</h4>
-      {% if white_outcome %}<p>{% if white_outcome.kind == 'draw' %}The game was drawn.{% elif white_outcome.kind == 'loss' %}Black won the game in the end.{% else %}White won the game in the end.{% endif %} Averaged over the whole game:</p>{% endif %}
-      <div class="lrow"><span class="sw" style="background:var(--color-near-white);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--color-peat) 30%,transparent)"></span><span class="lg"></span><span class="lt"><b>White</b> winning chance — <b>{% widthratio gw.win 1 100 %}%</b></span></div>
-      <div class="lrow"><span class="sw" style="background:var(--color-slate)"></span><span class="lg"></span><span class="lt"><b>Draw</b> chance — <b>{% widthratio gw.draw 1 100 %}%</b></span></div>
-      <div class="lrow"><span class="sw" style="background:var(--color-ebony)"></span><span class="lg"></span><span class="lt"><b>Black</b> winning chance — <b>{% widthratio gw.loss 1 100 %}%</b></span></div>
-      <span class="calc">Elo-adjusted — these odds reflect the players' estimated skill difference at the start of the game, not even-strength chances.</span>
-    </div>
-  </div>
-  {% endif %}
-  {% endwith %}
 
   {# ── White side ───────────────────────────────────────────────────────── #}
   <div class="wc-card__side">
@@ -96,18 +75,6 @@
       </div>
     </div>
 
-    {# Draw character (subordinate dot chips) — only shown when present #}
-    {% with dc=draw_character_counts.white %}
-    {% if dc.missed_win or dc.losing_blunder or dc.risky or dc.simplification %}
-    <div class="card-qcap" style="margin-top:.6rem;">Draw character</div>
-    <div class="card-chiprow card-chiprow--muted">
-      {% if dc.simplification %}<span class="card-dchip" tabindex="0"><span class="dot dc-simplification"></span>Simplification <span class="n">{{ dc.simplification }}</span><span class="card-pop card-dchip-tip"><b class="t">Simplification</b>About as good a move, trading tension for a calmer, drawish game.</span></span>{% endif %}
-      {% if dc.risky %}<span class="card-dchip" tabindex="0"><span class="dot dc-risky"></span>Risky <span class="n">{{ dc.risky }}</span><span class="card-pop card-dchip-tip"><b class="t">Risky</b>About as good a move, but it avoidably sharpened the position.</span></span>{% endif %}
-      {% if dc.losing_blunder %}<span class="card-dchip" tabindex="0"><span class="dot dc-losing_blunder"></span>Losing Blunder <span class="n">{{ dc.losing_blunder }}</span><span class="card-pop card-dchip-tip"><b class="t">Losing Blunder</b>A big loss that also sharpened the position into something decisive.</span></span>{% endif %}
-      {% if dc.missed_win %}<span class="card-dchip" tabindex="0"><span class="dot dc-missed_win"></span>Missed Win <span class="n">{{ dc.missed_win }}</span><span class="card-pop card-dchip-tip"><b class="t">Missed Win</b>Let real winning chances slip into a draw.</span></span>{% endif %}
-    </div>
-    {% endif %}
-    {% endwith %}
   </div>
 
   {# ── Black side ───────────────────────────────────────────────────────── #}
@@ -155,17 +122,11 @@
       </div>
     </div>
 
-    {# Draw character (subordinate dot chips) — only shown when present #}
-    {% with dc=draw_character_counts.black %}
-    {% if dc.missed_win or dc.losing_blunder or dc.risky or dc.simplification %}
-    <div class="card-qcap" style="margin-top:.6rem;">Draw character</div>
-    <div class="card-chiprow card-chiprow--muted">
-      {% if dc.simplification %}<span class="card-dchip" tabindex="0"><span class="dot dc-simplification"></span>Simplification <span class="n">{{ dc.simplification }}</span><span class="card-pop card-dchip-tip"><b class="t">Simplification</b>About as good a move, trading tension for a calmer, drawish game.</span></span>{% endif %}
-      {% if dc.risky %}<span class="card-dchip" tabindex="0"><span class="dot dc-risky"></span>Risky <span class="n">{{ dc.risky }}</span><span class="card-pop card-dchip-tip"><b class="t">Risky</b>About as good a move, but it avoidably sharpened the position.</span></span>{% endif %}
-      {% if dc.losing_blunder %}<span class="card-dchip" tabindex="0"><span class="dot dc-losing_blunder"></span>Losing Blunder <span class="n">{{ dc.losing_blunder }}</span><span class="card-pop card-dchip-tip"><b class="t">Losing Blunder</b>A big loss that also sharpened the position into something decisive.</span></span>{% endif %}
-      {% if dc.missed_win %}<span class="card-dchip" tabindex="0"><span class="dot dc-missed_win"></span>Missed Win <span class="n">{{ dc.missed_win }}</span><span class="card-pop card-dchip-tip"><b class="t">Missed Win</b>Let real winning chances slip into a draw.</span></span>{% endif %}
-    </div>
-    {% endif %}
-    {% endwith %}
   </div>
+
+  {# Chart slot — LC0 WDL chart relocated into the card (#216). #}
+  <div class="wc-card__chart-slot"
+       hx-get="{% url 'games_chart_lc0_wdl_partial' data.slug %}"
+       hx-trigger="load"
+       hx-swap="innerHTML">Loading LC0 chart…</div>
 </section>

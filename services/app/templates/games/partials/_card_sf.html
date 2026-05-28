@@ -11,6 +11,7 @@
 {# Changelog: #}
 {#     2026-05-22 (#208): Du Bois plate restyle — tiles, tooltips, labelled bar. #}
 {#     2026-05-22 (#208): Extract shared card CSS to main.css; use card-* names. #}
+{#     2026-05-27 (#216): mount SF cp chart slot at card bottom. #}
 
 <section class="wc-card wc-card--sf" aria-label="Stockfish analysis">
   <header class="wc-card__head">
@@ -133,4 +134,10 @@
       </div>
     </div>
   </div>
+
+  {# Chart slot — SF centipawn bar chart relocated into the card (#216). #}
+  <div class="wc-card__chart-slot"
+       hx-get="{% url 'games_chart_sf_cp_partial' data.slug %}"
+       hx-trigger="load"
+       hx-swap="innerHTML">Loading SF chart…</div>
 </section>
