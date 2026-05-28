@@ -17,6 +17,8 @@ from pathlib import Path
 
 from decouple import Csv, config
 
+from app.config import get_settings
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = config("SECRET_KEY")
@@ -297,8 +299,6 @@ LOGGING = {
 }
 
 # Email configuration (magic link login)
-from app.config import get_settings
-
 _s = get_settings()
 
 if _s.email_provider == "resend":
