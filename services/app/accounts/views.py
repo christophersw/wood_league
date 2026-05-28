@@ -16,8 +16,13 @@ from django.shortcuts import redirect, render
 from .forms import LoginForm
 
 
-def login_view(request):
-    """Render login form and authenticate user credentials via email and password."""
+def password_login_view(request):
+    """
+    Render password login form and authenticate user credentials via email and password.
+
+    This is an unlisted admin escape hatch — the canonical user-facing login is now
+    the email-based magic link flow.
+    """
     if not getattr(settings, "AUTH_ENABLED", True):
         return redirect(settings.LOGIN_REDIRECT_URL)
 
