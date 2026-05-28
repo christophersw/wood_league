@@ -296,6 +296,20 @@ LOGGING = {
     },
 }
 
+# Email configuration (magic link login)
+from app.config import get_settings
+
+_s = get_settings()
+
+if _s.email_provider == "resend":
+    EMAIL_BACKEND = "anymail.backends.resend.EmailBackend"
+    ANYMAIL = {"RESEND_API_KEY": _s.resend_api_key}
+else:
+    EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+
+DEFAULT_FROM_EMAIL = _s.email_from
+INSTALLED_APPS = list(INSTALLED_APPS) + ["anymail"]
+
 if not DEBUG:
     CSRF_COOKIE_SECURE = True
     SESSION_COOKIE_SECURE = True

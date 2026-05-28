@@ -52,6 +52,15 @@ class Settings(BaseSettings):
     vast_max_jobs: int = 100
     vast_hard_deadline_hours: float = 6.0
     vast_worker_stale_minutes: int = 15
+    email_provider: str = "console"
+    resend_api_key: str = ""
+    email_from: str = "Wood League <noreply@woodleague.club>"
+    email_reply_to: str = ""
+    app_base_url: str = ""
+    magic_link_invite_ttl_hours: int = 168
+    magic_link_login_ttl_minutes: int = 15
+    magic_link_throttle_per_minute: int = 1
+    magic_link_throttle_per_hour: int = 5
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
