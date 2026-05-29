@@ -14,6 +14,9 @@ Changelog:
     2026-05-25 (#208): Task 2 — add THIS MOVE identity + score-delta test.
     2026-05-26 (#212): Task 4 — add five moves-strip characterization tests.
     2026-05-27 (#216): Task 8 — retire Win% chart; replace content test with 404 regression.
+    2026-05-29 (#226): Add chips book-ply and chart-partial opening-context tests.
+    2026-05-29 (#226): C2 — PGN panel starts collapsed; C3 — book-move line template tests.
+    2026-05-29 (#226): D2 — strengthen chart partial tests to assert data-opening-name= attribute.
 """
 import pytest
 from django.urls import reverse
@@ -293,3 +296,166 @@ def test_pgn_strip_uses_ellipsis_prefix_for_leading_black_move(client, new_schem
     assert " moves-mv " in body
     # The first (and only) move-number span must use the ellipsis form.
     assert "1…" in body or "1..." in body
+
+
+# --- book-ply and opening context tests (#226) ---
+
+
+def test_chips_partial_succeeds_for_book_ply(client, new_schema_game_factory):
+    """chips_partial returns 200 for a ply within the opening book range.
+
+    The fixture game has book_ply_count=0 by default (no opening tagged), so
+    any ply is post-book. We test that the view succeeds for both ply=1 (book
+    boundary) and ply=3 (past any empty book), confirming no crash path exists.
+
+    Params:
+        client: Django test client fixture.
+        new_schema_game_factory: Factory fixture producing a new-schema game.
+    """
+    game = new_schema_game_factory()
+    for ply in (1, 3):
+        resp = client.get(f"/_partials/games/{game.slug}/chips/?ply={ply}")
+        assert resp.status_code == 200, f"Expected 200 for ply={ply}"
+
+
+def test_sf_cp_partial_has_opening_name_attribute(client, new_schema_game_factory):
+    """chart_sf_cp_partial renders data-opening-name= on the chart div (#226 D2).
+
+    The opening_name context key is wired to the data-opening-name attribute on
+    the sf-cp-chart div. The attribute must be present even when opening_name is
+    empty so the JS can read it unconditionally.
+
+    Params:
+        client: Django test client fixture.
+        new_schema_game_factory: Factory fixture producing a new-schema game.
+    """
+    game = new_schema_game_factory()
+    resp = client.get(f"/_partials/games/{game.slug}/charts/sf-cp/")
+    assert resp.status_code == 200
+    assert b'data-opening-name=' in resp.content
+
+
+def test_lc0_wdl_partial_has_opening_name_attribute(client, new_schema_game_factory):
+    """chart_lc0_wdl_partial renders data-opening-name= on the chart div (#226 D2).
+
+    The opening_name context key is wired to the data-opening-name attribute on
+    the lc0-wdl-chart div. The attribute must be present even when opening_name
+    is empty so the JS can read it unconditionally.
+
+    Params:
+        client: Django test client fixture.
+        new_schema_game_factory: Factory fixture producing a new-schema game.
+    """
+    game = new_schema_game_factory()
+    resp = client.get(f"/_partials/games/{game.slug}/charts/lc0-wdl/")
+    assert resp.status_code == 200
+    assert b'data-opening-name=' in resp.content
+
+
+# --- C2: PGN panel starts collapsed (#226) ---
+
+
+def test_pgn_panel_starts_collapsed(client, new_schema_game_factory):
+    """PGN partial renders the moves panel WITHOUT the 'open' attribute (#226 C2).
+
+    The <details> element must have id="pgn-panel" but must NOT have the
+    'open' attribute — the panel now starts collapsed.
+
+    Params:
+        client: Django test client fixture.
+        new_schema_game_factory: Factory fixture producing a new-schema game.
+    """
+    game = new_schema_game_factory()
+    resp = client.get(f"/_partials/games/{game.slug}/pgn/")
+    assert resp.status_code == 200
+    assert b'id="pgn-panel"' in resp.content
+    assert b"<details open" not in resp.content
+
+
+# --- C3: "This Move" book-move line (#226) ---
+
+
+def test_move_chips_template_renders_book_line_when_is_book(rf):
+    """_move_chips.html renders the book-move line when is_book=True and opening_id is set.
+
+    Uses Django's template engine directly with a minimal context so no DB
+    opening fixture is needed. The link URL is resolved via the openings:detail
+    named URL which must be registered.
+
+    Params:
+        rf: Django RequestFactory (unused but available for consistency).
+    """
+    from django.template.loader import render_to_string
+
+    context = {
+        "move_no": 1,
+        "side": "White",
+        "king_sym": "♔",
+        "white_label": "Alice (1500)",
+        "black_label": "Bob (1500)",
+        "chips": [],
+        "sf_delta_pawns": None,
+        "lc0_delta_pct": None,
+        "is_book": True,
+        "opening_id": 1,
+        "opening_common_name": "Sicilian Defense",
+    }
+    html = render_to_string("games/partials/_move_chips.html", context)
+    assert "book move" in html
+    assert "Sicilian Defense" in html
+    assert "/openings/1/" in html
+    assert "this-move__book" in html
+
+
+def test_move_chips_template_no_book_line_when_not_book(rf):
+    """_move_chips.html omits the book-move line when is_book=False (#226 C3).
+
+    Params:
+        rf: Django RequestFactory (unused but available for consistency).
+    """
+    from django.template.loader import render_to_string
+
+    context = {
+        "move_no": 5,
+        "side": "Black",
+        "king_sym": "♚",
+        "white_label": "Alice (1500)",
+        "black_label": "Bob (1500)",
+        "chips": [],
+        "sf_delta_pawns": None,
+        "lc0_delta_pct": None,
+        "is_book": False,
+        "opening_id": 1,
+        "opening_common_name": "Sicilian Defense",
+    }
+    html = render_to_string("games/partials/_move_chips.html", context)
+    assert "book move" not in html
+    assert "this-move__book" not in html
+
+
+def test_move_chips_template_no_book_line_when_no_opening_id(rf):
+    """_move_chips.html omits the book-move line when is_book=True but opening_id is None.
+
+    Guards the AND condition: both is_book and opening_id must be truthy
+    for the book line to render.
+
+    Params:
+        rf: Django RequestFactory (unused but available for consistency).
+    """
+    from django.template.loader import render_to_string
+
+    context = {
+        "move_no": 2,
+        "side": "Black",
+        "king_sym": "♚",
+        "white_label": "Alice (1500)",
+        "black_label": "Bob (1500)",
+        "chips": [],
+        "sf_delta_pawns": None,
+        "lc0_delta_pct": None,
+        "is_book": True,
+        "opening_id": None,
+        "opening_common_name": "Sicilian Defense",
+    }
+    html = render_to_string("games/partials/_move_chips.html", context)
+    assert "book move" not in html

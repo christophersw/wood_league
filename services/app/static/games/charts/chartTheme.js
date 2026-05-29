@@ -13,6 +13,7 @@
 // Changelog:
 //   2026-05-21 (#186): Initial.
 //   2026-05-27 (#216): Remove winpct.js from comment (chart retired).
+//   2026-05-29 (#226): Add book colour (neutral slate, judgment-free).
 
 (function () {
   function readVar(name, fallback) {
@@ -40,6 +41,9 @@
       wdlWin:           readVar("--color-emerald",         "#5DA12A"),
       wdlDraw:          readVar("--color-tint-draw",       "rgba(139,58,42,0.50)"),
       wdlLoss:          readVar("--color-rust",            "#8B3A2A"),
+      // Opening book moves — deep forest green, set apart by the labelled
+      // "Book" brace rather than by a quality colour.
+      book:             readVar("--color-forest",          "#1A3A2A"),
     },
     fonts: {
       mono:    readVar("--font-mono",    "DM Mono,monospace"),

@@ -151,13 +151,22 @@
   opacity: 0.7;
   padding: 0.5rem 0.75rem;
 }
+.winner-trophy { font-size: 0.85em; }
+.page-hero-opening { color: var(--color-gold); text-decoration: underline; text-underline-offset: 2px; }
+.page-hero-opening:hover { color: var(--color-rust); }
+.this-move__book { font-size: 0.72rem; color: var(--color-peat); margin: 2px 0 6px; font-family: var(--font-mono); }
+.this-move__book a { color: var(--color-gold); }
 </style>
 <div class="page-hero">
   <div>
-    <h1>{% if no_data %}{{ game.white_username }} vs {{ game.black_username }}{% else %}{{ data.white_label }} vs {{ data.black_label }}{% endif %}</h1>
-    {% if not no_data %}<p class="page-hero-sub">{{ data.result }} · {{ data.date }} · {{ data.time_control }}</p>{% endif %}
+    <h1>{% if no_data %}{{ game.white_username }} vs {{ game.black_username }}{% else %}{% if data.white_is_winner %}<span class="winner-trophy" title="Winner" aria-label="Winner">🏆</span> {% endif %}{{ data.white_label }} vs {% if data.black_is_winner %}<span class="winner-trophy" title="Winner" aria-label="Winner">🏆</span> {% endif %}{{ data.black_label }}{% endif %}</h1>
+    {% if not no_data %}<p class="page-hero-sub">{{ data.result }} · {{ data.date }}{% if data.time_control_label %} · {{ data.time_control_label }}{% endif %}{% if data.opening_book_id and data.opening_common_name %} · <a href="{% url 'openings:detail' data.opening_book_id %}" class="page-hero-opening">{{ data.opening_common_name }}</a>{% endif %}</p>{% endif %}
   </div>
-  <div class="flex gap-2 flex-wrap"><a href="{% url 'dashboard:index' %}" class="wc-btn wc-btn-ghost">← Dashboard</a></div>
+  <div class="flex gap-2 flex-wrap">
+    {% if not no_data and data.url %}<a href="{{ data.url }}" target="_blank" rel="noopener noreferrer" class="wc-btn wc-btn-ghost">Open on Chess.com ↗</a>{% endif %}
+    {% if not no_data and data.pgn %}<button type="button" id="copy-pgn-btn" class="wc-btn wc-btn-ghost" data-copy-label="Copy PGN" data-copied-label="Copied!">Copy PGN</button>{% endif %}
+    <a href="{% url 'dashboard:index' %}" class="wc-btn wc-btn-ghost">← Dashboard</a>
+  </div>
 </div>
 
 {% if no_data %}
@@ -165,6 +174,7 @@
   <p class="font-mono text-sm text-peat">Re-analysis required — this game's analysis predates the new schema. Queue a re-run from the dashboard.</p>
 </div>
 {% else %}
+{{ data.pgn|json_script:"game-pgn-data" }}
 
 <div class="pg-section" style="margin-bottom:2rem;">
   <div class="pg-head"><span class="pg-title">Game Analysis</span></div>
@@ -327,6 +337,35 @@ WoodLeagueAnalysis.subscribe(function (state) {
     }
   }
 });
+</script>
+<script>
+(function () {
+  var btn = document.getElementById("copy-pgn-btn");
+  var raw = document.getElementById("game-pgn-data");
+  if (!btn || !raw) return;
+  var pgn = JSON.parse(raw.textContent || '""');
+  btn.addEventListener("click", function () {
+    var orig = btn.getAttribute("data-copy-label");
+    function flash(label) {
+      btn.textContent = label;
+      setTimeout(function () { btn.textContent = orig; }, 1600);
+    }
+    // Only report success when the copy actually succeeded; an unsecured
+    // origin or a browser that blocks execCommand must not flash "Copied!".
+    function done() { flash(btn.getAttribute("data-copied-label")); }
+    function failed() { flash("Copy failed"); }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(pgn).then(done).catch(failed);
+    } else {
+      var ta = document.createElement("textarea");
+      ta.value = pgn; document.body.appendChild(ta); ta.select();
+      var ok = false;
+      try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+      finally { document.body.removeChild(ta); }
+      if (ok) { done(); } else { failed(); }
+    }
+  });
+})();
 </script>
 {% endif %}
 {% endblock %}

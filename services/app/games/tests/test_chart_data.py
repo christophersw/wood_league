@@ -8,6 +8,7 @@ Changelog:
     2026-05-21 (#186): Initial.
     2026-05-27 (#216): Add test_lc0_wdl_payload_includes_classification.
     2026-05-27 (#216): Task 8 — remove winpct_payload tests (chart retired).
+    2026-05-29 (#226): Add book-flag tests for sf_cp_payload and lc0_wdl_payload.
 """
 import pytest
 
@@ -41,3 +42,36 @@ def test_lc0_wdl_payload_includes_classification(new_schema_game_factory):
         assert isinstance(row["classification"], str)
     # Pin the .lower() normalisation against a known fixture value (ply 1 = "best").
     assert payload[0]["classification"] == "best"
+
+
+def test_sf_cp_payload_book_flag(new_schema_game_factory):
+    """sf_cp_payload marks moves at or below book_ply_count as book=True, others False.
+
+    The fixture produces 4 plies (1-4). Setting book_ply_count=4 means all 4
+    plies are book moves.
+    """
+    data = get_game_analysis_v2(new_schema_game_factory().slug)
+    data.book_ply_count = 4
+    payload = sf_cp_payload(data)
+    assert payload, "expected non-empty payload"
+    for row in payload:
+        expected = row["ply"] <= 4
+        assert row["book"] is expected, (
+            f"ply {row['ply']}: expected book={expected}, got {row['book']}"
+        )
+
+
+def test_lc0_wdl_payload_book_flag(new_schema_game_factory):
+    """lc0_wdl_payload marks moves at or below book_ply_count as book=True.
+
+    Setting book_ply_count=2 means plies 1-2 are book, plies 3-4 are not.
+    """
+    data = get_game_analysis_v2(new_schema_game_factory().slug)
+    data.book_ply_count = 2
+    payload = lc0_wdl_payload(data)
+    assert payload, "expected non-empty payload"
+    for row in payload:
+        expected = row["ply"] <= 2
+        assert row["book"] == expected, (
+            f"ply {row['ply']}: expected book={expected}, got {row['book']}"
+        )

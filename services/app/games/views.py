@@ -39,6 +39,8 @@ Changelog:
                       (_EngineLineParams / _parse_engine_line_request / _build_continuation_frames /
                       _engine_line_bot_label) runs on top of #209's deleted v1 surface.
     2026-05-27 (#216): Task 8 — delete chart_winpct_partial view; remove winpct_payload import.
+    2026-05-29 (#226): _this_move_context gains is_book, opening_common_name, opening_id keys.
+    2026-05-29 (#226): chart_sf_cp_partial and chart_lc0_wdl_partial gain opening_name/opening_id context.
 """
 
 import io as _io
@@ -769,18 +771,24 @@ def _this_move_context(data, ply: int) -> dict:
     sf_delta_pawns is the played move's mover-relative eval swing in pawns.
     lc0_delta_pct is the played move's delta_mu as whole win-% points.
     Both are None when the respective engine row is missing.
+    is_book is True when 0 < ply <= data.book_ply_count (opening book move).
+    opening_common_name and opening_id pass through from the game analysis data.
 
     Parameters:
         data: GameAnalysisDataV2 for the game.
         ply (int): 1-indexed half-move ply (0 = start position).
 
     Returns:
-        dict with move_no, side, king_sym, sf_delta_pawns, lc0_delta_pct.
+        dict with move_no, side, king_sym, sf_delta_pawns, lc0_delta_pct,
+        is_book, opening_common_name, opening_id.
     """
     if ply <= 0:
         return {
             "move_no": None, "side": None, "king_sym": None,
             "sf_delta_pawns": None, "lc0_delta_pct": None,
+            "is_book": False,
+            "opening_common_name": data.opening_common_name,
+            "opening_id": data.opening_book_id,
         }
     is_white = ply % 2 == 1
     move_no = (ply + 1) // 2
@@ -790,6 +798,9 @@ def _this_move_context(data, ply: int) -> dict:
         "king_sym": "♔" if is_white else "♚",
         "sf_delta_pawns": _sf_delta_pawns(data, ply, is_white),
         "lc0_delta_pct": _lc0_delta_pct(data, ply),
+        "is_book": 0 < ply <= data.book_ply_count,
+        "opening_common_name": data.opening_common_name,
+        "opening_id": data.opening_book_id,
     }
 
 
@@ -837,6 +848,8 @@ def chart_sf_cp_partial(request: HttpRequest, slug: str) -> HttpResponse:
     data = _load_or_404(slug)
     return render(request, "games/partials/_chart_sf_cp.html", {
         "payload": sf_cp_payload(data),
+        "opening_name": data.opening_common_name,
+        "opening_id": data.opening_book_id,
     })
 
 
@@ -862,6 +875,8 @@ def chart_lc0_wdl_partial(request: HttpRequest, slug: str) -> HttpResponse:
         "draw_rate_reference": data.lc0_draw_rate_reference,
         "white": data.white,
         "black": data.black,
+        "opening_name": data.opening_common_name,
+        "opening_id": data.opening_book_id,
     })
 
 

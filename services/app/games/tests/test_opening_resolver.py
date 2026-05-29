@@ -12,10 +12,13 @@ from games.opening_resolver import resolve_opening_id
 
 @pytest.fixture
 def patched_lookup(monkeypatch):
-    """Patch openings.services.lookup_opening_entry to a scripted sequence.
+    """Patch lookup_opening_entry to a scripted sequence.
 
     Each call corresponds to one board position; returning None on the
     deeper boards mirrors a real walk that exits the book.
+
+    resolve_opening_id delegates to games.opening_book_context.book_context,
+    so the lookup is patched on that module (where the walk actually runs).
     """
     calls = {"n": 0}
 
@@ -25,7 +28,7 @@ def patched_lookup(monkeypatch):
             calls["n"] += 1
             return seq[i] if i < len(seq) else None
         monkeypatch.setattr(
-            "games.opening_resolver.lookup_opening_entry", fake
+            "games.opening_book_context.lookup_opening_entry", fake
         )
         return calls
 

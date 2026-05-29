@@ -8,6 +8,9 @@
 //
 // Changelog:
 //   2026-05-21 (#186): Lifted from analysis.html inline script; wired to sf-cp-data.
+//   2026-05-29 (#226): Carry book flag; book colour + hover override; no quality endcap for book.
+//   2026-05-29 (#226): Deep-green book colour + labelled "Book" over-brace spanning the book plies.
+//   2026-05-29 (#226): 19th-century engraved brace (pointed cusp, ink, small-caps); drop on-bar text labels.
 
 (function () {
   var rawPayload = JSON.parse(document.getElementById("sf-cp-data").textContent || "null");
@@ -15,6 +18,7 @@
   if (!div || !rawPayload || typeof Plotly === "undefined") return;
 
   var theme = window.WoodLeagueChartTheme;
+  var openingName = div.getAttribute("data-opening-name") || "";
 
   /** Maximum absolute centipawn value treated as a forced-mate signal. */
   var MATE_THRESHOLD = 9000;
@@ -44,12 +48,62 @@
       display: display,
       san: d.san || "",
       cls: (d.classification || "").toLowerCase(),
+      book: !!d.book,
     };
   });
 
   // Fixed in-card height (#216): chart lives inside the SF stat card, so
   // it must not grow with ply count or it overflows the card.
   var chartHeight = 282;
+
+  // Leading book region: book plies are the contiguous opening run, so the
+  // deepest book ply bounds the brace at x ∈ [0.5, bookMaxPly + 0.5].
+  var bookMaxPly = rawPoints.reduce(function (acc, p) {
+    return p.book && p.ply > acc ? p.ply : acc;
+  }, 0);
+
+  /**
+   * Build the "Book" over-brace (a curly bracket spanning the leading book
+   * plies) plus its centred label, as Plotly layout shapes + annotations.
+   * Drawn in mixed coords (xref "x" data plies, yref "paper") across the top
+   * of the plot so it groups the opening moves without colliding with the
+   * short opening-eval bars near the centre line.
+   *
+   * Returns:
+   *   {shapes: Array, annotations: Array} — empty arrays when no book moves.
+   */
+  function buildBookBrace() {
+    if (bookMaxPly <= 0) return { shapes: [], annotations: [] };
+    var xL = 0.5, xR = bookMaxPly + 0.5, xC = (xL + xR) / 2;
+    // Classical over-brace: the two ends curl down toward the moves, the
+    // horizontal arms run inward, and a pointed central cusp rises to meet
+    // the label. Thin ink stroke + small-caps serif read as a 19th-century
+    // engraving, matching the Du Bois plate styling.
+    var q = Math.min(0.45, (xR - xL) / 6);  // curl radius, ply (data-x) units
+    var yArm = 0.945, e = 0.022;            // paper-y: arm level ± cusp/curl depth
+    var path =
+      "M " + xL + "," + (yArm - e) +
+      " Q " + xL + "," + yArm + " " + (xL + q) + "," + yArm +
+      " L " + (xC - q) + "," + yArm +
+      " Q " + xC + "," + yArm + " " + xC + "," + (yArm + e) +
+      " Q " + xC + "," + yArm + " " + (xC + q) + "," + yArm +
+      " L " + (xR - q) + "," + yArm +
+      " Q " + xR + "," + yArm + " " + xR + "," + (yArm - e);
+    var INK = theme.colors.textBold;
+    return {
+      shapes: [{
+        type: "path", path: path, xref: "x", yref: "paper",
+        line: { color: INK, width: 1.2 }, layer: "above",
+      }],
+      annotations: [{
+        text: "Book", xref: "x", yref: "paper",
+        x: xC, y: yArm + e, xanchor: "center", yanchor: "bottom", yshift: 1,
+        showarrow: false,
+        font: { size: 12, color: INK, family: theme.fonts.display },
+        bgcolor: "rgba(251,247,238,0.82)", borderpad: 2,
+      }],
+    };
+  }
 
   /**
    * Resolve a move-quality classification to its actual CSS background colour
@@ -103,12 +157,12 @@
     var points = rawPoints;
     if (perspective === "black") {
       points = rawPoints.map(function (p) {
-        return { ply: p.ply, cp: -p.cp, display: -p.display, san: p.san, cls: p.cls };
+        return { ply: p.ply, cp: -p.cp, display: -p.display, san: p.san, cls: p.cls, book: p.book };
       });
     }
     // Invert display so advantage bars point downward.
     return points.map(function (p) {
-      return { ply: p.ply, cp: p.cp, display: -p.display, san: p.san, cls: p.cls };
+      return { ply: p.ply, cp: p.cp, display: -p.display, san: p.san, cls: p.cls, book: p.book };
     });
   }
 
@@ -142,6 +196,8 @@
     var shapes = [];
     for (var i = 0; i < pts.length; i++) {
       var p = pts[i];
+      // Book moves are not graded — skip quality endcap entirely.
+      if (p.book) continue;
       if (!p.cls) continue;
       // For positive display the bar grows upward; cap extends downward
       // from the tip. For negative display the bar grows downward; cap
@@ -203,12 +259,24 @@
       return [player, p.san, sign, Math.abs(cp).toFixed(2)];
     });
 
+    // Per-point hover text: book moves show opening context; others show the
+    // standard "Player played SAN (±X pawns)" string.
+    var hoverText = pts.map(function (p, i) {
+      if (p.book) {
+        return openingName ? "Book — " + openingName : "Book move";
+      }
+      var cd = customdata[i];
+      return cd[0] + " played " + cd[1] + " (" + cd[2] + cd[3] + " pawns)";
+    });
+
     // Only the perspective player's plies get classification color; the
     // opposing side is painted the dark theme color so the eye reads the
-    // viewer's accuracy first (#216).
+    // viewer's accuracy first (#216). Book moves override to the neutral
+    // book slate regardless of side or classification.
     var perspectiveParity = perspective === "white" ? 1 : 0;
     var OPPOSING_COLOR = theme.colors.textBold;
     var colors = pts.map(function (p) {
+      if (p.book) return theme.colors.book;
       var isOwnSide = (p.ply % 2) === perspectiveParity;
       if (!isOwnSide) return OPPOSING_COLOR;
       return p.cls ? resolveAnnotationColor(p.cls) : BAR_GREEN;
@@ -221,9 +289,11 @@
         type: "bar",
         marker: { color: colors },
         customdata: customdata,
-        hovertemplate:
-          "%{customdata[0]} played %{customdata[1]} " +
-          "(%{customdata[2]}%{customdata[3]} pawns)<extra></extra>",
+        text: hoverText,
+        // Keep text for the %{text} hover, but never paint it onto the bars —
+        // the chart carries no per-bar labels, only the "Book" brace.
+        textposition: "none",
+        hovertemplate: "%{text}<extra></extra>",
         showlegend: false,
         name: "Eval",
       },
@@ -254,7 +324,9 @@
     // display) and the bottom is White-advantage; black perspective swaps.
     var topLabel = perspective === "white" ? "Black Advantage" : "White Advantage";
     var bottomLabel = perspective === "white" ? "White Advantage" : "Black Advantage";
+    var brace = buildBookBrace();
     return {
+      shapes: brace.shapes,
       xaxis: { zeroline: false, showgrid: false, showticklabels: false },
       yaxis: {
         zeroline: true, zerolinecolor: theme.colors.textBold,
@@ -299,7 +371,7 @@
           showarrow: false,
           font: { size: 12, color: theme.colors.textBold, family: theme.fonts.display },
         },
-      ],
+      ].concat(brace.annotations),
     };
   }
 
@@ -356,6 +428,7 @@
           y: [traces[0].y],
           "marker.color": [traces[0].marker.color],
           customdata: [traces[0].customdata],
+          text: [traces[0].text],
         }, [0]);
         Plotly.relayout(div, buildLayout(currentPerspective));
       }

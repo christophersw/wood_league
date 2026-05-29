@@ -6,6 +6,7 @@
   <div class="this-move">
     <div class="this-move__main">
       <p class="this-move__ident">Move {{ move_no }} · {{ side }}<span class="this-move__side"> {{ king_sym }}{% if side == 'White' %} · {{ white_label }}{% else %} · {{ black_label }}{% endif %}</span></p>
+      {% if is_book and opening_id %}<p class="this-move__book">This is a book move for <a href="{% url 'openings:detail' opening_id %}">{{ opening_common_name }}</a>.</p>{% endif %}
       <p class="this-move__lbl">Move quality</p>
       <div class="move-chips">
       {% regroup chips by source as source_groups %}

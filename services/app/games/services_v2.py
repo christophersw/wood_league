@@ -7,6 +7,9 @@ Description:
 
 Changelog:
     2026-05-21 (#186): Initial — rewrite of services.py for the analysis page.
+    2026-05-29 (#226): Add time_control_label, opening_book_id,
+                       opening_common_name, book_ply_count, winner_username
+                       fields and white_is_winner / black_is_winner properties.
 """
 from __future__ import annotations
 
@@ -17,6 +20,9 @@ import chess.pgn
 
 from analysis.models import GameAnalysis, Lc0GameAnalysis
 from games.models import Game
+from games.opening_book_context import book_context_from_game
+from games.time_control_format import format_time_control_label
+from games.time_control_parser import parse_time_control
 from openings.models import OpeningBook
 
 
@@ -108,6 +114,11 @@ class GameAnalysisDataV2:
     opening_name: str
     lichess_opening: str | None
     opening_id: int | None
+    time_control_label: str = ""
+    opening_book_id: int | None = None
+    opening_common_name: str = ""
+    book_ply_count: int = 0
+    winner_username: str | None = None
     # Stockfish
     sf_moves: list[SfMoveRow] = field(default_factory=list)
     sf_white_accuracy: float | None = None
@@ -163,6 +174,28 @@ class GameAnalysisDataV2:
             str: '<name> (<rating>)' when rating is set, else '<name>'.
         """
         return f"{self.black} ({self.black_rating})" if self.black_rating else self.black
+
+    def _is_winner(self, username: str | None) -> bool:
+        """True when ``username`` is the recorded game winner (case-insensitive).
+
+        Parameters:
+            username (str | None): A player's username to test.
+
+        Returns:
+            bool: True only when a winner is recorded and matches ``username``.
+        """
+        winner = (self.winner_username or "").lower()
+        return bool(winner) and winner == (username or "").lower()
+
+    @property
+    def white_is_winner(self) -> bool:
+        """True when the White player is the recorded game winner."""
+        return self._is_winner(self.white)
+
+    @property
+    def black_is_winner(self) -> bool:
+        """True when the Black player is the recorded game winner."""
+        return self._is_winner(self.black)
 
 
 def _sf_rows(ga: GameAnalysis | None) -> list[SfMoveRow]:
@@ -363,6 +396,46 @@ def _apply_engine_summaries(
         _apply_lc0_summary(data, lga)
 
 
+def _derived_header_kwargs(
+    db_game: Game,
+    pgn_game: chess.pgn.Game,
+) -> dict:
+    """Compute the #226 header-derived kwargs for GameAnalysisDataV2.
+
+    Resolves the human-readable time-control label (class prefix + body),
+    the opening book context (deepest opening id/common-name + leading book
+    ply count), and the winner username.
+
+    Parameters:
+        db_game (Game): The game database record.
+        pgn_game (chess.pgn.Game): Parsed PGN. Reused for the TimeControl
+            header fallback and the opening-book walk (no second parse).
+
+    Returns:
+        dict: time_control_label, opening_book_id, opening_common_name,
+            book_ply_count, winner_username.
+    """
+    base_s = db_game.time_control_base_s
+    inc_s = db_game.time_control_increment_s
+    if base_s is None:
+        base_s, inc_s = parse_time_control(db_game.time_control or "")
+    raw_tc = db_game.time_control or pgn_game.headers.get("TimeControl", "")
+    tc_label = format_time_control_label(db_game.time_class, base_s, inc_s, raw=raw_tc)
+    book = book_context_from_game(pgn_game)
+    return {
+        "time_control_label": tc_label,
+        # Source the opening id, common name, and book depth from the SAME
+        # walk so the header link target can never describe a different
+        # opening than its label (the denormalised FK and the live walk could
+        # disagree after a book re-import). opening_id was set at ingest by
+        # this exact walk, so the resolved id matches it in the normal case.
+        "opening_book_id": book.opening_id,
+        "opening_common_name": book.name,
+        "book_ply_count": book.book_ply_count,
+        "winner_username": db_game.winner_username,
+    }
+
+
 def _build_dataclass_kwargs(
     db_game: Game,
     pgn_game: chess.pgn.Game,
@@ -404,6 +477,7 @@ def _build_dataclass_kwargs(
         "opening_id": opening_id,
         "sf_moves": sf_moves,
         "lc0_moves": lc0_moves,
+        **_derived_header_kwargs(db_game, pgn_game),
     }
 
 

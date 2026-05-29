@@ -22,8 +22,9 @@
 {#     2026-05-26 (#212): replaced <details>Moves</details> + two-column table #}
 {#                       with an inline chip strip; relocated slot under board. #}
 {#     2026-05-21 (#186): Task 14 — lifted from inline analysis.html into partial. #}
+{# 2026-05-29 (#226): start collapsed. #}
 
-<details open id="pgn-panel" class="moves-panel">
+<details id="pgn-panel" class="moves-panel">
   <summary class="moves-panel-summary">Moves <span class="moves-engine-tag">(showing <span class="moves-engine-name">SF</span> move quality)</span></summary>
   <nav id="pgn-moves" class="moves-strip moves-source--sf" aria-label="Game moves">
     {% for pair in pgn_move_pairs %}
