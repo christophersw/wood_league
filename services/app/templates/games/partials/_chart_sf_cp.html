@@ -20,7 +20,7 @@
       </div>
     </span>
   </header>
-  <div id="sf-cp-chart" style="height:282px"></div>
+  <div id="sf-cp-chart" style="height:282px" data-opening-name="{{ opening_name|default:'' }}"></div>
   {{ payload|json_script:"sf-cp-data" }}
   <script src="{% static 'games/charts/sfCp.js' %}"></script>
 </section>
