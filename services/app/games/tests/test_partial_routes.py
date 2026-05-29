@@ -15,8 +15,10 @@ Changelog:
     2026-05-26 (#212): Task 4 — add five moves-strip characterization tests.
     2026-05-27 (#216): Task 8 — retire Win% chart; replace content test with 404 regression.
     2026-05-29 (#226): Add chips book-ply and chart-partial opening-context tests.
+    2026-05-29 (#226): C2 — PGN panel starts collapsed; C3 — book-move line template tests.
 """
 import pytest
+from django.test import RequestFactory
 from django.urls import reverse
 
 pytestmark = pytest.mark.django_db
@@ -344,3 +346,112 @@ def test_lc0_wdl_partial_succeeds_with_opening(client, new_schema_game_factory):
     game = new_schema_game_factory()
     resp = client.get(f"/_partials/games/{game.slug}/charts/lc0-wdl/")
     assert resp.status_code == 200
+
+
+# --- C2: PGN panel starts collapsed (#226) ---
+
+
+def test_pgn_panel_starts_collapsed(client, new_schema_game_factory):
+    """PGN partial renders the moves panel WITHOUT the 'open' attribute (#226 C2).
+
+    The <details> element must have id="pgn-panel" but must NOT have the
+    'open' attribute — the panel now starts collapsed.
+
+    Params:
+        client: Django test client fixture.
+        new_schema_game_factory: Factory fixture producing a new-schema game.
+    """
+    game = new_schema_game_factory()
+    resp = client.get(f"/_partials/games/{game.slug}/pgn/")
+    assert resp.status_code == 200
+    assert b'id="pgn-panel"' in resp.content
+    assert b"<details open" not in resp.content
+
+
+# --- C3: "This Move" book-move line (#226) ---
+
+
+def test_move_chips_template_renders_book_line_when_is_book(rf):
+    """_move_chips.html renders the book-move line when is_book=True and opening_id is set.
+
+    Uses Django's template engine directly with a minimal context so no DB
+    opening fixture is needed. The link URL is resolved via the openings:detail
+    named URL which must be registered.
+
+    Params:
+        rf: Django RequestFactory (unused but available for consistency).
+    """
+    from django.template.loader import render_to_string
+
+    context = {
+        "move_no": 1,
+        "side": "White",
+        "king_sym": "♔",
+        "white_label": "Alice (1500)",
+        "black_label": "Bob (1500)",
+        "chips": [],
+        "sf_delta_pawns": None,
+        "lc0_delta_pct": None,
+        "is_book": True,
+        "opening_id": 1,
+        "opening_common_name": "Sicilian Defense",
+    }
+    html = render_to_string("games/partials/_move_chips.html", context)
+    assert "book move" in html
+    assert "Sicilian Defense" in html
+    assert "/openings/1/" in html
+    assert "this-move__book" in html
+
+
+def test_move_chips_template_no_book_line_when_not_book(rf):
+    """_move_chips.html omits the book-move line when is_book=False (#226 C3).
+
+    Params:
+        rf: Django RequestFactory (unused but available for consistency).
+    """
+    from django.template.loader import render_to_string
+
+    context = {
+        "move_no": 5,
+        "side": "Black",
+        "king_sym": "♚",
+        "white_label": "Alice (1500)",
+        "black_label": "Bob (1500)",
+        "chips": [],
+        "sf_delta_pawns": None,
+        "lc0_delta_pct": None,
+        "is_book": False,
+        "opening_id": 1,
+        "opening_common_name": "Sicilian Defense",
+    }
+    html = render_to_string("games/partials/_move_chips.html", context)
+    assert "book move" not in html
+    assert "this-move__book" not in html
+
+
+def test_move_chips_template_no_book_line_when_no_opening_id(rf):
+    """_move_chips.html omits the book-move line when is_book=True but opening_id is None.
+
+    Guards the AND condition: both is_book and opening_id must be truthy
+    for the book line to render.
+
+    Params:
+        rf: Django RequestFactory (unused but available for consistency).
+    """
+    from django.template.loader import render_to_string
+
+    context = {
+        "move_no": 2,
+        "side": "Black",
+        "king_sym": "♚",
+        "white_label": "Alice (1500)",
+        "black_label": "Bob (1500)",
+        "chips": [],
+        "sf_delta_pawns": None,
+        "lc0_delta_pct": None,
+        "is_book": True,
+        "opening_id": None,
+        "opening_common_name": "Sicilian Defense",
+    }
+    html = render_to_string("games/partials/_move_chips.html", context)
+    assert "book move" not in html
