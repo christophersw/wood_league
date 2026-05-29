@@ -18,7 +18,6 @@ Changelog:
     2026-05-29 (#226): C2 — PGN panel starts collapsed; C3 — book-move line template tests.
 """
 import pytest
-from django.test import RequestFactory
 from django.urls import reverse
 
 pytestmark = pytest.mark.django_db
