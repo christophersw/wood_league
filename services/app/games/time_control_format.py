@@ -4,10 +4,12 @@ Description:
     Pure helper that turns parsed (base_seconds, increment_seconds) values
     into a short human label used by the search results table and game
     preview modal. Falls back to a caller-supplied raw string when the
-    values are unknown.
+    values are unknown. Also provides format_time_control_label for the
+    game detail page header (time-class prefix + body).
 
 Changelog:
     2026-05-20: Initial creation (#162).
+    2026-05-29: Add format_time_control_label for game detail header (#226).
 """
 from __future__ import annotations
 
@@ -64,3 +66,36 @@ def format_time_control(
     if base_seconds >= _SECONDS_PER_MINUTE:
         return _format_minutes(base_seconds, inc)
     return _format_seconds(base_seconds, inc)
+
+
+def format_time_control_label(
+    time_class: str | None,
+    base_seconds: int | None,
+    increment_seconds: int | None,
+    *,
+    raw: str | None = None,
+) -> str:
+    """Render a time control with its time-class prefix for the page header.
+
+    Composes the existing :func:`format_time_control` body with a title-cased
+    time-class prefix, e.g. ``"Rapid · 10+5 min"`` or ``"Daily · 3 days per
+    move"``. When the body is empty (nothing parseable and no ``raw``) the
+    result is ``""``; when the class is empty the bare body is returned.
+
+    Args:
+        time_class (str | None): Chess.com time class ("rapid", "blitz",
+            "daily", …) or None.
+        base_seconds (int | None): Per-game base time (or per-move budget
+            for daily).
+        increment_seconds (int | None): Increment in seconds; None for
+            daily formats.
+        raw (str | None): Optional original string used as a body fallback.
+
+    Returns:
+        str: ``"<Class> · <body>"``, the bare body, or ``""``.
+    """
+    body = format_time_control(base_seconds, increment_seconds, raw=raw)
+    if not body:
+        return ""
+    cls = (time_class or "").strip()
+    return f"{cls.title()} · {body}" if cls else body
