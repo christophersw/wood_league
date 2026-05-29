@@ -20,7 +20,7 @@ import chess.pgn
 
 from analysis.models import GameAnalysis, Lc0GameAnalysis
 from games.models import Game
-from games.opening_book_context import book_context
+from games.opening_book_context import book_context_from_game
 from games.time_control_format import format_time_control_label
 from games.time_control_parser import parse_time_control
 from openings.models import OpeningBook
@@ -175,17 +175,27 @@ class GameAnalysisDataV2:
         """
         return f"{self.black} ({self.black_rating})" if self.black_rating else self.black
 
+    def _is_winner(self, username: str | None) -> bool:
+        """True when ``username`` is the recorded game winner (case-insensitive).
+
+        Parameters:
+            username (str | None): A player's username to test.
+
+        Returns:
+            bool: True only when a winner is recorded and matches ``username``.
+        """
+        winner = (self.winner_username or "").lower()
+        return bool(winner) and winner == (username or "").lower()
+
     @property
     def white_is_winner(self) -> bool:
         """True when the White player is the recorded game winner."""
-        wu = (self.winner_username or "").lower()
-        return bool(wu) and wu == (self.white or "").lower()
+        return self._is_winner(self.white)
 
     @property
     def black_is_winner(self) -> bool:
         """True when the Black player is the recorded game winner."""
-        wu = (self.winner_username or "").lower()
-        return bool(wu) and wu == (self.black or "").lower()
+        return self._is_winner(self.black)
 
 
 def _sf_rows(ga: GameAnalysis | None) -> list[SfMoveRow]:
@@ -389,7 +399,6 @@ def _apply_engine_summaries(
 def _derived_header_kwargs(
     db_game: Game,
     pgn_game: chess.pgn.Game,
-    pgn_text: str,
 ) -> dict:
     """Compute the #226 header-derived kwargs for GameAnalysisDataV2.
 
@@ -399,8 +408,8 @@ def _derived_header_kwargs(
 
     Parameters:
         db_game (Game): The game database record.
-        pgn_game (chess.pgn.Game): Parsed PGN (for the TimeControl header fallback).
-        pgn_text (str): Raw PGN text for the opening-book walk.
+        pgn_game (chess.pgn.Game): Parsed PGN. Reused for the TimeControl
+            header fallback and the opening-book walk (no second parse).
 
     Returns:
         dict: time_control_label, opening_book_id, opening_common_name,
@@ -412,14 +421,15 @@ def _derived_header_kwargs(
         base_s, inc_s = parse_time_control(db_game.time_control or "")
     raw_tc = db_game.time_control or pgn_game.headers.get("TimeControl", "")
     tc_label = format_time_control_label(db_game.time_class, base_s, inc_s, raw=raw_tc)
-    book = book_context(pgn_text)
+    book = book_context_from_game(pgn_game)
     return {
         "time_control_label": tc_label,
-        # Prefer the denormalised FK; fall back to the live walk. Explicit
-        # None check (not `or`) so a valid id of 0 would not be skipped.
-        "opening_book_id": (
-            db_game.opening_id if db_game.opening_id is not None else book.opening_id
-        ),
+        # Source the opening id, common name, and book depth from the SAME
+        # walk so the header link target can never describe a different
+        # opening than its label (the denormalised FK and the live walk could
+        # disagree after a book re-import). opening_id was set at ingest by
+        # this exact walk, so the resolved id matches it in the normal case.
+        "opening_book_id": book.opening_id,
         "opening_common_name": book.name,
         "book_ply_count": book.book_ply_count,
         "winner_username": db_game.winner_username,
@@ -467,7 +477,7 @@ def _build_dataclass_kwargs(
         "opening_id": opening_id,
         "sf_moves": sf_moves,
         "lc0_moves": lc0_moves,
-        **_derived_header_kwargs(db_game, pgn_game, pgn_text),
+        **_derived_header_kwargs(db_game, pgn_game),
     }
 
 

@@ -160,7 +160,7 @@
 <div class="page-hero">
   <div>
     <h1>{% if no_data %}{{ game.white_username }} vs {{ game.black_username }}{% else %}{% if data.white_is_winner %}<span class="winner-trophy" title="Winner" aria-label="Winner">🏆</span> {% endif %}{{ data.white_label }} vs {% if data.black_is_winner %}<span class="winner-trophy" title="Winner" aria-label="Winner">🏆</span> {% endif %}{{ data.black_label }}{% endif %}</h1>
-    {% if not no_data %}<p class="page-hero-sub">{{ data.result }} · {{ data.date }} · {{ data.time_control_label }}{% if data.opening_book_id and data.opening_common_name %} · <a href="{% url 'openings:detail' data.opening_book_id %}" class="page-hero-opening">{{ data.opening_common_name }}</a>{% endif %}</p>{% endif %}
+    {% if not no_data %}<p class="page-hero-sub">{{ data.result }} · {{ data.date }}{% if data.time_control_label %} · {{ data.time_control_label }}{% endif %}{% if data.opening_book_id and data.opening_common_name %} · <a href="{% url 'openings:detail' data.opening_book_id %}" class="page-hero-opening">{{ data.opening_common_name }}</a>{% endif %}</p>{% endif %}
   </div>
   <div class="flex gap-2 flex-wrap">
     {% if not no_data and data.url %}<a href="{{ data.url }}" target="_blank" rel="noopener noreferrer" class="wc-btn wc-btn-ghost">Open on Chess.com ↗</a>{% endif %}
@@ -345,17 +345,24 @@ WoodLeagueAnalysis.subscribe(function (state) {
   if (!btn || !raw) return;
   var pgn = JSON.parse(raw.textContent || '""');
   btn.addEventListener("click", function () {
-    function done() {
-      var orig = btn.getAttribute("data-copy-label");
-      btn.textContent = btn.getAttribute("data-copied-label");
+    var orig = btn.getAttribute("data-copy-label");
+    function flash(label) {
+      btn.textContent = label;
       setTimeout(function () { btn.textContent = orig; }, 1600);
     }
+    // Only report success when the copy actually succeeded; an unsecured
+    // origin or a browser that blocks execCommand must not flash "Copied!".
+    function done() { flash(btn.getAttribute("data-copied-label")); }
+    function failed() { flash("Copy failed"); }
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(pgn).then(done).catch(function () {});
+      navigator.clipboard.writeText(pgn).then(done).catch(failed);
     } else {
       var ta = document.createElement("textarea");
       ta.value = pgn; document.body.appendChild(ta); ta.select();
-      try { document.execCommand("copy"); done(); } finally { document.body.removeChild(ta); }
+      var ok = false;
+      try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+      finally { document.body.removeChild(ta); }
+      if (ok) { done(); } else { failed(); }
     }
   });
 })();

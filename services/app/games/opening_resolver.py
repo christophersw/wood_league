@@ -9,24 +9,13 @@ Description:
 
 Changelog:
     2026-05-20: Initial creation (#162).
+    2026-05-29 (#226 review): Delegate to games.opening_book_context.book_context
+        so the deepest-opening walk lives in exactly one place (was a duplicate
+        of book_context's walk that had to be kept in sync by hand).
 """
 from __future__ import annotations
 
-import io
-
-import chess.pgn
-
-from openings.services import lookup_opening_entry
-
-
-def _parse_game(pgn_text: str):
-    """Return the parsed game, or ``None`` if the PGN is empty or unparseable."""
-    if not pgn_text or not pgn_text.strip():
-        return None
-    try:
-        return chess.pgn.read_game(io.StringIO(pgn_text))
-    except Exception:  # noqa: BLE001 — defensive
-        return None
+from games.opening_book_context import book_context
 
 
 def resolve_opening_id(pgn_text: str) -> int | None:
@@ -39,19 +28,4 @@ def resolve_opening_id(pgn_text: str) -> int | None:
         Integer ``OpeningBook.id`` of the deepest matching node, or
         ``None`` when no position in the game matched.
     """
-    game = _parse_game(pgn_text)
-    if game is None:
-        return None
-
-    board = game.board()
-    deepest: int | None = None
-    hit = lookup_opening_entry(board)
-    if hit is not None:
-        deepest = hit[0]
-    for move in game.mainline_moves():
-        board.push(move)
-        hit = lookup_opening_entry(board)
-        if hit is None:
-            break
-        deepest = hit[0]
-    return deepest
+    return book_context(pgn_text).opening_id

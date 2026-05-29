@@ -9,6 +9,7 @@ Changelog:
     2026-05-27 (#216): lc0_wdl_payload emits per-ply ``classification`` key.
     2026-05-27 (#216): Task 8 — retire winpct_payload (Win-for-White chart removed).
     2026-05-29 (#226): sf_cp_payload and lc0_wdl_payload emit per-ply ``book`` flag.
+    2026-05-29 (#226 review): book flag guards ply > 0 to match views._this_move_context.
 """
 from __future__ import annotations
 
@@ -20,7 +21,7 @@ def sf_cp_payload(data: GameAnalysisDataV2) -> list[dict]:
 
     Each entry carries the White-frame cp_eval, mate_in, classification,
     SAN, and a ``book`` flag indicating whether the move falls within
-    the opening book (ply <= data.book_ply_count).
+    the opening book (0 < ply <= data.book_ply_count).
 
     Params:
         data: GameAnalysisDataV2 — the analysed game.
@@ -36,7 +37,7 @@ def sf_cp_payload(data: GameAnalysisDataV2) -> list[dict]:
             "mate_in": m.mate_in,
             "classification": (m.classification or "").lower(),
             "san": m.san,
-            "book": m.ply <= data.book_ply_count,
+            "book": 0 < m.ply <= data.book_ply_count,
         }
         for m in data.sf_moves
     ]
@@ -66,7 +67,7 @@ def lc0_wdl_payload(data: GameAnalysisDataV2) -> list[dict]:
             "san": m.san,
             "classification": (m.base_severity or "").lower(),
             "draw_character": (m.draw_character or "").lower().replace(" ", "_"),
-            "book": m.ply <= data.book_ply_count,
+            "book": 0 < m.ply <= data.book_ply_count,
         }
         for m in data.lc0_moves
     ]
