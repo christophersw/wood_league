@@ -100,7 +100,9 @@ filter offers on:
   allows.
 - **GPU:** an Ada-class card (the TensorRT backend's payoff target).
   Multi-GPU offers (e.g. `num_gpus=2`) are fully used — one CUDA-pinned
-  lc0 process runs per GPU (#223).
+  lc0 process runs per GPU (#223). Each lc0 also sizes its *own*
+  Threads/NNCacheSize/RamLimitMb to its share of the host (total ÷ GPU
+  count), so the per-GPU processes don't collectively over-subscribe RAM.
 
 A crash of one engine does not strand the rest; the entrypoint waits for
 **all** engine processes, then uploads the final cache delta.
@@ -110,9 +112,10 @@ A crash of one engine does not strand the rest; the entrypoint waits for
 At boot the entrypoint runs `wood-league-worker plan-sf-fanout`, which
 reads the host vCPU + available RAM + GPU count and prints the resolved
 `SF_WORKERS` / `SF_THREADS` / `SF_HASH_MB` / `SF_JOB_SPLIT`. The
-entrypoint first detects the GPU count (`nvidia-smi -L`, echoed as
-`onstart: detected GPU_COUNT=…`), then launches one lc0 per GPU + that
-many Stockfish workers, reserving CPU/RAM for each lc0. You no longer
+entrypoint first detects the GPU count (physical `GPU N:` lines from
+`nvidia-smi -L`, echoed as `onstart: detected GPU_COUNT=…`), then
+launches one lc0 per GPU + that many Stockfish workers, reserving CPU/RAM
+for each lc0. You no longer
 set `WLW_STOCKFISH_THREADS` / `WLW_STOCKFISH_HASH_MB` / a worker count —
 they are computed. The chosen values are echoed once near the top of the
 log (`onstart: fan-out SF_WORKERS=… …`).

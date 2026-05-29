@@ -27,6 +27,12 @@ Changelog:
         the peak has been observed (issue #109).
     2026-05-15: Recognise the TensorRT (onnx-trt) backend — GPU thread
         heuristic + a dedicated L4-sized MinibatchSize sweep (issue #119).
+    2026-05-28: Multi-GPU (#223): one lc0 process runs per GPU sharing the
+        host, so split the per-process Threads/NNCacheSize/RamLimitMb
+        budget by ``WL_GPU_COUNT`` (a single GPU reproduces the old
+        full-host sizing), and serialise cold-cache calibration across
+        the peer processes with a best-effort file lock so they don't run
+        N redundant sweeps that race to write the shared cache.
 """
 from __future__ import annotations
 
@@ -37,13 +43,14 @@ import re
 import shutil
 import subprocess  # noqa: S404 — required to run `lc0 benchmark`
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable, Iterator, Optional
 
 import psutil
 
-from .._shared import data_dir
+from .._shared import data_dir, read_gpu_count
 
 log = logging.getLogger(__name__)
 
@@ -80,6 +87,10 @@ class HostInfo:
     ram_total_bytes: int
     ram_available_bytes: int
     gpu_name: str = ""
+    # Number of lc0 processes sharing this host (one per GPU, #223). The
+    # per-process CPU/RAM budget is divided by this; 1 == the original
+    # single-process full-host sizing.
+    lc0_process_count: int = 1
 
 
 def detect_host_info(backend: str, gpu_name: str = "") -> HostInfo:
@@ -100,6 +111,7 @@ def detect_host_info(backend: str, gpu_name: str = "") -> HostInfo:
         ram_total_bytes=vm.total,
         ram_available_bytes=vm.available,
         gpu_name=gpu_name,
+        lc0_process_count=read_gpu_count(),
     )
 
 
@@ -135,18 +147,26 @@ def derive_heuristic_opts(host: HostInfo) -> dict[str, str]:
     Returns:
         Dict of UCI option name → string value, ready for engine.configure().
     """
+    # One lc0 process runs per GPU and they share this host's CPU/RAM
+    # (#223), so divide the per-process budget across the peers. A single
+    # process (the default) reproduces the original full-host sizing.
+    share = max(1, host.lc0_process_count)
+
     if _is_gpu_backend(host.backend):
-        threads = max(1, min(3, host.cpu_count // 2))
+        threads = max(1, min(3, (host.cpu_count // share) // 2))
     else:
         threads = max(1, host.cpu_count - 1)
 
     nn_cache_target = int(
         host.ram_available_bytes * _RAM_FRACTION_FOR_NN_CACHE
+        / share
         / _NN_CACHE_BYTES_PER_ENTRY
     )
     nn_cache = max(_NN_CACHE_MIN_ENTRIES, min(_NN_CACHE_MAX_ENTRIES, nn_cache_target))
 
-    ram_limit_mb = int(host.ram_total_bytes * _RAM_FRACTION_FOR_LIMIT / (1024 * 1024))
+    ram_limit_mb = int(
+        host.ram_total_bytes * _RAM_FRACTION_FOR_LIMIT / share / (1024 * 1024)
+    )
 
     return {
         "Threads": str(threads),
@@ -425,6 +445,103 @@ def calibrate(
     }
 
 
+def _apply_cached_calibration(
+    opts: dict[str, str], cache: Optional[dict], fingerprint: dict[str, str]
+) -> bool:
+    """Merge a fingerprint-matching cache into ``opts`` (mutated in place).
+
+    Args:
+        opts: Heuristic option dict to augment.
+        cache: Loaded cache payload, or None.
+        fingerprint: Expected fingerprint for this host/backend.
+
+    Returns:
+        True when the cache matched and MinibatchSize/MaxPrefetch were
+        applied; False otherwise.
+    """
+    if cache and cache.get("fingerprint") == fingerprint:
+        opts["MinibatchSize"] = str(cache["minibatch_size"])
+        opts["MaxPrefetch"] = str(cache["max_prefetch"])
+        return True
+    return False
+
+
+@contextmanager
+def _calibration_lock(target_cache: Path) -> Iterator[None]:
+    """Best-effort cross-process exclusive lock guarding calibration (#223).
+
+    With one lc0 process per GPU, a cold-cache boot would otherwise have
+    every process run the ~7.5-min benchmark sweep at once and race to
+    write ``target_cache``. Serialising them lets the first calibrate
+    while the rest wait, then reuse its result. ``fcntl`` is POSIX-only;
+    on platforms without it (or if the lock file can't be opened) the
+    lock degrades to a no-op — single-GPU dev hosts never contend.
+
+    Args:
+        target_cache: The cache file being guarded; the lock sits beside
+            it as ``<name>.lock``.
+    """
+    try:
+        import fcntl
+    except ImportError:
+        yield
+        return
+    lock_path = target_cache.with_suffix(target_cache.suffix + ".lock")
+    try:
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        handle = open(lock_path, "w")  # noqa: SIM115 — released in finally
+    except OSError:
+        yield
+        return
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        yield
+    finally:
+        fcntl.flock(handle, fcntl.LOCK_UN)
+        handle.close()
+
+
+def _calibrate_and_cache(
+    opts: dict[str, str],
+    *,
+    lc0_path: str,
+    weights_path: str,
+    backend: str,
+    fingerprint: dict[str, str],
+    target_cache: Path,
+    runner: Optional["BenchmarkRunner"],
+    on_calibrated: Optional[Callable[[Path], None]],
+) -> dict[str, str]:
+    """Run the benchmark sweep, persist it, and merge it into ``opts``.
+
+    Returns ``opts`` unchanged when the backend has no sweep or every
+    benchmark invocation fails.
+    """
+    log.info("lc0_tuning: calibrating MinibatchSize for backend=%s …", backend)
+    calibration = calibrate(lc0_path, weights_path, backend, runner=runner)
+    if calibration is None:
+        return opts
+
+    opts["MinibatchSize"] = str(calibration["minibatch_size"])
+    opts["MaxPrefetch"] = str(calibration["max_prefetch"])
+    save_cache(
+        {
+            "fingerprint": fingerprint,
+            "minibatch_size": calibration["minibatch_size"],
+            "max_prefetch": calibration["max_prefetch"],
+            "measured_nps": calibration["measured_nps"],
+            "calibrated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        },
+        target_cache,
+    )
+    if on_calibrated is not None:
+        try:
+            on_calibrated(target_cache)
+        except Exception:  # noqa: BLE001 — callback must never break tuning
+            log.warning("lc0_tuning: on_calibrated callback raised; ignored")
+    return opts
+
+
 def get_tuned_opts(
     *,
     lc0_path: str,
@@ -465,37 +582,29 @@ def get_tuned_opts(
 
     fingerprint = compute_fingerprint(gpu_name, lc0_version, weights_path, backend)
     cache = None if force_recalibrate else load_cache(cache_file)
-    if cache and cache.get("fingerprint") == fingerprint:
-        opts["MinibatchSize"] = str(cache["minibatch_size"])
-        opts["MaxPrefetch"] = str(cache["max_prefetch"])
+    if _apply_cached_calibration(opts, cache, fingerprint):
         return opts
 
     if not shutil.which(lc0_path) and not Path(lc0_path).exists():
         log.info("lc0_tuning: lc0 binary not found; skipping calibration")
         return opts
 
-    log.info("lc0_tuning: calibrating MinibatchSize for backend=%s …", backend)
-    calibration = calibrate(lc0_path, weights_path, backend, runner=runner)
-    if calibration is None:
-        return opts
-
-    opts["MinibatchSize"] = str(calibration["minibatch_size"])
-    opts["MaxPrefetch"] = str(calibration["max_prefetch"])
-
     target_cache = cache_file or cache_path()
-    save_cache(
-        {
-            "fingerprint": fingerprint,
-            "minibatch_size": calibration["minibatch_size"],
-            "max_prefetch": calibration["max_prefetch"],
-            "measured_nps": calibration["measured_nps"],
-            "calibrated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        },
-        target_cache,
-    )
-    if on_calibrated is not None:
-        try:
-            on_calibrated(target_cache)
-        except Exception:  # noqa: BLE001 — callback must never break tuning
-            log.warning("lc0_tuning: on_calibrated callback raised; ignored")
-    return opts
+    # Serialise the cold-cache sweep across the peer lc0 processes (one
+    # per GPU, #223); a peer may calibrate while we wait for the lock, so
+    # re-read the cache before spending ~7.5 min on our own benchmark.
+    with _calibration_lock(target_cache):
+        if not force_recalibrate and _apply_cached_calibration(
+            opts, load_cache(cache_file), fingerprint
+        ):
+            return opts
+        return _calibrate_and_cache(
+            opts,
+            lc0_path=lc0_path,
+            weights_path=weights_path,
+            backend=backend,
+            fingerprint=fingerprint,
+            target_cache=target_cache,
+            runner=runner,
+            on_calibrated=on_calibrated,
+        )

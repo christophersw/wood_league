@@ -196,6 +196,24 @@ def test_resolve_engine_log_paths_single_lc0_still_works(
     assert names == {'lc0.log', 'stockfish.log'}
 
 
+def test_resolve_engine_log_paths_ignores_foreign_lc0_files(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """Only ``lc0.log`` / ``lc0-gpu*.log`` are matched, not arbitrary lc0* files.
+
+    The narrow patterns replace the old over-broad ``lc0*.log`` glob (#223):
+    a stray ``lc0-verbose.log`` the worker never writes must not be uploaded.
+    """
+    monkeypatch.setenv('WLW_LOG_DIR', str(tmp_path))
+    (tmp_path / 'lc0-gpu0.log').write_bytes(b'gpu0\n')
+    (tmp_path / 'lc0-verbose.log').write_bytes(b'foreign\n')
+    (tmp_path / 'stockfish.log').write_bytes(b'sf\n')
+
+    names = {p.name for p in _log_upload_meta.resolve_engine_log_paths()}
+
+    assert names == {'lc0-gpu0.log', 'stockfish.log'}
+
+
 def test_install_crash_hook_replaces_excepthook(monkeypatch: pytest.MonkeyPatch) -> None:
     """``install_crash_hook`` installs a custom ``sys.excepthook``."""
     import sys

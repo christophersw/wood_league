@@ -10,6 +10,9 @@ Changelog:
     2026-05-12: Initial creation. Issue #43 follow-up.
     2026-05-14: ``data_dir()`` honours the ``WLW_DATA_DIR`` env var so the
         worker can keep eval-cache + tuner state on a RunPod volume (#79).
+    2026-05-28: ``read_gpu_count()`` exposes the ``WL_GPU_COUNT`` the vast
+        entrypoint detects, so both the SF fan-out and lc0 self-sizing
+        scale to the one-lc0-per-GPU launch (#223).
 """
 from __future__ import annotations
 
@@ -59,3 +62,24 @@ def data_dir() -> Path:
         path = Path(platformdirs.user_data_dir("wood-league-worker", "WoodLeague"))
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def read_gpu_count() -> int:
+    """Number of GPUs on this host (hence concurrent lc0 processes).
+
+    ``vast/onstart.sh`` detects the GPU count with ``nvidia-smi`` and
+    exports it as ``WL_GPU_COUNT``. One lc0 process runs per GPU (#223),
+    so this doubles as the lc0 process count used to scale both the
+    Stockfish fan-out reservation and each lc0 process's own CPU/RAM
+    self-sizing. A missing, non-numeric, or non-positive value falls back
+    to a single GPU.
+
+    Returns:
+        GPU count as an int >= 1.
+    """
+    raw = os.environ.get("WL_GPU_COUNT", "").strip()
+    try:
+        parsed = int(raw)
+    except ValueError:
+        return 1
+    return parsed if parsed >= 1 else 1

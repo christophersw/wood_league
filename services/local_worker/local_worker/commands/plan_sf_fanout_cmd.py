@@ -16,7 +16,9 @@ Changelog:
         cgroup quota — os.cpu_count() over-reports on sliced vast
         containers and over-subscribed Stockfish (#134).
     2026-05-28: Read WL_GPU_COUNT (set by onstart.sh) and pass it to the
-        planner so reserves scale per GPU (#223).
+        planner so reserves scale per GPU (#223). GPU-count parsing now
+        lives in the shared ``read_gpu_count`` helper (also used by the
+        lc0 self-sizing path).
 """
 from __future__ import annotations
 
@@ -24,6 +26,7 @@ import os
 
 import typer
 
+from local_worker._shared import read_gpu_count
 from local_worker.analysis.host_cpu import host_vcpu as _host_vcpu
 from local_worker.analysis.sf_fanout import plan_fanout
 
@@ -48,29 +51,13 @@ def _read_max_jobs() -> int | None:
     return parsed if parsed >= 1 else None
 
 
-def _read_gpu_count() -> int:
-    """GPU count from ``WL_GPU_COUNT`` (set by onstart.sh); floor 1.
-
-    onstart.sh detects the GPU count via ``nvidia-smi`` and exports it so
-    the fan-out reserves CPU/RAM for one lc0 process per GPU (#223). A
-    missing, non-numeric, or non-positive value falls back to a single
-    GPU.
-    """
-    raw = os.environ.get("WL_GPU_COUNT", "").strip()
-    try:
-        parsed = int(raw)
-    except ValueError:
-        return 1
-    return parsed if parsed >= 1 else 1
-
-
 def plan_sf_fanout() -> None:
     """Print the resolved Stockfish fan-out as eval-able shell env."""
     plan = plan_fanout(
         vcpu=_host_vcpu(),
         avail_ram_mb=_host_avail_ram_mb(),
         max_jobs=_read_max_jobs(),
-        gpus=_read_gpu_count(),
+        gpus=read_gpu_count(),
     )
     split = " ".join(str(n) for n in plan.job_split)
     typer.echo(f"SF_WORKERS={plan.workers}")

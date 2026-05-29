@@ -10,9 +10,11 @@
 #   2026-05-16: Fix `python`→`python3` (image has no python symlink);
 #               hard-require WLW_API_URL/WLW_API_KEY (worker is a pull
 #               client and exits "Not configured" without them).
-#   2026-05-28: Multi-GPU (#223): detect GPU_COUNT, run one CUDA-pinned
-#               lc0 per GPU (unique worker_id + lc0-gpu<N>.log), and
-#               pass WL_GPU_COUNT so the SF fan-out reserves per GPU.
+#   2026-05-28: Multi-GPU (#223): detect GPU_COUNT (physical "GPU N:"
+#               lines only, not MIG sub-devices), run one CUDA-pinned lc0
+#               per GPU (unique worker_id + lc0-gpu<N>.log), and pass
+#               WL_GPU_COUNT so both the SF fan-out reservation and each
+#               lc0's own CPU/RAM self-sizing scale per GPU.
 set -euo pipefail
 
 : "${WL_CAMPAIGN_ID:?WL_CAMPAIGN_ID is required}"
@@ -71,8 +73,13 @@ else
 fi
 
 # --- detect GPUs (one lc0 process per GPU, #223) ---
-# nvidia-smi absent / no GPUs → floor at 1 so the worker still boots.
-GPU_COUNT="$(nvidia-smi -L 2>/dev/null | wc -l | tr -d ' ')" || GPU_COUNT=0
+# Count only physical-GPU lines ("GPU 0: …"). nvidia-smi -L also lists
+# indented "MIG …" sub-devices, which are not separate
+# CUDA_VISIBLE_DEVICES indices, so counting every line could pin an lc0
+# to a device that doesn't exist. nvidia-smi absent / no match → grep
+# exits non-zero, the `|| GPU_COUNT=0` fires, and we floor at 1 so the
+# worker still boots.
+GPU_COUNT="$(nvidia-smi -L 2>/dev/null | grep -c '^GPU ')" || GPU_COUNT=0
 if ! [ "${GPU_COUNT:-0}" -ge 1 ] 2>/dev/null; then
   GPU_COUNT=1
 fi
