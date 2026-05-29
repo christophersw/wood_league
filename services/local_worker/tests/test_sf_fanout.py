@@ -84,3 +84,31 @@ def test_max_jobs_unset_no_split():
 def test_none_cpu_count_falls_back_to_one():
     p = plan_fanout(vcpu=None, avail_ram_mb=120_000, max_jobs=None)
     assert p.workers == 1
+
+
+def test_gpus_default_one_matches_single_reserve():
+    # gpus defaults to 1: reserve = 3*1 + 1 = 4 CPUs (unchanged baseline).
+    # 32 vCPU, 120 GB → usable 28 // 4 = 7 Stockfish workers.
+    p = plan_fanout(vcpu=32, avail_ram_mb=120_000, max_jobs=None)
+    assert p.workers == 7
+
+
+def test_gpus_scale_cpu_reserve():
+    # 2 GPUs hold back 3*2 + 1 = 7 CPUs for two lc0 processes + OS.
+    # 32 vCPU → usable 25 // 4 = 6 Stockfish workers (vs 7 at 1 GPU).
+    p = plan_fanout(vcpu=32, avail_ram_mb=120_000, max_jobs=None, gpus=2)
+    assert p.workers == 6
+
+
+def test_gpus_scale_ram_reserve_binds_below_cpu():
+    # RAM reserve = 6144*gpus + 1024 = 13312 MB at 2 GPUs.
+    # 16 GB avail → budget 16384-13312 = 3072 // 768 = 4 ram_workers.
+    # CPU allows 6 (32 vCPU, reserve 7), so RAM binds → 4.
+    p = plan_fanout(vcpu=32, avail_ram_mb=16_384, max_jobs=None, gpus=2)
+    assert p.workers == 4
+
+
+def test_gpus_non_positive_treated_as_one():
+    # A bogus gpus=0 must not zero-out the reserve; treat as a single GPU.
+    p = plan_fanout(vcpu=32, avail_ram_mb=120_000, max_jobs=None, gpus=0)
+    assert p.workers == 7

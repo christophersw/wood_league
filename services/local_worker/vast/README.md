@@ -87,15 +87,22 @@ vastai create instance <cheap-offer> \
 
 ## Choosing an offer
 
-1 lc0 + **N** Stockfish workers run at once (N is auto-derived from the
-host at boot — see *Auto-fan-out* below), so filter offers on:
+**G** lc0 (one per GPU) + **N** Stockfish workers run at once (both
+auto-derived from the host at boot — see *Auto-fan-out* below), so
+filter offers on:
 
 - **vCPUs:** more is better — every spare core becomes another Stockfish
-  worker. The entrypoint reserves a few cores for lc0 + the OS and turns
-  the rest into 4-thread Stockfish workers (capped for cache safety).
-- **RAM:** lc0 + the BT4 network + Syzygy, plus ~0.75 GB per Stockfish
-  worker. RAM can legitimately cap N below what the CPU count allows.
+  worker. The entrypoint reserves a few cores per lc0 process + the OS
+  and turns the rest into 4-thread Stockfish workers (capped for cache
+  safety).
+- **RAM:** lc0 + the BT4 network + Syzygy (per GPU), plus ~0.75 GB per
+  Stockfish worker. RAM can legitimately cap N below what the CPU count
+  allows.
 - **GPU:** an Ada-class card (the TensorRT backend's payoff target).
+  Multi-GPU offers (e.g. `num_gpus=2`) are fully used — one CUDA-pinned
+  lc0 process runs per GPU (#223). Each lc0 also sizes its *own*
+  Threads/NNCacheSize/RamLimitMb to its share of the host (total ÷ GPU
+  count), so the per-GPU processes don't collectively over-subscribe RAM.
 
 A crash of one engine does not strand the rest; the entrypoint waits for
 **all** engine processes, then uploads the final cache delta.
@@ -103,26 +110,30 @@ A crash of one engine does not strand the rest; the entrypoint waits for
 ### Auto-fan-out (no manual sizing)
 
 At boot the entrypoint runs `wood-league-worker plan-sf-fanout`, which
-reads the host vCPU + available RAM and prints the resolved
+reads the host vCPU + available RAM + GPU count and prints the resolved
 `SF_WORKERS` / `SF_THREADS` / `SF_HASH_MB` / `SF_JOB_SPLIT`. The
-entrypoint then launches 1 lc0 + that many Stockfish workers. You no
-longer set `WLW_STOCKFISH_THREADS` / `WLW_STOCKFISH_HASH_MB` / a worker
-count — they are computed. The chosen values are echoed once near the
-top of the log (`onstart: fan-out SF_WORKERS=… …`).
+entrypoint first detects the GPU count (physical `GPU N:` lines from
+`nvidia-smi -L`, echoed as `onstart: detected GPU_COUNT=…`), then
+launches one lc0 per GPU + that many Stockfish workers, reserving CPU/RAM
+for each lc0. You no longer
+set `WLW_STOCKFISH_THREADS` / `WLW_STOCKFISH_HASH_MB` / a worker count —
+they are computed. The chosen values are echoed once near the top of the
+log (`onstart: fan-out SF_WORKERS=… …`).
 
 ### Logs are per-engine
 
 Each engine writes its **own** file under
 `/root/.local/state/wood-league-worker/log/`:
 
-- `lc0.log` — the single lc0 process (truncated each session).
+- `lc0-gpu0.log`, `lc0-gpu1.log`, … — one log per lc0 process / GPU
+  (truncated each session).
 - `stockfish.log` — **all N** Stockfish workers, appended to one shared
   file (record-atomic across processes).
 
 `vastai logs <instance-id>` shows the boot/stdout TUI; for real
 per-engine detail SSH in and `tail -f` the file above. The session-log
-uploader ships *both* `lc0.log` and `stockfish.log` (no longer a single
-`worker.log`).
+uploader ships every `lc0-gpu*.log` **and** `stockfish.log` (no longer a
+single `worker.log`).
 
 ## Stop the instance — it does NOT self-destroy
 

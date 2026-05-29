@@ -15,6 +15,10 @@ Changelog:
     2026-05-17: Clamp host CPU to the real slice via CPU affinity +
         cgroup quota — os.cpu_count() over-reports on sliced vast
         containers and over-subscribed Stockfish (#134).
+    2026-05-28: Read WL_GPU_COUNT (set by onstart.sh) and pass it to the
+        planner so reserves scale per GPU (#223). GPU-count parsing now
+        lives in the shared ``read_gpu_count`` helper (also used by the
+        lc0 self-sizing path).
 """
 from __future__ import annotations
 
@@ -22,6 +26,7 @@ import os
 
 import typer
 
+from local_worker._shared import read_gpu_count
 from local_worker.analysis.host_cpu import host_vcpu as _host_vcpu
 from local_worker.analysis.sf_fanout import plan_fanout
 
@@ -52,6 +57,7 @@ def plan_sf_fanout() -> None:
         vcpu=_host_vcpu(),
         avail_ram_mb=_host_avail_ram_mb(),
         max_jobs=_read_max_jobs(),
+        gpus=read_gpu_count(),
     )
     split = " ".join(str(n) for n in plan.job_split)
     typer.echo(f"SF_WORKERS={plan.workers}")

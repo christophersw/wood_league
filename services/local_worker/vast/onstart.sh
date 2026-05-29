@@ -10,6 +10,11 @@
 #   2026-05-16: Fix `python`→`python3` (image has no python symlink);
 #               hard-require WLW_API_URL/WLW_API_KEY (worker is a pull
 #               client and exits "Not configured" without them).
+#   2026-05-28: Multi-GPU (#223): detect GPU_COUNT (physical "GPU N:"
+#               lines only, not MIG sub-devices), run one CUDA-pinned lc0
+#               per GPU (unique worker_id + lc0-gpu<N>.log), and pass
+#               WL_GPU_COUNT so both the SF fan-out reservation and each
+#               lc0's own CPU/RAM self-sizing scale per GPU.
 set -euo pipefail
 
 : "${WL_CAMPAIGN_ID:?WL_CAMPAIGN_ID is required}"
@@ -67,18 +72,40 @@ else
   wood-league-worker lc0-tuning-pull || true
 fi
 
-# --- compute Stockfish fan-out for this host ---
+# --- detect GPUs (one lc0 process per GPU, #223) ---
+# Count only physical-GPU lines ("GPU 0: …"). nvidia-smi -L also lists
+# indented "MIG …" sub-devices, which are not separate
+# CUDA_VISIBLE_DEVICES indices, so counting every line could pin an lc0
+# to a device that doesn't exist. nvidia-smi absent / no match → grep
+# exits non-zero, the `|| GPU_COUNT=0` fires, and we floor at 1 so the
+# worker still boots.
+GPU_COUNT="$(nvidia-smi -L 2>/dev/null | grep -c '^GPU ')" || GPU_COUNT=0
+if ! [ "${GPU_COUNT:-0}" -ge 1 ] 2>/dev/null; then
+  GPU_COUNT=1
+fi
+export WL_GPU_COUNT="${GPU_COUNT}"
+echo "onstart: detected GPU_COUNT=${GPU_COUNT}"
+
+# --- compute Stockfish fan-out for this host (reserves scale w/ GPUs) ---
 eval "$(wood-league-worker plan-sf-fanout)"
 echo "onstart: fan-out SF_WORKERS=${SF_WORKERS} SF_THREADS=${SF_THREADS} SF_HASH_MB=${SF_HASH_MB} SF_JOB_SPLIT='${SF_JOB_SPLIT}'"
 
 declare -a engine_pids=()
 
-# lc0 — single GPU-bound process; own truncating log file (lc0.log).
-WLW_LOG_BASENAME=lc0 \
-WLW_WORKER_ID="vast-lc0-${WL_INSTANCE_ID}" \
-  wood-league-worker --telemetry run --engine lc0 \
-  ${WLW_MAX_JOBS:+--max-jobs "${WLW_MAX_JOBS}"} --batch-time "${WLW_BATCH_TIME:-1440}" &
-engine_pids+=($!)
+# lc0 — one GPU-bound process per GPU. Pinning CUDA_VISIBLE_DEVICES=$g
+# makes lc0's device auto-pick land on that card (it sees its GPU as
+# device 0). Each process needs a UNIQUE WLW_WORKER_ID — WorkerHeartbeat
+# is keyed by worker_id, so a shared id would clobber heartbeats — and
+# its own truncating log file (lc0-gpu${g}.log). All share the one WAL
+# eval cache. WLW_MAX_JOBS, if set, applies per process (per GPU).
+for ((g = 0; g < GPU_COUNT; g++)); do
+  CUDA_VISIBLE_DEVICES="${g}" \
+  WLW_LOG_BASENAME="lc0-gpu${g}" \
+  WLW_WORKER_ID="vast-lc0-${WL_INSTANCE_ID}-gpu${g}" \
+    wood-league-worker --telemetry run --engine lc0 \
+    ${WLW_MAX_JOBS:+--max-jobs "${WLW_MAX_JOBS}"} --batch-time "${WLW_BATCH_TIME:-1440}" &
+  engine_pids+=($!)
+done
 
 # Stockfish — N CPU workers sharing one appended log file (stockfish.log).
 read -r -a _sf_split <<< "${SF_JOB_SPLIT}"

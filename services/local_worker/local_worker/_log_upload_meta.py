@@ -8,6 +8,9 @@ Changelog:
     2026-05-13 (#52): Initial creation.
     2026-05-14 (#85): Added ``session_end`` reason for the graceful-exit
         auto-upload hook in ``commands/run.py``.
+    2026-05-28 (#223): Match every per-GPU lc0 log (``lc0.log`` +
+        ``lc0-gpu*.log``) so each uploads; keep excluding
+        ``*.diagnostics.log``. Stat each candidate once.
 """
 from __future__ import annotations
 
@@ -106,23 +109,39 @@ def preflight(log_path: Path) -> int:
     return size
 
 
+def _nonempty(path: Path) -> bool:
+    """True if ``path`` is an existing, non-empty file (one stat call)."""
+    try:
+        return path.stat().st_size > 0
+    except OSError:
+        return False
+
+
 def resolve_engine_log_paths() -> list[Path]:
     """Return the log files to upload for this session.
 
-    Under the vast fan-out a session writes per-engine logs
-    (``lc0.log`` + ``stockfish.log``) rather than a single
-    ``worker.log``. Returns every present, non-empty engine log in the
-    log directory; falls back to the single configured log (validated
-    via :func:`preflight`) for non-vast callers.
+    Under the vast fan-out a session writes per-engine logs rather than
+    a single ``worker.log``. With multiple GPUs there is one lc0 log per
+    GPU (``lc0-gpu0.log``, ``lc0-gpu1.log``, …) plus the shared
+    ``stockfish.log`` (#223), so the per-GPU logs are matched by the
+    narrow ``lc0-gpu*.log`` glob (the plain ``lc0.log`` single-GPU name
+    is added explicitly). The per-engine ``*.diagnostics.log`` companions
+    are deliberately not uploaded. Returns every present, non-empty
+    engine log in the log directory; falls back to the single configured
+    log (validated via :func:`preflight`) for non-vast callers.
 
     Returns:
         Ordered list of existing log paths. Empty when nothing is
         uploadable.
     """
     base = log_file_path()  # <log_dir>/worker.log
-    candidates = [base.parent / name for name in
-                  ('lc0.log', 'stockfish.log', 'worker.log')]
-    present = [p for p in candidates if p.exists() and p.stat().st_size > 0]
+    log_dir = base.parent
+    candidates = [log_dir / 'lc0.log', *sorted(log_dir.glob('lc0-gpu*.log'))]
+    candidates += [log_dir / 'stockfish.log', log_dir / 'worker.log']
+    present = [
+        p for p in candidates
+        if not p.name.endswith('.diagnostics.log') and _nonempty(p)
+    ]
     if present:
         return present
     return [base] if preflight(base) >= 0 else []

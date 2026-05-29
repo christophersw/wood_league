@@ -99,6 +99,57 @@ def test_nn_cache_ceiling_on_huge_ram():
     assert int(opts["NNCacheSize"]) == 30_000_000
 
 
+def test_heuristics_divide_budget_across_gpu_processes():
+    """With one lc0 per GPU the per-process CPU/RAM budget is split (#223)."""
+    single = derive_heuristic_opts(HostInfo(
+        backend="cuda-fp16",
+        cpu_count=24,
+        ram_total_bytes=_gb(120),
+        ram_available_bytes=_gb(100),
+        lc0_process_count=1,
+    ))
+    paired = derive_heuristic_opts(HostInfo(
+        backend="cuda-fp16",
+        cpu_count=24,
+        ram_total_bytes=_gb(120),
+        ram_available_bytes=_gb(100),
+        lc0_process_count=2,
+    ))
+    # RamLimitMb halves: two processes must not each target 50% of total.
+    assert int(paired["RamLimitMb"]) == int(single["RamLimitMb"]) // 2
+    # NNCacheSize halves (still well inside the min/max band at 100 GB avail).
+    assert int(paired["NNCacheSize"]) == int(single["NNCacheSize"]) // 2
+    # Threads: (24 // 2) // 2 = 6 → capped at 3 each.
+    assert single["Threads"] == "3"
+    assert paired["Threads"] == "3"
+
+
+def test_heuristics_threads_split_when_cpu_scarce():
+    """On a small-vCPU multi-GPU host the per-process thread count drops."""
+    host = HostInfo(
+        backend="cuda-fp16",
+        cpu_count=8,
+        ram_total_bytes=_gb(64),
+        ram_available_bytes=_gb(40),
+        lc0_process_count=4,
+    )
+    # (8 // 4) // 2 = 1 thread per lc0 process; one process would give 3.
+    assert derive_heuristic_opts(host)["Threads"] == "1"
+
+
+def test_heuristics_zero_process_count_treated_as_single():
+    """A bogus lc0_process_count=0 must not divide-by-zero or zero the budget."""
+    host = HostInfo(
+        backend="cuda-fp16",
+        cpu_count=24,
+        ram_total_bytes=_gb(64),
+        ram_available_bytes=_gb(40),
+        lc0_process_count=0,
+    )
+    opts = derive_heuristic_opts(host)
+    assert int(opts["RamLimitMb"]) == _gb(64) * 0.5 // (1024 * 1024)
+
+
 # ---------------------------------------------------------------------------
 # Fingerprint
 # ---------------------------------------------------------------------------
@@ -426,6 +477,58 @@ def test_get_tuned_opts_force_recalibrate_ignores_cache(tmp_path: Path):
         force_recalibrate=True,
     )
     assert opts["MinibatchSize"] == "1024"
+
+
+def test_calibration_lock_is_safe_context_manager(tmp_path: Path):
+    """``_calibration_lock`` acquires/releases without error and yields (#223)."""
+    target = tmp_path / "tune.json"
+    entered = False
+    with lc0_tuning._calibration_lock(target):
+        entered = True
+    assert entered is True
+
+
+def test_get_tuned_opts_reuses_peer_calibration_under_lock(tmp_path, monkeypatch):
+    """A peer that calibrates while we wait for the lock is reused, not re-run.
+
+    Simulates the cold-cache multi-GPU race (#223): the pre-lock cache read
+    misses, but by the time this process holds the lock a peer lc0 has written
+    a fingerprint-matching result, so we must reuse it instead of running our
+    own ~7.5-min sweep.
+    """
+    cache = tmp_path / "tune.json"
+    fingerprint = compute_fingerprint("gpu-a", "v0.32.1", "n.pb.gz", "cuda-fp16")
+    peer_payload = {
+        "fingerprint": fingerprint,
+        "minibatch_size": 512,
+        "max_prefetch": 128,
+        "measured_nps": 9.0,
+        "calibrated_at": "peer",
+    }
+    loads = {"count": 0}
+
+    def fake_load_cache(path=None):
+        loads["count"] += 1
+        # 1st read (pre-lock): empty. 2nd read (under lock): the peer's result.
+        return None if loads["count"] == 1 else peer_payload
+
+    monkeypatch.setattr(lc0_tuning, "load_cache", fake_load_cache)
+
+    def runner(cmd: list[str]) -> "subprocess.CompletedProcess[str]":  # pragma: no cover
+        raise AssertionError("must reuse the peer's calibration, not sweep again")
+
+    opts = get_tuned_opts(
+        lc0_path=__file__,
+        weights_path="n.pb.gz",
+        backend="cuda-fp16",
+        gpu_name="gpu-a",
+        lc0_version="v0.32.1",
+        cache_file=cache,
+        runner=runner,
+    )
+    assert opts["MinibatchSize"] == "512"
+    assert opts["MaxPrefetch"] == "128"
+    assert loads["count"] == 2  # pre-lock miss + under-lock hit
 
 
 # Sanity import to ensure the module's public surface is stable.
