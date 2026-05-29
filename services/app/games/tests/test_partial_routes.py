@@ -14,6 +14,7 @@ Changelog:
     2026-05-25 (#208): Task 2 — add THIS MOVE identity + score-delta test.
     2026-05-26 (#212): Task 4 — add five moves-strip characterization tests.
     2026-05-27 (#216): Task 8 — retire Win% chart; replace content test with 404 regression.
+    2026-05-29 (#226): Add chips book-ply and chart-partial opening-context tests.
 """
 import pytest
 from django.urls import reverse
@@ -293,3 +294,53 @@ def test_pgn_strip_uses_ellipsis_prefix_for_leading_black_move(client, new_schem
     assert " moves-mv " in body
     # The first (and only) move-number span must use the ellipsis form.
     assert "1…" in body or "1..." in body
+
+
+# --- book-ply and opening context tests (#226) ---
+
+
+def test_chips_partial_succeeds_for_book_ply(client, new_schema_game_factory):
+    """chips_partial returns 200 for a ply within the opening book range.
+
+    The fixture game has book_ply_count=0 by default (no opening tagged), so
+    any ply is post-book. We test that the view succeeds for both ply=1 (book
+    boundary) and ply=3 (past any empty book), confirming no crash path exists.
+
+    Params:
+        client: Django test client fixture.
+        new_schema_game_factory: Factory fixture producing a new-schema game.
+    """
+    game = new_schema_game_factory()
+    for ply in (1, 3):
+        resp = client.get(f"/_partials/games/{game.slug}/chips/?ply={ply}")
+        assert resp.status_code == 200, f"Expected 200 for ply={ply}"
+
+
+def test_sf_cp_partial_succeeds_with_opening(client, new_schema_game_factory):
+    """chart_sf_cp_partial returns 200 for a game (opening_name may be empty string).
+
+    The opening_name and opening_id context keys are consumed by Task D's
+    template attribute; here we guard against a view crash and assert 200.
+
+    Params:
+        client: Django test client fixture.
+        new_schema_game_factory: Factory fixture producing a new-schema game.
+    """
+    game = new_schema_game_factory()
+    resp = client.get(f"/_partials/games/{game.slug}/charts/sf-cp/")
+    assert resp.status_code == 200
+
+
+def test_lc0_wdl_partial_succeeds_with_opening(client, new_schema_game_factory):
+    """chart_lc0_wdl_partial returns 200 for a game (opening_name may be empty string).
+
+    The opening_name and opening_id context keys are consumed by Task D's
+    template attribute; here we guard against a view crash and assert 200.
+
+    Params:
+        client: Django test client fixture.
+        new_schema_game_factory: Factory fixture producing a new-schema game.
+    """
+    game = new_schema_game_factory()
+    resp = client.get(f"/_partials/games/{game.slug}/charts/lc0-wdl/")
+    assert resp.status_code == 200

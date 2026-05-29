@@ -69,6 +69,10 @@ def _apply_test_defaults():
     # Always force DEBUG=True for tests so SECURE_SSL_REDIRECT (which
     # activates when DEBUG is False) doesn't 301-redirect test requests.
     os.environ["DEBUG"] = "True"
+    # Always force AUTH_ENABLED=False for tests so the login-required
+    # middleware doesn't 302-redirect unauthenticated test-client requests
+    # to the login page (partials tests run without a logged-in user).
+    os.environ["AUTH_ENABLED"] = "False"
 
 
 def pytest_configure(config):
