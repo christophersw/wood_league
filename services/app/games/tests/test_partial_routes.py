@@ -16,6 +16,7 @@ Changelog:
     2026-05-27 (#216): Task 8 — retire Win% chart; replace content test with 404 regression.
     2026-05-29 (#226): Add chips book-ply and chart-partial opening-context tests.
     2026-05-29 (#226): C2 — PGN panel starts collapsed; C3 — book-move line template tests.
+    2026-05-29 (#226): D2 — strengthen chart partial tests to assert data-opening-name= attribute.
 """
 import pytest
 from django.urls import reverse
@@ -317,11 +318,12 @@ def test_chips_partial_succeeds_for_book_ply(client, new_schema_game_factory):
         assert resp.status_code == 200, f"Expected 200 for ply={ply}"
 
 
-def test_sf_cp_partial_succeeds_with_opening(client, new_schema_game_factory):
-    """chart_sf_cp_partial returns 200 for a game (opening_name may be empty string).
+def test_sf_cp_partial_has_opening_name_attribute(client, new_schema_game_factory):
+    """chart_sf_cp_partial renders data-opening-name= on the chart div (#226 D2).
 
-    The opening_name and opening_id context keys are consumed by Task D's
-    template attribute; here we guard against a view crash and assert 200.
+    The opening_name context key is wired to the data-opening-name attribute on
+    the sf-cp-chart div. The attribute must be present even when opening_name is
+    empty so the JS can read it unconditionally.
 
     Params:
         client: Django test client fixture.
@@ -330,13 +332,15 @@ def test_sf_cp_partial_succeeds_with_opening(client, new_schema_game_factory):
     game = new_schema_game_factory()
     resp = client.get(f"/_partials/games/{game.slug}/charts/sf-cp/")
     assert resp.status_code == 200
+    assert b'data-opening-name=' in resp.content
 
 
-def test_lc0_wdl_partial_succeeds_with_opening(client, new_schema_game_factory):
-    """chart_lc0_wdl_partial returns 200 for a game (opening_name may be empty string).
+def test_lc0_wdl_partial_has_opening_name_attribute(client, new_schema_game_factory):
+    """chart_lc0_wdl_partial renders data-opening-name= on the chart div (#226 D2).
 
-    The opening_name and opening_id context keys are consumed by Task D's
-    template attribute; here we guard against a view crash and assert 200.
+    The opening_name context key is wired to the data-opening-name attribute on
+    the lc0-wdl-chart div. The attribute must be present even when opening_name
+    is empty so the JS can read it unconditionally.
 
     Params:
         client: Django test client fixture.
@@ -345,6 +349,7 @@ def test_lc0_wdl_partial_succeeds_with_opening(client, new_schema_game_factory):
     game = new_schema_game_factory()
     resp = client.get(f"/_partials/games/{game.slug}/charts/lc0-wdl/")
     assert resp.status_code == 200
+    assert b'data-opening-name=' in resp.content
 
 
 # --- C2: PGN panel starts collapsed (#226) ---
