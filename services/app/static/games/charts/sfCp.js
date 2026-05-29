@@ -8,6 +8,7 @@
 //
 // Changelog:
 //   2026-05-21 (#186): Lifted from analysis.html inline script; wired to sf-cp-data.
+//   2026-05-29 (#226): Carry book flag; book colour + hover override; no quality endcap for book.
 
 (function () {
   var rawPayload = JSON.parse(document.getElementById("sf-cp-data").textContent || "null");
@@ -15,6 +16,7 @@
   if (!div || !rawPayload || typeof Plotly === "undefined") return;
 
   var theme = window.WoodLeagueChartTheme;
+  var openingName = div.getAttribute("data-opening-name") || "";
 
   /** Maximum absolute centipawn value treated as a forced-mate signal. */
   var MATE_THRESHOLD = 9000;
@@ -44,6 +46,7 @@
       display: display,
       san: d.san || "",
       cls: (d.classification || "").toLowerCase(),
+      book: !!d.book,
     };
   });
 
@@ -103,12 +106,12 @@
     var points = rawPoints;
     if (perspective === "black") {
       points = rawPoints.map(function (p) {
-        return { ply: p.ply, cp: -p.cp, display: -p.display, san: p.san, cls: p.cls };
+        return { ply: p.ply, cp: -p.cp, display: -p.display, san: p.san, cls: p.cls, book: p.book };
       });
     }
     // Invert display so advantage bars point downward.
     return points.map(function (p) {
-      return { ply: p.ply, cp: p.cp, display: -p.display, san: p.san, cls: p.cls };
+      return { ply: p.ply, cp: p.cp, display: -p.display, san: p.san, cls: p.cls, book: p.book };
     });
   }
 
@@ -142,6 +145,8 @@
     var shapes = [];
     for (var i = 0; i < pts.length; i++) {
       var p = pts[i];
+      // Book moves are not graded — skip quality endcap entirely.
+      if (p.book) continue;
       if (!p.cls) continue;
       // For positive display the bar grows upward; cap extends downward
       // from the tip. For negative display the bar grows downward; cap
@@ -203,12 +208,24 @@
       return [player, p.san, sign, Math.abs(cp).toFixed(2)];
     });
 
+    // Per-point hover text: book moves show opening context; others show the
+    // standard "Player played SAN (±X pawns)" string.
+    var hoverText = pts.map(function (p, i) {
+      if (p.book) {
+        return openingName ? "Book — " + openingName : "Book move";
+      }
+      var cd = customdata[i];
+      return cd[0] + " played " + cd[1] + " (" + cd[2] + cd[3] + " pawns)";
+    });
+
     // Only the perspective player's plies get classification color; the
     // opposing side is painted the dark theme color so the eye reads the
-    // viewer's accuracy first (#216).
+    // viewer's accuracy first (#216). Book moves override to the neutral
+    // book slate regardless of side or classification.
     var perspectiveParity = perspective === "white" ? 1 : 0;
     var OPPOSING_COLOR = theme.colors.textBold;
     var colors = pts.map(function (p) {
+      if (p.book) return theme.colors.book;
       var isOwnSide = (p.ply % 2) === perspectiveParity;
       if (!isOwnSide) return OPPOSING_COLOR;
       return p.cls ? resolveAnnotationColor(p.cls) : BAR_GREEN;
@@ -221,9 +238,8 @@
         type: "bar",
         marker: { color: colors },
         customdata: customdata,
-        hovertemplate:
-          "%{customdata[0]} played %{customdata[1]} " +
-          "(%{customdata[2]}%{customdata[3]} pawns)<extra></extra>",
+        text: hoverText,
+        hovertemplate: "%{text}<extra></extra>",
         showlegend: false,
         name: "Eval",
       },
@@ -356,6 +372,7 @@
           y: [traces[0].y],
           "marker.color": [traces[0].marker.color],
           customdata: [traces[0].customdata],
+          text: [traces[0].text],
         }, [0]);
         Plotly.relayout(div, buildLayout(currentPerspective));
       }
