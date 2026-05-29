@@ -10,6 +10,7 @@
 //   2026-05-21 (#186): Lifted from analysis.html inline script; wired to sf-cp-data.
 //   2026-05-29 (#226): Carry book flag; book colour + hover override; no quality endcap for book.
 //   2026-05-29 (#226): Deep-green book colour + labelled "Book" over-brace spanning the book plies.
+//   2026-05-29 (#226): 19th-century engraved brace (pointed cusp, ink, small-caps); drop on-bar text labels.
 
 (function () {
   var rawPayload = JSON.parse(document.getElementById("sf-cp-data").textContent || "null");
@@ -74,21 +75,32 @@
   function buildBookBrace() {
     if (bookMaxPly <= 0) return { shapes: [], annotations: [] };
     var xL = 0.5, xR = bookMaxPly + 0.5, xC = (xL + xR) / 2;
-    var yEnd = 0.90, yPeak = 0.995;  // arms rise to yPeak; centre notch at yEnd
-    var path = "M " + xL + "," + yEnd +
-      " C " + xL + "," + yPeak + " " + xC + "," + yPeak + " " + xC + "," + yEnd +
-      " C " + xC + "," + yPeak + " " + xR + "," + yPeak + " " + xR + "," + yEnd;
+    // Classical over-brace: the two ends curl down toward the moves, the
+    // horizontal arms run inward, and a pointed central cusp rises to meet
+    // the label. Thin ink stroke + small-caps serif read as a 19th-century
+    // engraving, matching the Du Bois plate styling.
+    var q = Math.min(0.45, (xR - xL) / 6);  // curl radius, ply (data-x) units
+    var yArm = 0.945, e = 0.022;            // paper-y: arm level ± cusp/curl depth
+    var path =
+      "M " + xL + "," + (yArm - e) +
+      " Q " + xL + "," + yArm + " " + (xL + q) + "," + yArm +
+      " L " + (xC - q) + "," + yArm +
+      " Q " + xC + "," + yArm + " " + xC + "," + (yArm + e) +
+      " Q " + xC + "," + yArm + " " + (xC + q) + "," + yArm +
+      " L " + (xR - q) + "," + yArm +
+      " Q " + xR + "," + yArm + " " + xR + "," + (yArm - e);
+    var INK = theme.colors.textBold;
     return {
       shapes: [{
         type: "path", path: path, xref: "x", yref: "paper",
-        line: { color: theme.colors.book, width: 1.6 }, layer: "above",
+        line: { color: INK, width: 1.2 }, layer: "above",
       }],
       annotations: [{
         text: "Book", xref: "x", yref: "paper",
-        x: xC, y: yEnd, xanchor: "center", yanchor: "top", yshift: -2,
+        x: xC, y: yArm + e, xanchor: "center", yanchor: "bottom", yshift: 1,
         showarrow: false,
-        font: { size: 10, color: theme.colors.book, family: theme.fonts.mono },
-        bgcolor: "rgba(251,247,238,0.85)", borderpad: 1,
+        font: { size: 12, color: INK, family: theme.fonts.display },
+        bgcolor: "rgba(251,247,238,0.82)", borderpad: 2,
       }],
     };
   }
@@ -278,6 +290,9 @@
         marker: { color: colors },
         customdata: customdata,
         text: hoverText,
+        // Keep text for the %{text} hover, but never paint it onto the bars —
+        // the chart carries no per-bar labels, only the "Book" brace.
+        textposition: "none",
         hovertemplate: "%{text}<extra></extra>",
         showlegend: false,
         name: "Eval",
