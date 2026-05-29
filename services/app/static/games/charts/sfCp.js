@@ -9,6 +9,7 @@
 // Changelog:
 //   2026-05-21 (#186): Lifted from analysis.html inline script; wired to sf-cp-data.
 //   2026-05-29 (#226): Carry book flag; book colour + hover override; no quality endcap for book.
+//   2026-05-29 (#226): Deep-green book colour + labelled "Book" over-brace spanning the book plies.
 
 (function () {
   var rawPayload = JSON.parse(document.getElementById("sf-cp-data").textContent || "null");
@@ -53,6 +54,44 @@
   // Fixed in-card height (#216): chart lives inside the SF stat card, so
   // it must not grow with ply count or it overflows the card.
   var chartHeight = 282;
+
+  // Leading book region: book plies are the contiguous opening run, so the
+  // deepest book ply bounds the brace at x ∈ [0.5, bookMaxPly + 0.5].
+  var bookMaxPly = rawPoints.reduce(function (acc, p) {
+    return p.book && p.ply > acc ? p.ply : acc;
+  }, 0);
+
+  /**
+   * Build the "Book" over-brace (a curly bracket spanning the leading book
+   * plies) plus its centred label, as Plotly layout shapes + annotations.
+   * Drawn in mixed coords (xref "x" data plies, yref "paper") across the top
+   * of the plot so it groups the opening moves without colliding with the
+   * short opening-eval bars near the centre line.
+   *
+   * Returns:
+   *   {shapes: Array, annotations: Array} — empty arrays when no book moves.
+   */
+  function buildBookBrace() {
+    if (bookMaxPly <= 0) return { shapes: [], annotations: [] };
+    var xL = 0.5, xR = bookMaxPly + 0.5, xC = (xL + xR) / 2;
+    var yEnd = 0.90, yPeak = 0.995;  // arms rise to yPeak; centre notch at yEnd
+    var path = "M " + xL + "," + yEnd +
+      " C " + xL + "," + yPeak + " " + xC + "," + yPeak + " " + xC + "," + yEnd +
+      " C " + xC + "," + yPeak + " " + xR + "," + yPeak + " " + xR + "," + yEnd;
+    return {
+      shapes: [{
+        type: "path", path: path, xref: "x", yref: "paper",
+        line: { color: theme.colors.book, width: 1.6 }, layer: "above",
+      }],
+      annotations: [{
+        text: "Book", xref: "x", yref: "paper",
+        x: xC, y: yEnd, xanchor: "center", yanchor: "top", yshift: -2,
+        showarrow: false,
+        font: { size: 10, color: theme.colors.book, family: theme.fonts.mono },
+        bgcolor: "rgba(251,247,238,0.85)", borderpad: 1,
+      }],
+    };
+  }
 
   /**
    * Resolve a move-quality classification to its actual CSS background colour
@@ -270,7 +309,9 @@
     // display) and the bottom is White-advantage; black perspective swaps.
     var topLabel = perspective === "white" ? "Black Advantage" : "White Advantage";
     var bottomLabel = perspective === "white" ? "White Advantage" : "Black Advantage";
+    var brace = buildBookBrace();
     return {
+      shapes: brace.shapes,
       xaxis: { zeroline: false, showgrid: false, showticklabels: false },
       yaxis: {
         zeroline: true, zerolinecolor: theme.colors.textBold,
@@ -315,7 +356,7 @@
           showarrow: false,
           font: { size: 12, color: theme.colors.textBold, family: theme.fonts.display },
         },
-      ],
+      ].concat(brace.annotations),
     };
   }
 

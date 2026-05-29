@@ -11,6 +11,7 @@
 //   2026-05-21 (#186): Lifted from analysis.html inline script; wired to lc0-wdl-data.
 //   2026-05-27 (#216): add per-ply classification strip beneath the WDL area.
 //   2026-05-29 (#226): book-move strip cells use neutral book colour + opening tooltip.
+//   2026-05-29 (#226): deep-green book colour + labelled "Book" over-brace spanning the book plies.
 
 (function () {
   var rawPayload = JSON.parse(document.getElementById("lc0-wdl-data").textContent || "null");
@@ -28,6 +29,42 @@
   var chartHeight = 240;
 
   var theme = window.WoodLeagueChartTheme;
+
+  // Leading book region: deepest book ply bounds the brace at [0.5, max+0.5].
+  var bookMaxPly = rawPayload.reduce(function (acc, d) {
+    var ply = Number(d.ply);
+    return d.book && ply > acc ? ply : acc;
+  }, 0);
+
+  /**
+   * Build the "Book" over-brace (curly bracket + centred label) spanning the
+   * leading book plies, as Plotly layout shapes + annotations. Mixed coords:
+   * xref "x" (data plies), yref "paper" (top of the plot).
+   *
+   * Returns:
+   *   {shapes: Array, annotations: Array} — empty arrays when no book moves.
+   */
+  function buildBookBrace() {
+    if (bookMaxPly <= 0) return { shapes: [], annotations: [] };
+    var xL = 0.5, xR = bookMaxPly + 0.5, xC = (xL + xR) / 2;
+    var yEnd = 0.90, yPeak = 0.995;
+    var path = "M " + xL + "," + yEnd +
+      " C " + xL + "," + yPeak + " " + xC + "," + yPeak + " " + xC + "," + yEnd +
+      " C " + xC + "," + yPeak + " " + xR + "," + yPeak + " " + xR + "," + yEnd;
+    return {
+      shapes: [{
+        type: "path", path: path, xref: "x", yref: "paper",
+        line: { color: theme.colors.book, width: 1.6 }, layer: "above",
+      }],
+      annotations: [{
+        text: "Book", xref: "x", yref: "paper",
+        x: xC, y: yEnd, xanchor: "center", yanchor: "top", yshift: -2,
+        showarrow: false,
+        font: { size: 10, color: theme.colors.book, family: theme.fonts.mono },
+        bgcolor: "rgba(251,247,238,0.85)", borderpad: 1,
+      }],
+    };
+  }
   var WHITE_FILL = theme.colors.whiteAdvantage;
   var WHITE_LINE = theme.colors.whiteLine;
   var BLACK_FILL = theme.colors.blackAdvantage;
@@ -120,7 +157,10 @@
    */
   function buildLayout() {
     var monoFont = { size: 11, color: theme.colors.text, family: theme.fonts.mono };
+    var brace = buildBookBrace();
     return {
+      shapes: brace.shapes,
+      annotations: brace.annotations,
       xaxis: {
         zeroline: false, gridcolor: theme.colors.grid,
         showticklabels: false,

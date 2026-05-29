@@ -41,8 +41,9 @@
       wdlWin:           readVar("--color-emerald",         "#5DA12A"),
       wdlDraw:          readVar("--color-tint-draw",       "rgba(139,58,42,0.50)"),
       wdlLoss:          readVar("--color-rust",            "#8B3A2A"),
-      // Judgment-neutral slate for opening book moves — "theory, not graded".
-      book:             "#7C8AA0",
+      // Opening book moves — deep forest green, set apart by the labelled
+      // "Book" brace rather than by a quality colour.
+      book:             readVar("--color-forest",          "#1A3A2A"),
     },
     fonts: {
       mono:    readVar("--font-mono",    "DM Mono,monospace"),
