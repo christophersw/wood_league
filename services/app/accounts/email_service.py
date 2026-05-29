@@ -38,6 +38,11 @@ class EmailService:
         base = self.settings.app_base_url.rstrip("/")
         return f"{base}/auth/login/link/{raw_token}/"
 
+    def _logo_url(self) -> str:
+        """Return the absolute URL for the compact header logo used in emails."""
+        base = self.settings.app_base_url.rstrip("/")
+        return f"{base}/static/logos/compact_header_logo.png"
+
     def _send(self, *, subject: str, to: str, text: str, html: str) -> None:
         """Send a multi-alternative (text + HTML) email.
 
@@ -74,6 +79,7 @@ class EmailService:
         ctx = {
             "link_url": self._link_url(raw_token),
             "ttl_minutes": self.settings.magic_link_login_ttl_minutes,
+            "logo_url": self._logo_url(),
         }
         self._send(
             subject="Your Wood League login link",
@@ -105,6 +111,7 @@ class EmailService:
             "ttl_days": self.settings.magic_link_invite_ttl_hours // 24,
             "invited_by_email": invited_by.email,
             "display_name": player.display_name or player.username,
+            "logo_url": self._logo_url(),
         }
         self._send(
             subject="Welcome to Wood League — claim your account",

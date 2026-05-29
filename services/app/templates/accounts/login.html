@@ -5,6 +5,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Sign In — Wood League Chess</title>
+  {% include "partials/_favicons.html" %}
   <link rel="stylesheet" href="{% static 'css/tailwind.css' %}">
 </head>
 <body class="login-shell">
@@ -12,10 +13,10 @@
   <div class="login-card">
 
     {# ── Masthead ──────────────────────────────────────────────────────── #}
-    <div class="login-masthead">
-      <span class="login-masthead-rule"></span>
-      <h1 class="login-masthead-title">Wood League</h1>
-      <p class="login-masthead-sub">Chess · Analytics</p>
+    <div class="login-masthead" style="text-align:center;">
+      <img src="{% static 'logos/primary-logo.png' %}"
+           alt="Wood League Chess"
+           style="width:100%;height:auto;display:block;">
     </div>
 
     {# ── Form panel ────────────────────────────────────────────────────── #}

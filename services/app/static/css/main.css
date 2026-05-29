@@ -183,10 +183,28 @@
 
   .site-brand {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
+    align-items: center;
+    gap: 0.875rem;
     text-decoration: none;
     line-height: 1;
     flex-shrink: 0;
+  }
+
+  .site-brand-logo {
+    height: 2.5rem;
+    width: auto;
+    display: block;
+    /* recolor PNG to parchment/white to sit on the ebony header */
+    filter: brightness(0) invert(1);
+  }
+
+  .site-brand-text {
+    display: flex;
+    flex-direction: column;
+    line-height: 1;
+    border-left: 1px solid color-mix(in srgb, var(--color-gold) 40%, transparent);
+    padding-left: 0.875rem;
   }
 
   .site-brand-title {

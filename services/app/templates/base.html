@@ -6,6 +6,7 @@
   <meta name="csrf-token" content="{{ csrf_token }}">
   <title>{% block title %}Wood League Chess{% endblock %}</title>
   {% load static %}
+  {% include "partials/_favicons.html" %}
   <link rel="stylesheet" href="{% static 'css/tailwind.css' %}">
   {% block extra_head %}{% endblock %}
 </head>
@@ -19,9 +20,15 @@
     <nav class="site-nav" id="site-nav">
 
       {# Brand #}
-      <a href="{% url 'dashboard:index' %}" class="site-brand">
-        <span class="site-brand-title">Wood League</span>
-        <span class="site-brand-sub">Chess · Analytics</span>
+      <a href="{% url 'dashboard:index' %}" class="site-brand" aria-label="Wood League Chess">
+        <img src="{% static 'logos/banner-logo.png' %}"
+             alt=""
+             class="site-brand-logo"
+             aria-hidden="true">
+        <span class="site-brand-text">
+          <span class="site-brand-title">Wood League Chess</span>
+          <span class="site-brand-sub">Analytics for clubs</span>
+        </span>
       </a>
 
       {# Desktop links #}
