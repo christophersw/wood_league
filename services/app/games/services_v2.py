@@ -415,7 +415,11 @@ def _derived_header_kwargs(
     book = book_context(pgn_text)
     return {
         "time_control_label": tc_label,
-        "opening_book_id": db_game.opening_id or book.opening_id,
+        # Prefer the denormalised FK; fall back to the live walk. Explicit
+        # None check (not `or`) so a valid id of 0 would not be skipped.
+        "opening_book_id": (
+            db_game.opening_id if db_game.opening_id is not None else book.opening_id
+        ),
         "opening_common_name": book.name,
         "book_ply_count": book.book_ply_count,
         "winner_username": db_game.winner_username,

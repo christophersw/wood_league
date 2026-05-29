@@ -30,7 +30,8 @@ class BookContext:
         eco (str): ECO code of the deepest match ("" when unmatched).
         name (str): Common name of the deepest match ("" when unmatched).
         book_ply_count (int): Count of leading half-moves that are book
-            theory (1-indexed ply of the deepest match; 0 when unmatched).
+            theory (1-indexed ply of the deepest match). 0 means no move was
+            in book — either nothing matched, or only the initial position did.
     """
 
     opening_id: int | None
