@@ -386,6 +386,42 @@ def _apply_engine_summaries(
         _apply_lc0_summary(data, lga)
 
 
+def _derived_header_kwargs(
+    db_game: Game,
+    pgn_game: chess.pgn.Game,
+    pgn_text: str,
+) -> dict:
+    """Compute the #226 header-derived kwargs for GameAnalysisDataV2.
+
+    Resolves the human-readable time-control label (class prefix + body),
+    the opening book context (deepest opening id/common-name + leading book
+    ply count), and the winner username.
+
+    Parameters:
+        db_game (Game): The game database record.
+        pgn_game (chess.pgn.Game): Parsed PGN (for the TimeControl header fallback).
+        pgn_text (str): Raw PGN text for the opening-book walk.
+
+    Returns:
+        dict: time_control_label, opening_book_id, opening_common_name,
+            book_ply_count, winner_username.
+    """
+    base_s = db_game.time_control_base_s
+    inc_s = db_game.time_control_increment_s
+    if base_s is None:
+        base_s, inc_s = parse_time_control(db_game.time_control or "")
+    raw_tc = db_game.time_control or pgn_game.headers.get("TimeControl", "")
+    tc_label = format_time_control_label(db_game.time_class, base_s, inc_s, raw=raw_tc)
+    book = book_context(pgn_text)
+    return {
+        "time_control_label": tc_label,
+        "opening_book_id": db_game.opening_id or book.opening_id,
+        "opening_common_name": book.name,
+        "book_ply_count": book.book_ply_count,
+        "winner_username": db_game.winner_username,
+    }
+
+
 def _build_dataclass_kwargs(
     db_game: Game,
     pgn_game: chess.pgn.Game,
@@ -409,15 +445,6 @@ def _build_dataclass_kwargs(
     Returns:
         dict: Keyword arguments for GameAnalysisDataV2.
     """
-    base_s = db_game.time_control_base_s
-    inc_s = db_game.time_control_increment_s
-    if base_s is None:
-        base_s, inc_s = parse_time_control(db_game.time_control or "")
-    raw_tc = db_game.time_control or pgn_game.headers.get("TimeControl", "")
-    tc_label = format_time_control_label(
-        db_game.time_class, base_s, inc_s, raw=raw_tc
-    )
-    book = book_context(pgn_text)
     return {
         "game_id": db_game.id,
         "slug": db_game.slug,
@@ -436,11 +463,7 @@ def _build_dataclass_kwargs(
         "opening_id": opening_id,
         "sf_moves": sf_moves,
         "lc0_moves": lc0_moves,
-        "time_control_label": tc_label,
-        "opening_book_id": db_game.opening_id or book.opening_id,
-        "opening_common_name": book.name,
-        "book_ply_count": book.book_ply_count,
-        "winner_username": db_game.winner_username,
+        **_derived_header_kwargs(db_game, pgn_game, pgn_text),
     }
 
 
