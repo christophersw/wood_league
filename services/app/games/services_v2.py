@@ -7,6 +7,9 @@ Description:
 
 Changelog:
     2026-05-21 (#186): Initial — rewrite of services.py for the analysis page.
+    2026-05-29 (#226): Add time_control_label, opening_book_id,
+                       opening_common_name, book_ply_count, winner_username
+                       fields and white_is_winner / black_is_winner properties.
 """
 from __future__ import annotations
 
@@ -17,6 +20,9 @@ import chess.pgn
 
 from analysis.models import GameAnalysis, Lc0GameAnalysis
 from games.models import Game
+from games.opening_book_context import book_context
+from games.time_control_format import format_time_control_label
+from games.time_control_parser import parse_time_control
 from openings.models import OpeningBook
 
 
@@ -108,6 +114,11 @@ class GameAnalysisDataV2:
     opening_name: str
     lichess_opening: str | None
     opening_id: int | None
+    time_control_label: str = ""
+    opening_book_id: int | None = None
+    opening_common_name: str = ""
+    book_ply_count: int = 0
+    winner_username: str | None = None
     # Stockfish
     sf_moves: list[SfMoveRow] = field(default_factory=list)
     sf_white_accuracy: float | None = None
@@ -163,6 +174,18 @@ class GameAnalysisDataV2:
             str: '<name> (<rating>)' when rating is set, else '<name>'.
         """
         return f"{self.black} ({self.black_rating})" if self.black_rating else self.black
+
+    @property
+    def white_is_winner(self) -> bool:
+        """True when the White player is the recorded game winner."""
+        wu = (self.winner_username or "").lower()
+        return bool(wu) and wu == (self.white or "").lower()
+
+    @property
+    def black_is_winner(self) -> bool:
+        """True when the Black player is the recorded game winner."""
+        wu = (self.winner_username or "").lower()
+        return bool(wu) and wu == (self.black or "").lower()
 
 
 def _sf_rows(ga: GameAnalysis | None) -> list[SfMoveRow]:
@@ -386,6 +409,15 @@ def _build_dataclass_kwargs(
     Returns:
         dict: Keyword arguments for GameAnalysisDataV2.
     """
+    base_s = db_game.time_control_base_s
+    inc_s = db_game.time_control_increment_s
+    if base_s is None:
+        base_s, inc_s = parse_time_control(db_game.time_control or "")
+    raw_tc = db_game.time_control or pgn_game.headers.get("TimeControl", "")
+    tc_label = format_time_control_label(
+        db_game.time_class, base_s, inc_s, raw=raw_tc
+    )
+    book = book_context(pgn_text)
     return {
         "game_id": db_game.id,
         "slug": db_game.slug,
@@ -404,6 +436,11 @@ def _build_dataclass_kwargs(
         "opening_id": opening_id,
         "sf_moves": sf_moves,
         "lc0_moves": lc0_moves,
+        "time_control_label": tc_label,
+        "opening_book_id": db_game.opening_id or book.opening_id,
+        "opening_common_name": book.name,
+        "book_ply_count": book.book_ply_count,
+        "winner_username": db_game.winner_username,
     }
 
 
