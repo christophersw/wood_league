@@ -8,6 +8,8 @@ Changelog:
     2026-05-13 (#52): Initial creation.
     2026-05-14 (#85): Added ``session_end`` reason for the graceful-exit
         auto-upload hook in ``commands/run.py``.
+    2026-05-28 (#223): Glob ``lc0*.log`` so every per-GPU lc0 log
+        uploads; keep excluding ``*.diagnostics.log``.
 """
 from __future__ import annotations
 
@@ -109,20 +111,28 @@ def preflight(log_path: Path) -> int:
 def resolve_engine_log_paths() -> list[Path]:
     """Return the log files to upload for this session.
 
-    Under the vast fan-out a session writes per-engine logs
-    (``lc0.log`` + ``stockfish.log``) rather than a single
-    ``worker.log``. Returns every present, non-empty engine log in the
-    log directory; falls back to the single configured log (validated
-    via :func:`preflight`) for non-vast callers.
+    Under the vast fan-out a session writes per-engine logs rather than
+    a single ``worker.log``. With multiple GPUs there is one lc0 log per
+    GPU (``lc0-gpu0.log``, ``lc0-gpu1.log``, …) plus the shared
+    ``stockfish.log`` (#223), so lc0 logs are matched by glob. The
+    per-engine ``*.diagnostics.log`` companions are deliberately not
+    uploaded. Returns every present, non-empty engine log in the log
+    directory; falls back to the single configured log (validated via
+    :func:`preflight`) for non-vast callers.
 
     Returns:
         Ordered list of existing log paths. Empty when nothing is
         uploadable.
     """
     base = log_file_path()  # <log_dir>/worker.log
-    candidates = [base.parent / name for name in
-                  ('lc0.log', 'stockfish.log', 'worker.log')]
-    present = [p for p in candidates if p.exists() and p.stat().st_size > 0]
+    log_dir = base.parent
+    candidates = sorted(log_dir.glob('lc0*.log'))
+    candidates += [log_dir / 'stockfish.log', log_dir / 'worker.log']
+    present = [
+        p for p in candidates
+        if not p.name.endswith('.diagnostics.log')
+        and p.exists() and p.stat().st_size > 0
+    ]
     if present:
         return present
     return [base] if preflight(base) >= 0 else []

@@ -163,6 +163,39 @@ def test_upload_log_returns_minus_one_on_http_error(
     assert log_upload.upload_log('manual') == -1
 
 
+def test_resolve_engine_log_paths_includes_per_gpu_lc0(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """Per-GPU lc0 logs (``lc0-gpu0.log`` …) are all uploaded (#223).
+
+    The multi-GPU fan-out writes one ``lc0-gpu<N>.log`` per GPU instead
+    of a single ``lc0.log``; the uploader must ship every one of them
+    alongside the shared ``stockfish.log``.
+    """
+    monkeypatch.setenv('WLW_LOG_DIR', str(tmp_path))
+    (tmp_path / 'lc0-gpu0.log').write_bytes(b'gpu0\n')
+    (tmp_path / 'lc0-gpu1.log').write_bytes(b'gpu1\n')
+    (tmp_path / 'stockfish.log').write_bytes(b'sf\n')
+    (tmp_path / 'lc0-gpu0.diagnostics.log').write_bytes(b'diag\n')
+
+    names = {p.name for p in _log_upload_meta.resolve_engine_log_paths()}
+
+    assert names == {'lc0-gpu0.log', 'lc0-gpu1.log', 'stockfish.log'}
+
+
+def test_resolve_engine_log_paths_single_lc0_still_works(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """A single-GPU session's plain ``lc0.log`` still matches the glob."""
+    monkeypatch.setenv('WLW_LOG_DIR', str(tmp_path))
+    (tmp_path / 'lc0.log').write_bytes(b'lc0\n')
+    (tmp_path / 'stockfish.log').write_bytes(b'sf\n')
+
+    names = {p.name for p in _log_upload_meta.resolve_engine_log_paths()}
+
+    assert names == {'lc0.log', 'stockfish.log'}
+
+
 def test_install_crash_hook_replaces_excepthook(monkeypatch: pytest.MonkeyPatch) -> None:
     """``install_crash_hook`` installs a custom ``sys.excepthook``."""
     import sys

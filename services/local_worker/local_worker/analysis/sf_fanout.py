@@ -14,6 +14,8 @@ Description:
     writers.
 Changelog:
     2026-05-16: Initial creation (#130).
+    2026-05-28: Scale the lc0 CPU/RAM reservation by GPU count (#223) —
+        one lc0 process runs per GPU, so reserve per GPU.
 """
 from __future__ import annotations
 
@@ -23,10 +25,14 @@ from typing import Optional
 SF_THREADS_DEFAULT = 4
 SF_HASH_MB_CAP = 512
 SF_MAX_WORKERS = 16
-# lc0 (3) + OS (1) logical CPUs held back from Stockfish.
-CPU_RESERVE = 4
-# lc0 (6144 MB) + OS (1024 MB) RAM held back from Stockfish.
-RAM_RESERVE_MB = 7168
+# Per-GPU lc0 reservation: each lc0 process gets ~3 logical CPUs and
+# 6144 MB RAM, plus a flat OS allowance. With N GPUs we run N lc0
+# processes (#223), so the reservation scales linearly with the GPU
+# count; a single GPU reproduces the original 4-CPU / 7168-MB baseline.
+LC0_CPU_PER_GPU = 3
+LC0_RAM_MB_PER_GPU = 6144
+OS_CPU_RESERVE = 1
+OS_RAM_RESERVE_MB = 1024
 # Per-worker RAM footprint: Hash cap (512) + base process (256).
 SF_SLOT_MB = SF_HASH_MB_CAP + 256
 
@@ -95,6 +101,7 @@ def plan_fanout(
     vcpu: Optional[int],
     avail_ram_mb: int,
     max_jobs: Optional[int],
+    gpus: int = 1,
 ) -> FanoutPlan:
     """Compute the Stockfish fan-out for the current host.
 
@@ -103,13 +110,19 @@ def plan_fanout(
             as 1.
         avail_ram_mb: Currently-available RAM in MB.
         max_jobs: Per-engine WLW_MAX_JOBS cap, or None for unbounded.
+        gpus: Number of GPUs on the host. One lc0 process runs per GPU
+            (#223), so the CPU/RAM held back for lc0 scales with this
+            count. Non-positive values are treated as a single GPU.
 
     Returns:
         A :class:`FanoutPlan`.
     """
     cpus = vcpu if (vcpu and vcpu > 0) else 1
-    cpu_workers = max(1, max(1, cpus - CPU_RESERVE) // SF_THREADS_DEFAULT)
-    ram_budget = max(0, avail_ram_mb - RAM_RESERVE_MB)
+    gpu_count = gpus if (gpus and gpus > 0) else 1
+    cpu_reserve = LC0_CPU_PER_GPU * gpu_count + OS_CPU_RESERVE
+    ram_reserve = LC0_RAM_MB_PER_GPU * gpu_count + OS_RAM_RESERVE_MB
+    cpu_workers = max(1, max(1, cpus - cpu_reserve) // SF_THREADS_DEFAULT)
+    ram_budget = max(0, avail_ram_mb - ram_reserve)
     ram_workers = max(1, ram_budget // SF_SLOT_MB)
     workers = min(cpu_workers, ram_workers, SF_MAX_WORKERS)
 

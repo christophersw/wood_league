@@ -15,6 +15,8 @@ Changelog:
     2026-05-17: Clamp host CPU to the real slice via CPU affinity +
         cgroup quota — os.cpu_count() over-reports on sliced vast
         containers and over-subscribed Stockfish (#134).
+    2026-05-28: Read WL_GPU_COUNT (set by onstart.sh) and pass it to the
+        planner so reserves scale per GPU (#223).
 """
 from __future__ import annotations
 
@@ -46,12 +48,29 @@ def _read_max_jobs() -> int | None:
     return parsed if parsed >= 1 else None
 
 
+def _read_gpu_count() -> int:
+    """GPU count from ``WL_GPU_COUNT`` (set by onstart.sh); floor 1.
+
+    onstart.sh detects the GPU count via ``nvidia-smi`` and exports it so
+    the fan-out reserves CPU/RAM for one lc0 process per GPU (#223). A
+    missing, non-numeric, or non-positive value falls back to a single
+    GPU.
+    """
+    raw = os.environ.get("WL_GPU_COUNT", "").strip()
+    try:
+        parsed = int(raw)
+    except ValueError:
+        return 1
+    return parsed if parsed >= 1 else 1
+
+
 def plan_sf_fanout() -> None:
     """Print the resolved Stockfish fan-out as eval-able shell env."""
     plan = plan_fanout(
         vcpu=_host_vcpu(),
         avail_ram_mb=_host_avail_ram_mb(),
         max_jobs=_read_max_jobs(),
+        gpus=_read_gpu_count(),
     )
     split = " ".join(str(n) for n in plan.job_split)
     typer.echo(f"SF_WORKERS={plan.workers}")
