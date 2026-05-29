@@ -11,8 +11,8 @@
 //   2026-05-21 (#186): Lifted from analysis.html inline script; wired to lc0-wdl-data.
 //   2026-05-27 (#216): add per-ply classification strip beneath the WDL area.
 //   2026-05-29 (#226): book-move strip cells use neutral book colour + opening tooltip.
-//   2026-05-29 (#226): deep-green book colour + labelled "Book" over-brace spanning the book plies.
-//   2026-05-29 (#226): 19th-century engraved brace (pointed cusp, ink stroke, small-caps label).
+//   2026-05-29 (#226): deep-green book colour on the per-ply quality strip + opening tooltip
+//                       (book brace lives on the SF chart only).
 
 (function () {
   var rawPayload = JSON.parse(document.getElementById("lc0-wdl-data").textContent || "null");
@@ -30,52 +30,6 @@
   var chartHeight = 240;
 
   var theme = window.WoodLeagueChartTheme;
-
-  // Leading book region: deepest book ply bounds the brace at [0.5, max+0.5].
-  var bookMaxPly = rawPayload.reduce(function (acc, d) {
-    var ply = Number(d.ply);
-    return d.book && ply > acc ? ply : acc;
-  }, 0);
-
-  /**
-   * Build the "Book" over-brace (curly bracket + centred label) spanning the
-   * leading book plies, as Plotly layout shapes + annotations. Mixed coords:
-   * xref "x" (data plies), yref "paper" (top of the plot).
-   *
-   * Returns:
-   *   {shapes: Array, annotations: Array} — empty arrays when no book moves.
-   */
-  function buildBookBrace() {
-    if (bookMaxPly <= 0) return { shapes: [], annotations: [] };
-    var xL = 0.5, xR = bookMaxPly + 0.5, xC = (xL + xR) / 2;
-    // Classical over-brace: ends curl down toward the moves, a pointed central
-    // cusp rises to the label. Thin ink stroke + small-caps serif read as a
-    // 19th-century engraving, matching the Du Bois plate styling.
-    var q = Math.min(0.45, (xR - xL) / 6);  // curl radius, ply (data-x) units
-    var yArm = 0.945, e = 0.022;            // paper-y: arm level ± cusp/curl depth
-    var path =
-      "M " + xL + "," + (yArm - e) +
-      " Q " + xL + "," + yArm + " " + (xL + q) + "," + yArm +
-      " L " + (xC - q) + "," + yArm +
-      " Q " + xC + "," + yArm + " " + xC + "," + (yArm + e) +
-      " Q " + xC + "," + yArm + " " + (xC + q) + "," + yArm +
-      " L " + (xR - q) + "," + yArm +
-      " Q " + xR + "," + yArm + " " + xR + "," + (yArm - e);
-    var INK = theme.colors.textBold;
-    return {
-      shapes: [{
-        type: "path", path: path, xref: "x", yref: "paper",
-        line: { color: INK, width: 1.2 }, layer: "above",
-      }],
-      annotations: [{
-        text: "Book", xref: "x", yref: "paper",
-        x: xC, y: yArm + e, xanchor: "center", yanchor: "bottom", yshift: 1,
-        showarrow: false,
-        font: { size: 12, color: INK, family: theme.fonts.display },
-        bgcolor: "rgba(251,247,238,0.82)", borderpad: 2,
-      }],
-    };
-  }
   var WHITE_FILL = theme.colors.whiteAdvantage;
   var WHITE_LINE = theme.colors.whiteLine;
   var BLACK_FILL = theme.colors.blackAdvantage;
@@ -168,10 +122,7 @@
    */
   function buildLayout() {
     var monoFont = { size: 11, color: theme.colors.text, family: theme.fonts.mono };
-    var brace = buildBookBrace();
     return {
-      shapes: brace.shapes,
-      annotations: brace.annotations,
       xaxis: {
         zeroline: false, gridcolor: theme.colors.grid,
         showticklabels: false,
