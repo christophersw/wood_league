@@ -10,6 +10,7 @@
 // Changelog:
 //   2026-05-21 (#186): Lifted from analysis.html inline script; wired to lc0-wdl-data.
 //   2026-05-27 (#216): add per-ply classification strip beneath the WDL area.
+//   2026-05-29 (#226): book-move strip cells use neutral book colour + opening tooltip.
 
 (function () {
   var rawPayload = JSON.parse(document.getElementById("lc0-wdl-data").textContent || "null");
@@ -18,6 +19,7 @@
 
   var white = window.ANALYSIS_DATA ? window.ANALYSIS_DATA.white : "";
   var black = window.ANALYSIS_DATA ? window.ANALYSIS_DATA.black : "";
+  var openingName = div.getAttribute("data-opening-name") || "";
 
   var plies = rawPayload.map(function (d) { return Number(d.ply); });
 
@@ -289,6 +291,7 @@
         var cells = [];
         rawPayload.forEach(function (d) {
           var cls = (d.classification || "").toLowerCase();
+          var isBook = !!d.book;
           var cell = document.createElement("div");
           var ply = Number(d.ply);
           var humanCls = cls ? cls.charAt(0).toUpperCase() + cls.slice(1) : "—";
@@ -300,7 +303,7 @@
             }
           });
           stripEl.appendChild(cell);
-          cells.push({ el: cell, ply: ply, cls: cls });
+          cells.push({ el: cell, ply: ply, cls: cls, book: isBook });
         });
 
         // Paint cells given a perspective. Only the perspective player's
@@ -311,11 +314,19 @@
           cells.forEach(function (c) {
             var isWhiteMove = (c.ply % 2) === 1;
             var isPerspectiveMove = perspective === "white" ? isWhiteMove : !isWhiteMove;
-            c.el.className = "cls-cell" + (
-              isPerspectiveMove && c.cls
-                ? " move-annotation-" + c.cls
-                : " cls-cell--unclassified"
-            );
+            if (c.book) {
+              // Book moves: neutral slate colour, no quality classification, opening tooltip.
+              c.el.className = "cls-cell cls-cell--book";
+              c.el.style.backgroundColor = window.WoodLeagueChartTheme.colors.book;
+              c.el.title = openingName ? "Book — " + openingName : "Book move";
+            } else {
+              c.el.style.backgroundColor = "";
+              c.el.className = "cls-cell" + (
+                isPerspectiveMove && c.cls
+                  ? " move-annotation-" + c.cls
+                  : " cls-cell--unclassified"
+              );
+            }
           });
           var labelEl = document.getElementById("lc0-wdl-cls-strip-label");
           if (labelEl) {
